@@ -1,6 +1,6 @@
-;;; elint.el --- Lint Emacs Lisp
+;;; elint.el --- Lint Emacs Lisp -*- lexical-binding: t -*-
 
-;; Copyright (C) 1997, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Peter Liljenberg <petli@lysator.liu.se>
 ;; Created: May 1997
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -27,7 +27,7 @@
 ;; misspellings and undefined variables, although it can also catch
 ;; function calls with the wrong number of arguments.
 
-;; To use, call elint-current-buffer or elint-defun to lint a buffer
+;; To use, call `elint-current-buffer' or `elint-defun' to lint a buffer
 ;; or defun.  The first call runs `elint-initialize' to set up some
 ;; argument data, which may take a while.
 
@@ -45,8 +45,6 @@
 ;; * Prevent recursive requires.
 
 ;;; Code:
-
-(require 'help-fns)
 
 (defgroup elint nil
   "Linting for Emacs Lisp."
@@ -108,7 +106,7 @@ are as follows, and suppress messages about the indicated features:
   :group 'elint)
 
 (defcustom elint-directory-skip-re "\\(ldefs-boot\\|loaddefs\\)\\.el\\'"
-  "If nil, a regexp matching files to skip when linting a directory."
+  "If non-nil, a regexp matching files to skip when linting a directory."
   :type '(choice (const :tag "Lint all files" nil)
 		 (regexp :tag "Regexp to skip"))
   :safe 'string-or-null-p
@@ -143,7 +141,7 @@ Set by `elint-initialize', if `elint-scan-preloaded' is non-nil.")
 (defconst elint-unknown-builtin-args
   ;; encode-time allows extra arguments for use with decode-time.
   ;; For some reason, some people seem to like to use them in other cases.
-  '((encode-time second minute hour day month year &rest zone))
+  '((encode-time time &rest obsolescent-arguments))
   "Those built-ins for which we can't find arguments, if any.")
 
 (defvar elint-extra-errors '(file-locked file-supersession ftp-error)
@@ -155,6 +153,9 @@ Set by `elint-initialize', if `elint-scan-preloaded' is non-nil.")
 		"cp51932"))
   "Regexp matching elements of `preloaded-file-list' to ignore.
 We ignore them because they contain no definitions of use to Elint.")
+
+(defvar elint-running)
+(defvar elint-current-pos)	 ; dynamically bound in elint-top-form
 
 ;;;
 ;;; ADT: top-form
@@ -251,9 +252,9 @@ This environment can be passed to `macroexpand'."
     (elint-set-mode-line t)
     (with-current-buffer elint-log-buffer
       (unless (string-equal default-directory dir)
-	(elint-log-message (format "\nLeaving directory `%s'"
-				   default-directory) t)
-	(elint-log-message (format "Entering directory `%s'" dir) t)
+	(elint-log-message (format-message "\nLeaving directory `%s'"
+                                           default-directory) t)
+	(elint-log-message (format-message "Entering directory `%s'" dir) t)
 	(setq default-directory dir))))
   (let ((str (format "Linting file %s" file)))
     (message "%s..." str)
@@ -374,9 +375,9 @@ Returns the forms."
 	(let ((elint-current-pos (point)))
 	  ;; non-list check could be here too. errors may be out of seq.
 	  ;; quoted check cannot be elsewhere, since quotes skipped.
-	  (if (looking-back "'")
+	  (if (= (preceding-char) ?\')
 	      ;; Eg cust-print.el uses ' as a comment syntax.
-	      (elint-warning "Skipping quoted form `'%.20s...'"
+	      (elint-warning "Skipping quoted form `%c%.20s...'" ?\'
 			   (read (current-buffer)))
 	    (condition-case nil
 		(setq tops (cons
@@ -385,7 +386,7 @@ Returns the forms."
 			    tops))
 	      (end-of-file
 	       (goto-char elint-current-pos)
-	       (error "Missing ')' in top form: %s"
+	       (error "Missing `)' in top form: %s"
 		      (buffer-substring elint-current-pos
 					(line-end-position))))))))
       (nreverse tops))))
@@ -462,21 +463,9 @@ Return nil if there are no more forms, t otherwise."
    ;; Import variable definitions
    ((memq (car form) '(require cc-require cc-require-when-compile))
     (let ((name (eval (cadr form)))
-	  (file (eval (nth 2 form)))
-	  (elint-doing-cl (bound-and-true-p elint-doing-cl)))
+	  (file (eval (nth 2 form))))
       (unless (memq name elint-features)
 	(add-to-list 'elint-features name)
-	;; cl loads cl-macs in an opaque manner.
-	;; Since cl-macs requires cl, we can just process cl-macs.
-        ;; FIXME: AFAIK, `cl' now behaves properly and does not need any
-        ;; special treatment any more.  Can someone who understands this
-        ;; code confirm?  --Stef
-	(and (eq name 'cl) (not elint-doing-cl)
-	     ;; We need cl if elint-form is to be able to expand cl macros.
-	     (require 'cl)
-	     (setq name 'cl-macs
-		   file nil
-		   elint-doing-cl t)) ; blech
 	(setq elint-env (elint-add-required-env elint-env name file))))))
   elint-env)
 
@@ -522,7 +511,7 @@ Return nil if there are no more forms, t otherwise."
 	      ;;; 	(with-syntax-table emacs-lisp-mode-syntax-table
 	      ;;; 	  (elint-update-env))
 	      ;;; 	(setq env (elint-env-add-env env elint-buffer-env))))
-	      ;;(message "Elint processed (require '%s)" name))
+	      ;;(message "%s" (format "Elint processed (require '%s)" name))
 	  (error "%s.el not found in load-path" libname)))
     (error
      (message "Can't get variables from require'd library %s: %s"
@@ -565,6 +554,7 @@ Return nil if there are no more forms, t otherwise."
     (defcustom . elint-check-defcustom-form)
     (macro . elint-check-macro-form)
     (condition-case . elint-check-condition-case-form)
+    (condition-case-unless-debug . elint-check-condition-case-form)
     (if . elint-check-conditional-form)
     (when . elint-check-conditional-form)
     (unless . elint-check-conditional-form)
@@ -864,7 +854,7 @@ CODE can be a lambda expression, a macro, or byte-compiled code."
      (t (elint-error "Not a function object: %s" form)
 	env))))
 
-(defun elint-check-quote-form (form env)
+(defun elint-check-quote-form (_form env)
   "Lint the quote FORM in ENV."
   env)
 
@@ -905,8 +895,7 @@ CODE can be a lambda expression, a macro, or byte-compiled code."
   "Check the when/unless/and/or FORM in ENV.
 Does basic handling of `featurep' tests."
   (let ((func (car form))
-	(test (cadr form))
-	sym)
+	(test (cadr form)))
     ;; Misses things like (and t (featurep 'xemacs))
     ;; Check byte-compile-maybe-guarded.
     (cond ((and (memq func '(when and))
@@ -949,7 +938,7 @@ Does basic handling of `featurep' tests."
 	  ((and (memq func '(unless or))
 		(equal test '(featurep (quote emacs)))))
 	  ((and (eq func 'if)
-		(or (null test)	      ; eg custom-browse-insert-prefix
+		(or (null test)
 		    (member test '((featurep (quote xemacs))
 				   (not (featurep (quote emacs)))))
 		    (and (eq (car-safe test) 'and)
@@ -969,8 +958,6 @@ Does basic handling of `featurep' tests."
 ;;; Message functions
 ;;;
 
-(defvar elint-current-pos)	 ; dynamically bound in elint-top-form
-
 (defun elint-log (type string args)
   (elint-log-message (format "%s:%d:%s: %s"
 			     (let ((f (buffer-file-name)))
@@ -984,7 +971,7 @@ Does basic handling of `featurep' tests."
 						    (line-beginning-position))))
 			       0)	; unknown position
 			     type
-			     (apply 'format string args))))
+			     (apply #'format-message string args))))
 
 (defun elint-error (string &rest args)
   "Report a linting error.
@@ -1039,8 +1026,6 @@ Insert HEADER followed by a blank line if non-nil."
   (let ((pop-up-windows t))
     (display-buffer (elint-get-log-buffer))
     (sit-for 0)))
-
-(defvar elint-running)
 
 (defun elint-set-mode-line (&optional on)
   "Set the mode-line-process of the Elint log buffer."
@@ -1111,7 +1096,7 @@ Marks the function with their arguments, and returns a list of variables."
 	(set-buffer (get-buffer-create docbuf))
 	(insert-file-contents-literally
 	 (expand-file-name internal-doc-file-name doc-directory)))
-      (while (re-search-forward "\\([VF]\\)" nil t)
+      (while (re-search-forward "\^_\\([VF]\\)" nil t)
 	(when (setq sym (intern-soft (buffer-substring (point)
 						       (line-end-position))))
 	  (if (string-equal (match-string 1) "V")
@@ -1120,7 +1105,7 @@ Marks the function with their arguments, and returns a list of variables."
 	      (if (boundp sym) (setq vars (cons sym vars)))
 	    ;; Function.
 	    (when (fboundp sym)
-	      (when (re-search-forward "\\(^(fn.*)\\)?" nil t)
+	      (when (re-search-forward "\\(^(fn.*)\\)?\^_" nil t)
 		(backward-char 1)
 		;; FIXME distinguish no args from not found.
 		(and (setq args (match-string 1))

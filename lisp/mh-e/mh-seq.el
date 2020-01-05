@@ -1,9 +1,8 @@
 ;;; mh-seq.el --- MH-E sequences support
 
-;; Copyright (C) 1993, 1995, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993, 1995, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Bill Wohler <wohler@newt.com>
-;; Maintainer: Bill Wohler <wohler@newt.com>
 ;; Keywords: mail
 ;; See: mh-e.el
 
@@ -20,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -32,7 +31,6 @@
 ;;; Code:
 
 (require 'mh-e)
-(mh-require-cl)
 (require 'mh-scan)
 
 (require 'font-lock)
@@ -184,9 +182,9 @@ MESSAGE appears."
   (interactive "P")
   (if (not message)
       (setq message (mh-get-msg-num t)))
-  (let* ((dest-folder (loop for seq in mh-refile-list
-                            when (member message (cdr seq)) return (car seq)
-                            finally return nil))
+  (let* ((dest-folder (cl-loop for seq in mh-refile-list
+                               when (member message (cdr seq)) return (car seq)
+                               finally return nil))
          (deleted-flag (unless dest-folder (member message mh-delete-list))))
     (message "Message %d%s is in sequences: %s"
              message
@@ -390,7 +388,7 @@ then a non-empty sequence is read."
   "Read and return a sequence name.
 Prompt with PROMPT, raise an error if the sequence is empty and
 the NOT-EMPTY flag is non-nil, and supply an optional DEFAULT
-sequence. A reply of '%' defaults to the first sequence
+sequence. A reply of `%' defaults to the first sequence
 containing the current message."
   (let* ((input (completing-read (format "%s sequence%s: " prompt
                                          (if default
@@ -555,7 +553,7 @@ change."
 ;;;###mh-autoload
 (defun mh-valid-view-change-operation-p (op)
   "Check if the view change operation can be performed.
-OP is one of 'widen and 'unthread."
+OP is one of `widen' and `unthread'."
   (cond ((eq (car mh-view-ops) op)
          (pop mh-view-ops))
         (t nil)))
@@ -722,9 +720,9 @@ completion is over."
           ((eq flag t)
            (all-completions last-word candidates predicate))
           ((eq flag 'lambda)
-           (loop for x in candidates
-                 when (equal x last-word) return t
-                 finally return nil)))))
+           (cl-loop for x in candidates
+                    when (equal x last-word) return t
+                    finally return nil)))))
 
 (defun mh-seq-names (seq-list)
   "Return an alist containing the names of the SEQ-LIST."
@@ -743,8 +741,8 @@ completion is over."
     (call-process (expand-file-name "flist" mh-progs) nil t nil "-showzero"
                   "-norecurse" folder "-sequence" (symbol-name mh-unseen-seq))
     (goto-char (point-min))
-    (multiple-value-bind (folder unseen total)
-        (values-list
+    (cl-multiple-value-bind (folder unseen total)
+        (cl-values-list
          (mh-parse-flist-output-line
           (buffer-substring (point) (mh-line-end-position))))
       (list total unseen folder))))
@@ -766,7 +764,7 @@ completion is over."
   "Parse LINE to generate folder name, unseen messages and total messages.
 If CURRENT-FOLDER is non-nil then it contains the current folder
 name and it is used to avoid problems in corner cases involving
-folders whose names end with a '+' character."
+folders whose names end with a `+' character."
   (with-temp-buffer
     (insert line)
     (goto-char (point-max))
@@ -935,8 +933,8 @@ notated."
       (dolist (msg (mh-seq-msgs seq))
         (push (car seq) (gethash msg msg-hash))))
     (mh-iterate-on-range msg range
-      (loop for seq in (gethash msg msg-hash)
-            do (mh-add-sequence-notation msg (mh-internal-seq seq))))))
+      (cl-loop for seq in (gethash msg msg-hash)
+               do (mh-add-sequence-notation msg (mh-internal-seq seq))))))
 
 (defun mh-add-sequence-notation (msg internal-seq-flag)
   "Add sequence notation to the MSG on the current line.

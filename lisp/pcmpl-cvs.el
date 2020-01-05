@@ -1,6 +1,6 @@
 ;;; pcmpl-cvs.el --- functions for dealing with cvs completions
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Package: pcomplete
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -38,7 +38,7 @@
 ;; User Variables:
 
 (defcustom pcmpl-cvs-binary (or (executable-find "cvs") "cvs")
-  "The full path of the 'cvs' binary."
+  "The full path of the `cvs' binary."
   :type 'file
   :group 'pcmpl-cvs)
 
@@ -122,7 +122,7 @@
     (let (cmds)
       (while (re-search-forward "^\\s-+\\([a-z]+\\)" nil t)
 	(setq cmds (cons (match-string 1) cmds)))
-      (pcomplete-uniqify-list cmds))))
+      (pcomplete-uniquify-list cmds))))
 
 (defun pcmpl-cvs-modules ()
   "Return a list of available modules under CVS."
@@ -132,7 +132,7 @@
     (let (entries)
       (while (re-search-forward "\\(\\S-+\\)$" nil t)
 	(setq entries (cons (match-string 1) entries)))
-      (pcomplete-uniqify-list entries))))
+      (pcomplete-uniquify-list entries))))
 
 (defun pcmpl-cvs-tags (&optional opers)
   "Return all the tags which could apply to the files related to OPERS."
@@ -149,12 +149,12 @@
 	    (error "Error in output from `cvs status -v'"))
 	  (setq tags (cons (match-string 1) tags))
 	  (forward-line))))
-    (pcomplete-uniqify-list tags)))
+    (pcomplete-uniquify-list tags)))
 
 (defun pcmpl-cvs-entries (&optional opers)
   "Return the Entries for the current directory.
 If OPERS is a list of characters, return entries for which that
-operation character applies, as displayed by 'cvs -n update'."
+operation character applies, as displayed by `cvs -n update'."
   (let* ((arg (pcomplete-arg))
 	 (dir (file-name-as-directory
 	       (or (file-name-directory arg) "")))
@@ -164,28 +164,29 @@ operation character applies, as displayed by 'cvs -n update'."
 	(with-temp-buffer
 	  (and dir (cd dir))
 	  (call-process pcmpl-cvs-binary nil t nil
-			"-q" "-n" "-f" "update"); "-l")
+			"-q" "-n" "-f" "update") ; "-l")
 	  (goto-char (point-min))
 	  (while (re-search-forward "^\\(.\\) \\(.+\\)$" nil t)
 	    (if (memq (string-to-char (match-string 1)) opers)
 		(setq entries (cons (match-string 2) entries)))))
-      (with-temp-buffer
-	(insert-file-contents (concat dir "CVS/Entries"))
-	(goto-char (point-min))
-	(while (not (eobp))
-	  ;; Normal file: /NAME   -> "" "NAME"
-	  ;; Directory  : D/NAME  -> "D" "NAME"
-	  (let* ((fields (split-string (buffer-substring
-					(line-beginning-position)
-					(line-end-position))
-				       "/"))
-		 (text (nth 1 fields)))
-	    (when text
-	      (if (string= (nth 0 fields) "D")
-		  (setq text (file-name-as-directory text)))
-	      (setq entries (cons text entries))))
-	  (forward-line))))
+      (when (file-exists-p (expand-file-name "CVS/Entries" dir))
+        (with-temp-buffer
+          (insert-file-contents (expand-file-name "CVS/Entries" dir))
+          (goto-char (point-min))
+          (while (not (eobp))
+            ;; Normal file: /NAME   -> "" "NAME"
+            ;; Directory  : D/NAME  -> "D" "NAME"
+            (let* ((fields (split-string (buffer-substring
+                                          (line-beginning-position)
+                                          (line-end-position))
+                                         "/"))
+                   (text (nth 1 fields)))
+              (when text
+                (if (string= (nth 0 fields) "D")
+                    (setq text (file-name-as-directory text)))
+                (setq entries (cons text entries))))
+            (forward-line)))))
     (setq pcomplete-stub nondir)
-    (pcomplete-uniqify-list entries)))
+    (pcomplete-uniquify-list entries)))
 
 ;;; pcmpl-cvs.el ends here

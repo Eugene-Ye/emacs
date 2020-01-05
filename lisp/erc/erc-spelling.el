@@ -1,6 +1,6 @@
 ;;; erc-spelling.el --- use flyspell in ERC
 
-;; Copyright (C) 2005-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: Jorgen Schaefer <forcer@forcix.cx>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -33,7 +33,7 @@
 (require 'erc)
 (require 'flyspell)
 
-;;;###autoload (autoload 'erc-spelling-mode "erc-spelling" nil t)
+;;;###autoload(autoload 'erc-spelling-mode "erc-spelling" nil t)
 (define-erc-module spelling nil
   "Enable flyspell mode in ERC buffers."
   ;; Use erc-connect-pre-hook instead of erc-mode-hook as pre-hook is
@@ -71,7 +71,7 @@ The current buffer is given by BUFFER."
               (if dicts
                   (cadr (car dicts))
                 (erc-with-server-buffer ispell-local-dictionary)))))
-    (setq flyspell-generic-check-word-p 'erc-spelling-flyspell-verify)
+    (setq flyspell-generic-check-word-predicate #'erc-spelling-flyspell-verify)
     (flyspell-mode 1)))
 
 (defun erc-spelling-unhighlight-word (word)
@@ -85,6 +85,7 @@ The cadr is the beginning and the caddr is the end."
 
 (defun erc-spelling-flyspell-verify ()
   "Flyspell only the input line, nothing else."
+  ;; FIXME: Don't use `flyspell-word'!
   (let ((word-data (and (boundp 'flyspell-word)
                         flyspell-word)))
     (when word-data
@@ -108,3 +109,7 @@ The cadr is the beginning and the caddr is the end."
 (provide 'erc-spelling)
 
 ;;; erc-spelling.el ends here
+
+;; Local Variables:
+;; generated-autoload-file: "erc-loaddefs.el"
+;; End:

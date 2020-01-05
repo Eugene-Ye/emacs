@@ -1,6 +1,6 @@
 ;;; lucid.el --- emulate some Lucid Emacs functions
 
-;; Copyright (C) 1993, 1995, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993, 1995, 2001-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: emulations
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -60,7 +60,7 @@ bottom of the buffer stack."
 
 (defun device-class (&optional device)
   "Return the class (color behavior) of DEVICE.
-This will be one of 'color, 'grayscale, or 'mono.
+This will be one of `color', `grayscale', or `mono'.
 This function exists for compatibility with XEmacs."
   (cond
    ((display-color-p device) 'color)

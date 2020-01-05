@@ -1,6 +1,6 @@
 ;;; nnmh.el --- mhspool access for Gnus
 
-;; Copyright (C) 1995-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -33,7 +33,6 @@
 (require 'nnmail)
 (require 'gnus-start)
 (require 'nnoo)
-(eval-when-compile (require 'cl))
 
 (nnoo-declare nnmh)
 
@@ -109,7 +108,7 @@ as unread by Gnus.")
 	  (and large
 	       (zerop (% count 20))
 	       (nnheader-message 5 "nnmh: Receiving headers... %d%%"
-				 (/ (* count 100) number))))
+				 (floor (* count 100.0) number))))
 
 	(when large
 	  (nnheader-message 5 "nnmh: Receiving headers...done"))
@@ -211,8 +210,10 @@ as unread by Gnus.")
 	min rdir num subdirectoriesp file)
     ;; Recurse down directories.
     (setq subdirectoriesp
-	  ;; nth 1 of file-attributes always 1 on MS Windows :(
-	  (/= (nth 1 (file-attributes (file-truename dir))) 2))
+	  ;; link number always 1 on MS Windows :(
+	  (/= (file-attribute-link-number
+	       (file-attributes (file-truename dir)))
+	      2))
     (dolist (rdir files)
       (if (or (not subdirectoriesp)
 	      (file-regular-p rdir))
@@ -242,12 +243,11 @@ as unread by Gnus.")
 	      (file-truename (file-name-as-directory
 			      (expand-file-name nnmh-toplev))))
 	     dir)
-	    (mm-string-to-multibyte ;Why?  Isn't it multibyte already?
-	     (mm-encode-coding-string
-	      (nnheader-replace-chars-in-string
-	       (substring dir (match-end 0))
-	       ?/ ?.)
-	      nnmail-pathname-coding-system)))
+	    (encode-coding-string
+	     (nnheader-replace-chars-in-string
+	      (substring dir (match-end 0))
+	      ?/ ?.)
+	     nnmail-pathname-coding-system))
 	  (or max 0)
 	  (or min 1))))))
   t)
@@ -259,13 +259,14 @@ as unread by Gnus.")
 					       &optional server force)
   (nnmh-possibly-change-directory newsgroup server)
   (let ((is-old t)
+	(dir nnmh-current-directory)
 	article rest mod-time)
     (nnheader-init-server-buffer)
 
     (while (and articles is-old)
-      (setq article (concat nnmh-current-directory
-			    (int-to-string (car articles))))
-      (when (setq mod-time (nth 5 (file-attributes article)))
+      (setq article (concat dir (int-to-string (car articles))))
+      (when (setq mod-time (file-attribute-modification-time
+			    (file-attributes article)))
 	(if (and (nnmh-deletable-article-p newsgroup (car articles))
 		 (setq is-old
 		       (nnmail-expired-article-p newsgroup mod-time force)))
@@ -536,8 +537,8 @@ as unread by Gnus.")
 	  art)
       (while (setq art (pop arts))
 	(when (not (equal
-		    (nth 5 (file-attributes
-			    (concat dir (int-to-string (car art)))))
+		    (file-attribute-modification-time
+		     (file-attributes (concat dir (int-to-string (car art)))))
 		    (cdr art)))
 	  (setq articles (delq art articles))
 	  (push (car art) new))))
@@ -548,8 +549,9 @@ as unread by Gnus.")
 		 (mapcar
 		  (lambda (art)
 		    (cons art
-			  (nth 5 (file-attributes
-				  (concat dir (int-to-string art))))))
+			  (file-attribute-modification-time
+			   (file-attributes
+			    (concat dir (int-to-string art))))))
 		  new)))
     ;; Make Gnus mark all new articles as unread.
     (when new

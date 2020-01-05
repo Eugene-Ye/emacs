@@ -1,8 +1,8 @@
 ;;; semantic/db-ref.el --- Handle cross-db file references
 
-;;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -37,6 +37,7 @@
 
 ;;; Code:
 (require 'eieio)
+(require 'cl-generic)
 (require 'semantic)
 (require 'semantic/db)
 (require 'semantic/tag)
@@ -44,7 +45,7 @@
 ;; For the semantic-find-tags-by-name-regexp macro.
 (eval-when-compile (require 'semantic/find))
 
-(defmethod semanticdb-add-reference ((dbt semanticdb-abstract-table)
+(cl-defmethod semanticdb-add-reference ((dbt semanticdb-abstract-table)
 				     include-tag)
   "Add a reference for the database table DBT based on INCLUDE-TAG.
 DBT is the database table that owns the INCLUDE-TAG.  The reference
@@ -66,20 +67,20 @@ will be added to the database that INCLUDE-TAG refers to."
       (object-add-to-list refdbt 'db-refs dbt)
       t)))
 
-(defmethod semanticdb-check-references ((dbt semanticdb-abstract-table))
+(cl-defmethod semanticdb-check-references ((dbt semanticdb-abstract-table))
   "Check and cleanup references in the database DBT.
 Abstract tables would be difficult to reference."
   ;; Not sure how an abstract table can have references.
   nil)
 
-(defmethod semanticdb-includes-in-table ((dbt semanticdb-abstract-table))
+(cl-defmethod semanticdb-includes-in-table ((dbt semanticdb-abstract-table))
   "Return a list of direct includes in table DBT."
   (semantic-find-tags-by-class 'include (semanticdb-get-tags dbt)))
 
 
-(defmethod semanticdb-check-references ((dbt semanticdb-table))
+(cl-defmethod semanticdb-check-references ((dbt semanticdb-table))
   "Check and cleanup references in the database DBT.
-Any reference to a file that cannot be found, or whos file no longer
+Any reference to a file that cannot be found, or whose file no longer
 refers to DBT will be removed."
   (let ((refs (oref dbt db-refs))
 	(myexpr (concat "\\<" (oref dbt file)))
@@ -87,7 +88,7 @@ refers to DBT will be removed."
     (while refs
       (let* ((ok t)
 	     (db (car refs))
-	     (f (when (semanticdb-table-child-p db)
+	     (f (when (cl-typep db 'semanticdb-table)
 		  (semanticdb-full-filename db)))
 	     )
 
@@ -108,13 +109,13 @@ refers to DBT will be removed."
 	  ))
       (setq refs (cdr refs)))))
 
-(defmethod semanticdb-refresh-references ((dbt semanticdb-abstract-table))
+(cl-defmethod semanticdb-refresh-references ((dbt semanticdb-abstract-table))
   "Refresh references to DBT in other files."
   ;; alternate tables can't be edited, so can't be changed.
   nil
   )
 
-(defmethod semanticdb-refresh-references ((dbt semanticdb-table))
+(cl-defmethod semanticdb-refresh-references ((dbt semanticdb-table))
   "Refresh references to DBT in other files."
   (let ((refs (semanticdb-includes-in-table dbt))
 	)
@@ -127,7 +128,7 @@ refers to DBT will be removed."
       (setq refs (cdr refs)))
     ))
 
-(defmethod semanticdb-notify-references ((dbt semanticdb-table)
+(cl-defmethod semanticdb-notify-references ((dbt semanticdb-table)
 					 method)
   "Notify all references of the table DBT using method.
 METHOD takes two arguments.
@@ -161,8 +162,7 @@ refreshed before dumping the result."
   (let* ((tab semanticdb-current-table)
 	 (myrefs (oref tab db-refs))
 	 (myinc (semanticdb-includes-in-table tab))
-	 (adbc (semanticdb-ref-adebug "DEBUG"
-				      :i-depend-on myrefs
+	 (adbc (semanticdb-ref-adebug :i-depend-on myrefs
 				      :local-table tab
 				      :i-include myinc)))
     (data-debug-new-buffer "*References ADEBUG*")

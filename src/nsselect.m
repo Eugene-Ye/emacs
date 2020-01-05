@@ -1,13 +1,13 @@
-/* NeXT/Open/GNUstep / MacOSX Cocoa selection processing for emacs.
-   Copyright (C) 1993-1994, 2005-2006, 2008-2014 Free Software
+/* NeXT/Open/GNUstep / macOS Cocoa selection processing for emacs.
+   Copyright (C) 1993-1994, 2005-2006, 2008-2020 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,13 +15,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /*
 Originally by Carl Edman
 Updated by Christian Limpach (chris@nice.ch)
 OpenStep/Rhapsody port by Scott Bender (sbender@harmony-ds.com)
-MacOSX/Aqua port by Christophe de Dinechin (descubes@earthlink.net)
+macOS/Aqua port by Christophe de Dinechin (descubes@earthlink.net)
 GNUstep port and post-20 update by Adrian Robert (arobert@cogsci.ucsd.edu)
 */
 
@@ -34,11 +34,9 @@ GNUstep port and post-20 update by Adrian Robert (arobert@cogsci.ucsd.edu)
 #include "termhooks.h"
 #include "keyboard.h"
 
-static Lisp_Object QCLIPBOARD, QSECONDARY, QTEXT, QFILE_NAME;
-
 static Lisp_Object Vselection_alist;
 
-/* NSGeneralPboard is pretty much analogous to X11 CLIPBOARD */
+/* NSPasteboardNameGeneral is pretty much analogous to X11 CLIPBOARD.  */
 static NSString *NXPrimaryPboard;
 static NSString *NXSecondaryPboard;
 
@@ -56,10 +54,10 @@ static NSString *
 symbol_to_nsstring (Lisp_Object sym)
 {
   CHECK_SYMBOL (sym);
-  if (EQ (sym, QCLIPBOARD))   return NSGeneralPboard;
+  if (EQ (sym, QCLIPBOARD))   return NSPasteboardNameGeneral;
   if (EQ (sym, QPRIMARY))     return NXPrimaryPboard;
   if (EQ (sym, QSECONDARY))   return NXSecondaryPboard;
-  if (EQ (sym, QTEXT))        return NSStringPboardType;
+  if (EQ (sym, QTEXT))        return NSPasteboardTypeString;
   return [NSString stringWithUTF8String: SSDATA (SYMBOL_NAME (sym))];
 }
 
@@ -72,17 +70,17 @@ ns_symbol_to_pb (Lisp_Object symbol)
 static Lisp_Object
 ns_string_to_symbol (NSString *t)
 {
-  if ([t isEqualToString: NSGeneralPboard])
+  if ([t isEqualToString: NSPasteboardNameGeneral])
     return QCLIPBOARD;
   if ([t isEqualToString: NXPrimaryPboard])
     return QPRIMARY;
   if ([t isEqualToString: NXSecondaryPboard])
     return QSECONDARY;
-  if ([t isEqualToString: NSStringPboardType])
+  if ([t isEqualToString: NSPasteboardTypeString])
     return QTEXT;
   if ([t isEqualToString: NSFilenamesPboardType])
     return QFILE_NAME;
-  if ([t isEqualToString: NSTabularTextPboardType])
+  if ([t isEqualToString: NSPasteboardTypeTabularText])
     return QTEXT;
   return intern ([t UTF8String]);
 }
@@ -92,20 +90,20 @@ static Lisp_Object
 clean_local_selection_data (Lisp_Object obj)
 {
   if (CONSP (obj)
-      && INTEGERP (XCAR (obj))
+      && FIXNUMP (XCAR (obj))
       && CONSP (XCDR (obj))
-      && INTEGERP (XCAR (XCDR (obj)))
+      && FIXNUMP (XCAR (XCDR (obj)))
       && NILP (XCDR (XCDR (obj))))
     obj = Fcons (XCAR (obj), XCDR (obj));
 
   if (CONSP (obj)
-      && INTEGERP (XCAR (obj))
-      && INTEGERP (XCDR (obj)))
+      && FIXNUMP (XCAR (obj))
+      && FIXNUMP (XCDR (obj)))
     {
-      if (XINT (XCAR (obj)) == 0)
+      if (XFIXNUM (XCAR (obj)) == 0)
         return XCDR (obj);
-      if (XINT (XCAR (obj)) == -1)
-        return make_number (- XINT (XCDR (obj)));
+      if (XFIXNUM (XCAR (obj)) == -1)
+        return make_fixnum (- XFIXNUM (XCDR (obj)));
     }
 
   if (VECTORP (obj))
@@ -166,7 +164,7 @@ ns_get_our_change_count_for (Lisp_Object selection)
 static void
 ns_string_to_pasteboard_internal (id pb, Lisp_Object str, NSString *gtype)
 {
-  if (EQ (str, Qnil))
+  if (NILP (str))
     {
       [pb declareTypes: [NSArray array] owner: nil];
     }
@@ -195,7 +193,7 @@ ns_string_to_pasteboard_internal (id pb, Lisp_Object str, NSString *gtype)
       else
         {
 	  // Used for ns-own-selection-internal.
-	  eassert (gtype == NSStringPboardType);
+	  eassert (gtype == NSPasteboardTypeString);
           [pb setString: nsStr forType: gtype];
         }
       [nsStr release];
@@ -347,7 +345,7 @@ anything that the functions on `selection-converter-alist' know about.  */)
   }
 
   /* We only support copy of text.  */
-  type = NSStringPboardType;
+  type = NSPasteboardTypeString;
   target_symbol = ns_string_to_symbol (type);
   if (STRINGP (value))
     {
@@ -387,18 +385,12 @@ Disowning it means there is no such selection.  */)
 
 
 DEFUN ("ns-selection-exists-p", Fns_selection_exists_p, Sns_selection_exists_p,
-       0, 2, 0, doc: /* Whether there is an owner for the given X selection.
+       0, 1, 0, doc: /* Whether there is an owner for the given X selection.
 SELECTION should be the name of the selection in question, typically
 one of the symbols `PRIMARY', `SECONDARY', or `CLIPBOARD'.  (X expects
 these literal upper-case names.)  The symbol nil is the same as
-`PRIMARY', and t is the same as `SECONDARY'.
-
-TERMINAL should be a terminal object or a frame specifying the X
-server to query.  If omitted or nil, that stands for the selected
-frame's display, or the first available X display.
-
-On Nextstep, TERMINAL is unused.  */)
-     (Lisp_Object selection, Lisp_Object terminal)
+`PRIMARY', and t is the same as `SECONDARY'.  */)
+     (Lisp_Object selection)
 {
   id pb;
   NSArray *types;
@@ -407,7 +399,7 @@ On Nextstep, TERMINAL is unused.  */)
     return Qnil;
 
   CHECK_SYMBOL (selection);
-  if (EQ (selection, Qnil)) selection = QPRIMARY;
+  if (NILP (selection)) selection = QPRIMARY;
   if (EQ (selection, Qt)) selection = QSECONDARY;
   pb = ns_symbol_to_pb (selection);
   if (pb == nil) return Qnil;
@@ -418,47 +410,32 @@ On Nextstep, TERMINAL is unused.  */)
 
 
 DEFUN ("ns-selection-owner-p", Fns_selection_owner_p, Sns_selection_owner_p,
-       0, 2, 0,
+       0, 1, 0,
        doc: /* Whether the current Emacs process owns the given X Selection.
 The arg should be the name of the selection in question, typically one of
 the symbols `PRIMARY', `SECONDARY', or `CLIPBOARD'.
 \(Those are literal upper-case symbol names, since that's what X expects.)
 For convenience, the symbol nil is the same as `PRIMARY',
-and t is the same as `SECONDARY'.
-
-TERMINAL should be a terminal object or a frame specifying the X
-server to query.  If omitted or nil, that stands for the selected
-frame's display, or the first available X display.
-
-On Nextstep, TERMINAL is unused.  */)
-     (Lisp_Object selection, Lisp_Object terminal)
+and t is the same as `SECONDARY'.  */)
+     (Lisp_Object selection)
 {
   check_window_system (NULL);
   CHECK_SYMBOL (selection);
-  if (EQ (selection, Qnil)) selection = QPRIMARY;
+  if (NILP (selection)) selection = QPRIMARY;
   if (EQ (selection, Qt)) selection = QSECONDARY;
   return ns_get_pb_change_count (selection)
-    == ns_get_our_change_count_for (selection);
+    == ns_get_our_change_count_for (selection)
+    ? Qt : Qnil;
 }
 
 
 DEFUN ("ns-get-selection", Fns_get_selection,
-       Sns_get_selection, 2, 4, 0,
+       Sns_get_selection, 2, 2, 0,
        doc: /* Return text selected from some X window.
 SELECTION-SYMBOL is typically `PRIMARY', `SECONDARY', or `CLIPBOARD'.
 \(Those are literal upper-case symbol names, since that's what X expects.)
-TARGET-TYPE is the type of data desired, typically `STRING'.
-
-TIME-STAMP is the time to use in the XConvertSelection call for foreign
-selections.  If omitted, defaults to the time for the last event.
-
-TERMINAL should be a terminal object or a frame specifying the X
-server to query.  If omitted or nil, that stands for the selected
-frame's display, or the first available X display.
-
-On Nextstep, TIME-STAMP and TERMINAL are unused.  */)
-     (Lisp_Object selection_name, Lisp_Object target_type,
-      Lisp_Object time_stamp, Lisp_Object terminal)
+TARGET-TYPE is the type of data desired, typically `STRING'.  */)
+     (Lisp_Object selection_name, Lisp_Object target_type)
 {
   Lisp_Object val = Qnil;
 
@@ -489,25 +466,25 @@ nxatoms_of_nsselect (void)
   NXSecondaryPboard = @"Secondary";
 
   // This is a memory loss, never released.
-  pasteboard_changecount =
-    [[NSMutableDictionary
-       dictionaryWithObjectsAndKeys:
-            [NSNumber numberWithLong:0], NSGeneralPboard,
-            [NSNumber numberWithLong:0], NXPrimaryPboard,
-            [NSNumber numberWithLong:0], NXSecondaryPboard,
-            [NSNumber numberWithLong:0], NSStringPboardType,
-            [NSNumber numberWithLong:0], NSFilenamesPboardType,
-            [NSNumber numberWithLong:0], NSTabularTextPboardType,
-       nil] retain];
+  pasteboard_changecount
+    = [[NSMutableDictionary
+	 dictionaryWithObjectsAndKeys:
+	     [NSNumber numberWithLong:0], NSPasteboardNameGeneral,
+	     [NSNumber numberWithLong:0], NXPrimaryPboard,
+	     [NSNumber numberWithLong:0], NXSecondaryPboard,
+	     [NSNumber numberWithLong:0], NSPasteboardTypeString,
+	     [NSNumber numberWithLong:0], NSFilenamesPboardType,
+	     [NSNumber numberWithLong:0], NSPasteboardTypeTabularText,
+	 nil] retain];
 }
 
 void
 syms_of_nsselect (void)
 {
-  QCLIPBOARD = intern_c_string ("CLIPBOARD");	staticpro (&QCLIPBOARD);
-  QSECONDARY = intern_c_string ("SECONDARY");	staticpro (&QSECONDARY);
-  QTEXT      = intern_c_string ("TEXT"); 	staticpro (&QTEXT);
-  QFILE_NAME = intern_c_string ("FILE_NAME"); 	staticpro (&QFILE_NAME);
+  DEFSYM (QCLIPBOARD, "CLIPBOARD");
+  DEFSYM (QSECONDARY, "SECONDARY");
+  DEFSYM (QTEXT, "TEXT");
+  DEFSYM (QFILE_NAME, "FILE_NAME");
 
   defsubr (&Sns_disown_selection_internal);
   defsubr (&Sns_get_selection);

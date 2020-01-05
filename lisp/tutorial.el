@@ -1,6 +1,6 @@
 ;;; tutorial.el --- tutorial for Emacs
 
-;; Copyright (C) 2006-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: help, internal
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -63,8 +63,8 @@ with default Emacs bindings information about this is shown.
 
 VALUE should have either of these formats:
 
-  \(cua-mode)
-  \(current-binding KEY-FUN DEF-FUN KEY WHERE)
+  (cua-mode)
+  (current-binding KEY-FUN DEF-FUN KEY WHERE)
 
 Where
   KEY         is a key sequence whose standard binding has been changed
@@ -134,21 +134,20 @@ options:
                            (eq map (symbol-value s))
                            ;; then save this value in mapsym
                            (setq mapsym s)))))
-            (insert "The default Emacs binding for the key "
-                    (key-description key)
-                    " is the command `")
-            (insert (format "%s" db))
-            (insert "'.  "
-                    "However, your customizations have "
+            (insert
+             (format-message
+              "The default Emacs binding for the key %s is the command `%s'.  "
+              (key-description key)
+              db))
+            (insert "However, your customizations have "
                     (if cb
-                        (format "rebound it to the command `%s'" cb)
+                        (format-message "rebound it to the command `%s'" cb)
                       "unbound it"))
             (insert ".")
             (when mapsym
               (insert "  (For the more advanced user:"
-                      " This binding is in the keymap `"
-                      (format "%s" mapsym)
-                      "'.)"))
+                      (format-message
+                       " This binding is in the keymap `%s'.)" mapsym)))
             (if (string= where "")
                 (unless (keymapp db)
                   (insert "\n\nYou can use M-x "
@@ -160,9 +159,7 @@ options:
                           ""
                         "the key")
                       where
-                      " to get the function `"
-                      (format "%s" db)
-                      "'.")))
+                      (format-message " to get the function `%s'." db))))
           (fill-region (point-min) (point)))))
       (help-print-return-message))))
 
@@ -405,8 +402,8 @@ where
   REMARK      is a list with info about rebinding. It has either of
               these formats:
 
-                \(TEXT cua-mode)
-                \(TEXT current-binding KEY-FUN DEF-FUN KEY WHERE)
+                (TEXT cua-mode)
+                (TEXT current-binding KEY-FUN DEF-FUN KEY WHERE)
 
               Here TEXT is a link text to show to the user.  The
               rest of the list is used to show information when
@@ -454,7 +451,7 @@ where
 					       (lookup-key global-map
 							   [menu-bar]))))
 				 (stringp cwhere))
-			    (format "the `%s' menu" cwhere)
+			    (format-message "the `%s' menu" cwhere)
 			  "the menus"))))
 	    (setq where ""))
 	  (setq remark nil)
@@ -479,8 +476,8 @@ where
 		    ((and cua-mode
 			  (or (and (eq def-fun 'ESC-prefix)
 				   (equal key-fun
-					  `(keymap
-					    (118 . cua-repeat-replace-region)))
+					  '(keymap
+                                            (118 . cua-repeat-replace-region)))
 				   (setq def-fun-txt "\"ESC prefix\""))
 			      (and (eq def-fun 'mode-specific-command-prefix)
 				   (equal key-fun

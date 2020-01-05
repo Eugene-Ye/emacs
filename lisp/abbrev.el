@@ -1,6 +1,6 @@
 ;;; abbrev.el --- abbrev mode commands for Emacs -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1992, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1985-1987, 1992, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -33,6 +33,7 @@
 ;;; Code:
 
 (eval-when-compile (require 'cl-lib))
+(require 'obarray)
 
 (defgroup abbrev-mode nil
   "Word abbreviations mode."
@@ -55,9 +56,6 @@ define global abbrevs instead."
 
 (define-minor-mode abbrev-mode
   "Toggle Abbrev mode in the current buffer.
-With a prefix argument ARG, enable Abbrev mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-Abbrev mode if ARG is omitted or nil.
 
 In Abbrev mode, inserting an abbreviation causes it to expand and
 be replaced by its expansion."
@@ -67,6 +65,8 @@ be replaced by its expansion."
 (put 'abbrev-mode 'safe-local-variable 'booleanp)
 
 
+(define-obsolete-variable-alias 'edit-abbrevs-map
+  'edit-abbrevs-mode-map "24.4")
 (defvar edit-abbrevs-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "\C-x\C-s" 'abbrev-edit-save-buffer)
@@ -74,8 +74,6 @@ be replaced by its expansion."
     (define-key map "\C-c\C-c" 'edit-abbrevs-redefine)
     map)
   "Keymap used in `edit-abbrevs'.")
-(define-obsolete-variable-alias 'edit-abbrevs-map
-  'edit-abbrevs-mode-map "24.4")
 
 (defun kill-all-abbrevs ()
   "Undefine all defined abbrevs."
@@ -87,7 +85,7 @@ be replaced by its expansion."
   "Make a new abbrev-table with the same abbrevs as TABLE.
 Does not copy property lists."
   (let ((new-table (make-abbrev-table)))
-    (mapatoms
+    (obarray-map
      (lambda (symbol)
        (define-abbrev new-table
 	 (symbol-name symbol)
@@ -149,11 +147,12 @@ Otherwise display all abbrevs."
 (defun edit-abbrevs ()
   "Alter abbrev definitions by editing a list of them.
 Selects a buffer containing a list of abbrev definitions with
-point located in the abbrev table of current buffer.
+point located in the abbrev table for the current buffer, and
+turns on `edit-abbrevs-mode' in that buffer.
 You can edit them and type \\<edit-abbrevs-map>\\[edit-abbrevs-redefine] to redefine abbrevs
 according to your editing.
-Buffer contains a header line for each abbrev table,
- which is the abbrev table name in parentheses.
+The abbrevs editing buffer contains a header line for each
+abbrev table, which is the abbrev table name in parentheses.
 This is followed by one line per abbrev in that table:
 NAME   USECOUNT   EXPANSION   HOOK
 where NAME and EXPANSION are strings with quotes,
@@ -253,7 +252,8 @@ have been saved."
 		     (lambda (s1 s2)
 		       (string< (symbol-name s1)
 				(symbol-name s2)))))
-	(insert-abbrev-table-description table nil))
+	(if (abbrev--table-symbols table)
+            (insert-abbrev-table-description table nil)))
       (when (unencodable-char-position (point-min) (point-max) 'utf-8)
 	(setq coding-system-for-write
 	      (if (> emacs-major-version 24)
@@ -352,6 +352,7 @@ Expands the abbreviation after defining it."
   (let (name exp start end)
     (save-excursion
       (forward-word (1+ (- arg)))
+      (skip-syntax-backward "^w")
       (setq end (point))
       (backward-word 1)
       (setq start (point)
@@ -369,13 +370,16 @@ Expands the abbreviation after defining it."
 
 (defun abbrev-prefix-mark (&optional arg)
   "Mark current point as the beginning of an abbrev.
-Abbrev to be expanded starts here rather than at beginning of word.
-This way, you can expand an abbrev with a prefix: insert the prefix,
-use this command, then insert the abbrev.  This command inserts a
-temporary hyphen after the prefix (until the intended abbrev
-expansion occurs).
-If the prefix is itself an abbrev, this command expands it, unless
-ARG is non-nil.  Interactively, ARG is the prefix argument."
+The abbrev to be expanded starts here rather than at beginning of
+word.  This way, you can expand an abbrev with a prefix: insert
+the prefix, use this command, then insert the abbrev.
+
+This command inserts a hyphen after the prefix, and if the abbrev
+is subsequently expanded, this hyphen will be removed.
+
+If the prefix is itself an abbrev, this command expands it,
+unless ARG is non-nil.  Interactively, ARG is the prefix
+argument."
   (interactive "P")
   (or arg (expand-abbrev))
   (setq abbrev-start-location (point-marker)
@@ -399,19 +403,19 @@ A prefix argument means don't query; expand all abbrevs."
 		   (buffer-substring-no-properties
 		    (save-excursion (forward-word -1) (point))
 		    pnt)))
-	    (if (or noquery (y-or-n-p (format "Expand `%s'? " string)))
+	    (if (or noquery (y-or-n-p (format-message "Expand `%s'? " string)))
 		(expand-abbrev)))))))
 
 ;;; Abbrev properties.
 
 (defun abbrev-table-get (table prop)
   "Get the PROP property of abbrev table TABLE."
-  (let ((sym (intern-soft "" table)))
+  (let ((sym (obarray-get table "")))
     (if sym (get sym prop))))
 
 (defun abbrev-table-put (table prop val)
   "Set the PROP property of abbrev table TABLE to VAL."
-  (let ((sym (intern "" table)))
+  (let ((sym (obarray-put table "")))
     (set sym nil)	     ; Make sure it won't be confused for an abbrev.
     (put sym prop val)))
 
@@ -435,8 +439,7 @@ See `define-abbrev' for the effect of some special properties.
 (defun make-abbrev-table (&optional props)
   "Create a new, empty abbrev table object.
 PROPS is a list of properties."
-  ;; The value 59 is an arbitrary prime number.
-  (let ((table (make-vector 59 0)))
+  (let ((table (obarray-make)))
     ;; Each abbrev-table has a `modiff' counter which can be used to detect
     ;; when an abbreviation was added.  An example of use would be to
     ;; construct :regexp dynamically as the union of all abbrev names, so
@@ -451,7 +454,7 @@ PROPS is a list of properties."
 
 (defun abbrev-table-p (object)
   "Return non-nil if OBJECT is an abbrev table."
-  (and (vectorp object)
+  (and (obarrayp object)
        (numberp (abbrev-table-get object :abbrev-table-modiff))))
 
 (defun abbrev-table-empty-p (object &optional ignore-system)
@@ -460,12 +463,12 @@ If IGNORE-SYSTEM is non-nil, system definitions are ignored."
   (unless (abbrev-table-p object)
     (error "Non abbrev table object"))
   (not (catch 'some
-	 (mapatoms (lambda (abbrev)
-		     (unless (or (zerop (length (symbol-name abbrev)))
-				 (and ignore-system
-				      (abbrev-get abbrev :system)))
-		       (throw 'some t)))
-		   object))))
+	 (obarray-map (lambda (abbrev)
+                        (unless (or (zerop (length (symbol-name abbrev)))
+                                    (and ignore-system
+                                         (abbrev-get abbrev :system)))
+                          (throw 'some t)))
+                      object))))
 
 (defvar global-abbrev-table (make-abbrev-table)
   "The abbrev table whose abbrevs affect all buffers.
@@ -529,12 +532,12 @@ the current abbrev table before abbrev lookup happens."
 (defun clear-abbrev-table (table)
   "Undefine all abbrevs in abbrev table TABLE, leaving it empty."
   (setq abbrevs-changed t)
-  (let* ((sym (intern-soft "" table)))
+  (let* ((sym (obarray-get table "")))
     (dotimes (i (length table))
       (aset table i 0))
     ;; Preserve the table's properties.
     (cl-assert sym)
-    (let ((newsym (intern "" table)))
+    (let ((newsym (obarray-put table "")))
       (set newsym nil)	     ; Make sure it won't be confused for an abbrev.
       (setplist newsym (symbol-plist sym)))
     (abbrev-table-put table :abbrev-table-modiff
@@ -580,8 +583,10 @@ An obsolete but still supported calling form is:
                   ,@(if (cadr props) (list :system (cadr props))))))
   (unless (plist-get props :count)
     (setq props (plist-put props :count 0)))
+  (setq props (plist-put props :abbrev-table-modiff
+                         (abbrev-table-get table :abbrev-table-modiff)))
   (let ((system-flag (plist-get props :system))
-        (sym (intern name table)))
+        (sym (obarray-put table name)))
     ;; Don't override a prior user-defined abbrev with a system abbrev,
     ;; unless system-flag is `force'.
     (unless (and (not (memq system-flag '(nil force)))
@@ -671,10 +676,10 @@ The value is nil if that abbrev is not defined."
          ;; abbrevs do, we have to be careful.
          (sym
           ;; First try without case-folding.
-          (or (intern-soft abbrev table)
+          (or (obarray-get table abbrev)
               (when case-fold
                 ;; We didn't find any abbrev, try case-folding.
-                (let ((sym (intern-soft (downcase abbrev) table)))
+                (let ((sym (obarray-get table (downcase abbrev))))
                   ;; Only use it if it doesn't require :case-fixed.
                   (and sym (not (abbrev-get sym :case-fixed))
                        sym))))))
@@ -718,9 +723,10 @@ then ABBREV is looked up in that table only."
           (setq start abbrev-start-location)
           (setq abbrev-start-location nil)
           ;; Remove the hyphen inserted by `abbrev-prefix-mark'.
-          (if (and (< start (point-max))
-                   (eq (char-after start) ?-))
-              (delete-region start (1+ start)))
+          (when (and (< start (point-max))
+                     (eq (char-after start) ?-))
+            (delete-region start (1+ start))
+            (setq pos (1- pos)))
           (skip-syntax-backward " ")
           (setq end (point))
           (when (> end start)
@@ -835,18 +841,19 @@ Takes no argument and should return the abbrev symbol if expansion took place.")
   "Expand the abbrev before point, if there is an abbrev there.
 Effective when explicitly called even when `abbrev-mode' is nil.
 Before doing anything else, runs `pre-abbrev-expand-hook'.
-Calls `abbrev-expand-function' with no argument to do the work,
-and returns whatever it does.  (This should be the abbrev symbol
-if expansion occurred, else nil.)"
+Calls the value of `abbrev-expand-function' with no argument to do
+the work, and returns whatever it does.  (That return value should
+be the abbrev symbol if expansion occurred, else nil.)"
   (interactive)
   (run-hooks 'pre-abbrev-expand-hook)
   (funcall abbrev-expand-function))
 
 (defun abbrev--default-expand ()
   "Default function to use for `abbrev-expand-function'.
-This respects the wrapper hook `abbrev-expand-functions'.
+This also respects the obsolete wrapper hook `abbrev-expand-functions'.
+\(See `with-wrapper-hook' for details about wrapper hooks.)
 Calls `abbrev-insert' to insert any expansion, and returns what it does."
-  (with-wrapper-hook abbrev-expand-functions ()
+  (subr--with-wrapper-hook-no-warnings abbrev-expand-functions ()
     (pcase-let ((`(,sym ,name ,wordstart ,wordend) (abbrev--before-point)))
       (when sym
         (let ((startpos (copy-marker (point) t))
@@ -895,18 +902,22 @@ is not undone."
 
 (defun abbrev--write (sym)
   "Write the abbrev in a `read'able form.
-Only writes the non-system abbrevs.
 Presumes that `standard-output' points to `current-buffer'."
-  (unless (or (null (symbol-value sym)) (abbrev-get sym :system))
-    (insert "    (")
-    (prin1 (symbol-name sym))
-    (insert " ")
-    (prin1 (symbol-value sym))
-    (insert " ")
-    (prin1 (symbol-function sym))
-    (insert " ")
-    (prin1 (abbrev-get sym :count))
-    (insert ")\n")))
+  (insert "    (")
+  (prin1 (symbol-name sym))
+  (insert " ")
+  (prin1 (symbol-value sym))
+  (insert " ")
+  (prin1 (symbol-function sym))
+  (insert " :count ")
+  (prin1 (abbrev-get sym :count))
+  (when (abbrev-get sym :case-fixed)
+    (insert " :case-fixed ")
+    (prin1 (abbrev-get sym :case-fixed)))
+  (when (abbrev-get sym :enable-function)
+    (insert " :enable-function ")
+    (prin1 (abbrev-get sym :enable-function)))
+  (insert ")\n"))
 
 (defun abbrev--describe (sym)
   (when (symbol-value sym)
@@ -927,33 +938,43 @@ Presumes that `standard-output' points to `current-buffer'."
   "Insert before point a full description of abbrev table named NAME.
 NAME is a symbol whose value is an abbrev table.
 If optional 2nd arg READABLE is non-nil, a human-readable description
-is inserted.  Otherwise the description is an expression,
-a call to `define-abbrev-table', which would
-define the abbrev table NAME exactly as it is currently defined.
+is inserted.
 
-Abbrevs marked as \"system abbrevs\" are omitted."
-  (let ((table (symbol-value name))
-        (symbols ()))
-    (mapatoms (lambda (sym) (if (symbol-value sym) (push sym symbols))) table)
+If READABLE is nil, an expression is inserted.  The expression is
+a call to `define-abbrev-table' that when evaluated will define
+the abbrev table NAME exactly as it is currently defined.
+Abbrevs marked as \"system abbrevs\" are ignored."
+  (let ((symbols (abbrev--table-symbols name readable)))
     (setq symbols (sort symbols 'string-lessp))
     (let ((standard-output (current-buffer)))
       (if readable
-	  (progn
-	    (insert "(")
-	    (prin1 name)
-	    (insert ")\n\n")
-	    (mapc 'abbrev--describe symbols)
-	    (insert "\n\n"))
-	(insert "(define-abbrev-table '")
-	(prin1 name)
-	(if (null symbols)
-	    (insert " '())\n\n")
-	  (insert "\n  '(\n")
-	  (mapc 'abbrev--write symbols)
-	  (insert "   ))\n\n")))
+          (progn
+            (insert "(")
+            (prin1 name)
+            (insert ")\n\n")
+            (mapc 'abbrev--describe symbols)
+            (insert "\n\n"))
+        (insert "(define-abbrev-table '")
+        (prin1 name)
+        (if (null symbols)
+            (insert " '())\n\n")
+          (insert "\n  '(\n")
+          (mapc 'abbrev--write symbols)
+          (insert "   ))\n\n")))
       nil)))
 
-(put 'define-abbrev-table 'doc-string-elt 3)
+(defun abbrev--table-symbols (name &optional system)
+  "Return the user abbrev symbols in the abbrev table named NAME.
+NAME is a symbol whose value is an abbrev table.  System abbrevs
+are omitted unless SYSTEM is non-nil."
+  (let ((table (symbol-value name))
+        (symbols ()))
+    (mapatoms (lambda (sym)
+                (if (and (symbol-value sym) (or system (not (abbrev-get sym :system))))
+                    (push sym symbols)))
+              table)
+    symbols))
+
 (defun define-abbrev-table (tablename definitions
                                       &optional docstring &rest props)
   "Define TABLENAME (a symbol) as an abbrev table name.
@@ -973,10 +994,15 @@ Properties with special meaning:
 - `:enable-function' can be set to a function of no argument which returns
   non-nil if and only if the abbrevs in this table should be used for this
   instance of `expand-abbrev'."
+  (declare (doc-string 3))
   ;; We used to manually add the docstring, but we also want to record this
   ;; location as the definition of the variable (in load-history), so we may
   ;; as well just use `defvar'.
-  (eval `(defvar ,tablename nil ,@(if (stringp docstring) (list docstring))))
+  (when (and docstring props (symbolp docstring))
+    ;; There is really no docstring, instead the docstring arg
+    ;; is a property name.
+    (push docstring props) (setq docstring nil))
+  (eval `(defvar ,tablename nil ,@(if docstring (list docstring))))
   (let ((table (if (boundp tablename) (symbol-value tablename))))
     (unless table
       (setq table (make-abbrev-table))
@@ -987,6 +1013,7 @@ Properties with special meaning:
     ;; if the table was pre-existing as is the case if it was created by
     ;; loading the user's abbrev file.
     (while (consp props)
+      (unless (cdr props) (error "Missing value for property %S" (car props)))
       (abbrev-table-put table (pop props) (pop props)))
     (dolist (elt definitions)
       (apply 'define-abbrev table elt))))
@@ -998,22 +1025,24 @@ PROMPT is the prompt to use for the keymap.
 SORTFUN is passed to `sort' to change the default ordering."
   (unless sortfun (setq sortfun 'string-lessp))
   (let ((entries ()))
-    (mapatoms (lambda (abbrev)
-                (when (symbol-value abbrev)
-                  (let ((name (symbol-name abbrev)))
-                    (push `(,(intern name) menu-item ,name
-                            (lambda () (interactive)
-                              (abbrev-insert ',abbrev)))
-                          entries))))
-              table)
+    (obarray-map (lambda (abbrev)
+                   (when (symbol-value abbrev)
+                     (let ((name (symbol-name abbrev)))
+                       (push `(,(intern name) menu-item ,name
+                               (lambda () (interactive)
+                                 (abbrev-insert ',abbrev)))
+                             entries))))
+                 table)
     (nconc (make-sparse-keymap prompt)
            (sort entries (lambda (x y)
-                (funcall sortfun (nth 2 x) (nth 2 y)))))))
+                           (funcall sortfun (nth 2 x) (nth 2 y)))))))
 
 ;; Keep it after define-abbrev-table, since define-derived-mode uses
 ;; define-abbrev-table.
 (define-derived-mode edit-abbrevs-mode fundamental-mode "Edit-Abbrevs"
-  "Major mode for editing the list of abbrev definitions.")
+  "Major mode for editing the list of abbrev definitions.
+This mode is for editing abbrevs in a buffer prepared by `edit-abbrevs',
+which see.")
 
 (provide 'abbrev)
 

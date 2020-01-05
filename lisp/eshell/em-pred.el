@@ -1,6 +1,6 @@
 ;;; em-pred.el --- argument predicates and modifiers (ala zsh)  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -46,9 +46,7 @@
 
 ;;; Code:
 
-(require 'esh-util)
-(require 'esh-arg)
-(eval-when-compile (require 'eshell))
+(require 'esh-mode)
 
 ;;;###autoload
 (progn
@@ -89,10 +87,12 @@ ordinary strings."
     (?t . (eshell-pred-file-mode 1000)) ; sticky bit
     (?U . #'(lambda (file)                   ; owned by effective uid
               (if (file-exists-p file)
-                  (= (nth 2 (file-attributes file)) (user-uid)))))
+                  (= (file-attribute-user-id (file-attributes file))
+		     (user-uid)))))
     ;; (?G . #'(lambda (file)               ; owned by effective gid
     ;;          (if (file-exists-p file)
-    ;;              (= (nth 2 (file-attributes file)) (user-uid)))))
+    ;;              (= (file-attribute-user-id (file-attributes file))
+    ;;                 (user-uid)))))
     (?* . #'(lambda (file)
               (and (file-regular-p file)
                    (not (file-symlink-p file))
@@ -119,7 +119,8 @@ The format of each entry is
                (function
                 (lambda (str)
                   (eshell-stringify
-                   (car (eshell-parse-argument str))))) lst)))
+                   (car (eshell-parse-argument str)))))
+               lst)))
     (?L . #'(lambda (lst) (mapcar 'downcase lst)))
     (?U . #'(lambda (lst) (mapcar 'upcase lst)))
     (?C . #'(lambda (lst) (mapcar 'capitalize lst)))
@@ -130,7 +131,7 @@ The format of each entry is
     (?e . #'(lambda (lst) (mapcar 'file-name-extension lst)))
     (?t . #'(lambda (lst) (mapcar 'file-name-nondirectory lst)))
     (?q . #'(lambda (lst) (mapcar 'eshell-escape-arg lst)))
-    (?u . #'(lambda (lst) (eshell-uniqify-list lst)))
+    (?u . #'(lambda (lst) (eshell-uniquify-list lst)))
     (?o . #'(lambda (lst) (sort lst 'string-lessp)))
     (?O . #'(lambda (lst) (nreverse (sort lst 'string-lessp))))
     (?j . (eshell-join-members))
@@ -171,18 +172,18 @@ PERMISSION BITS (for owner/group/world):
 
 OWNERSHIP:
   U               owned by effective uid
-  u(UID|'user')   owned by UID/user
-  g(GID|'group')  owned by GID/group
+  u(UID|\\='user\\=')   owned by UID/user
+  g(GID|\\='group\\=')  owned by GID/group
 
 FILE ATTRIBUTES:
   l[+-]N                 +/-/= N links
-  a[Mwhms][+-](N|'FILE') access time +/-/= N months/weeks/hours/mins/secs
+  a[Mwhms][+-](N|\\='FILE\\=') access time +/-/= N months/weeks/hours/mins/secs
 			 (days if unspecified) if FILE specified,
-			 use as comparison basis; so a+'file.c'
+			 use as comparison basis; so a+\\='file.c\\='
 			 shows files accessed before file.c was
 			 last accessed
-  m[Mwhms][+-](N|'FILE') modification time...
-  c[Mwhms][+-](N|'FILE') change time...
+  m[Mwhms][+-](N|\\='FILE\\=') modification time...
+  c[Mwhms][+-](N|\\='FILE\\=') change time...
   L[kmp][+-]N            file size +/-/= N Kb/Mb/blocks
 
 EXAMPLES:
@@ -192,7 +193,7 @@ EXAMPLES:
   ***/*~f*(-/)  recursively (though not traversing symlinks),
 		find all directories (or symlinks referring to
 		directories) whose names do not begin with f.
-  e*(*Lk+50)    executables 50k or larger beginning with 'e'")
+  e*(*Lk+50)    executables 50k or larger beginning with `e'")
 
 (defvar eshell-modifier-help-string
   "Eshell modifier quick reference:
@@ -228,6 +229,12 @@ FOR LISTS OF ARGUMENTS:
 EXAMPLES:
   *.c(:o)  sorted list of .c files")
 
+(defvar eshell-pred-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c M-q") #'eshell-display-predicate-help)
+    (define-key map (kbd "C-c M-m") #'eshell-display-modifier-help)
+    map))
+
 ;;; Functions:
 
 (defun eshell-display-predicate-help ()
@@ -244,12 +251,17 @@ EXAMPLES:
     (lambda ()
       (insert eshell-modifier-help-string)))))
 
-(defun eshell-pred-initialize ()
+(define-minor-mode eshell-pred-mode
+  "Minor mode for the eshell-pred module.
+
+\\{eshell-pred-mode-map}"
+  :keymap eshell-pred-mode-map)
+
+(defun eshell-pred-initialize ()    ;Called from `eshell-mode' via intern-soft!
   "Initialize the predicate/modifier code."
   (add-hook 'eshell-parse-argument-hook
-	    'eshell-parse-arg-modifier t t)
-  (define-key eshell-command-map [(meta ?q)] 'eshell-display-predicate-help)
-  (define-key eshell-command-map [(meta ?m)] 'eshell-display-modifier-help))
+	    #'eshell-parse-arg-modifier t t)
+  (eshell-pred-mode))
 
 (defun eshell-apply-modifiers (lst predicates modifiers)
   "Apply to LIST a series of PREDICATES and MODIFIERS."
@@ -296,16 +308,15 @@ This function is specially for adding onto `eshell-parse-argument-hook'."
 
 (defun eshell-parse-modifiers ()
   "Parse value modifiers and predicates at point.
-If ALLOW-PREDS is non-nil, predicates will be parsed as well.
 Return a cons cell of the form
 
   (PRED-FUNC-LIST . MOD-FUNC-LIST)
 
-NEW-STRING is STRING minus any modifiers.  PRED-FUNC-LIST is a list of
-predicate functions.  MOD-FUNC-LIST is a list of result modifier
-functions.  PRED-FUNCS take a filename and return t if the test
-succeeds; MOD-FUNCS take any string and preform a modification,
-returning the resultant string."
+PRED-FUNC-LIST is a list of predicate functions.  MOD-FUNC-LIST
+is a list of result modifier functions.  PRED-FUNCS take a
+filename and return t if the test succeeds; MOD-FUNCS take any
+list of strings and perform a modification, returning the
+resultant list of strings."
   (let (negate follow preds mods)
     (condition-case nil
 	(while (not (eobp))
@@ -318,7 +329,7 @@ returning the resultant string."
 		    (if (and func (functionp func))
 			(setq preds (eshell-add-pred-func func preds
 							  negate follow))
-		      (error "Invalid function predicate '%s'"
+		      (error "Invalid function predicate `%s'"
 			     (eshell-stringify func))))
 		(error "Invalid function predicate")))
 	     ((eq char ?^)
@@ -336,20 +347,20 @@ returning the resultant string."
 			      (cons `(lambda (lst)
 				       (mapcar (function ,func) lst))
 				    mods))
-		      (error "Invalid function modifier '%s'"
+		      (error "Invalid function modifier `%s'"
 			     (eshell-stringify func))))
 		(error "Invalid function modifier")))
 	     ((eq char ?:)
 	      (forward-char)
 	      (let ((mod (assq (char-after) eshell-modifier-alist)))
 		(if (not mod)
-		    (error "Unknown modifier character '%c'" (char-after))
+		    (error "Unknown modifier character `%c'" (char-after))
 		  (forward-char)
 		  (setq mods (cons (eval (cdr mod)) mods)))))
 	     (t
 	      (let ((pred (assq char eshell-predicate-alist)))
 		(if (not pred)
-		    (error "Unknown predicate character '%c'" char)
+		    (error "Unknown predicate character `%c'" char)
 		  (forward-char)
 		  (setq preds
 			(eshell-add-pred-func (eval (cdr pred)) preds
@@ -419,9 +430,8 @@ returning the resultant string."
       (forward-char))
     (if (looking-at "[0-9]+")
 	(progn
-	  (setq when (- (float-time)
-			(* (string-to-number (match-string 0))
-			   quantum)))
+	  (setq when (time-since (* (string-to-number (match-string 0))
+				    quantum)))
 	  (goto-char (match-end 0)))
       (setq open (char-after))
       (if (setq close (memq open '(?\( ?\[ ?\< ?\{)))
@@ -436,22 +446,22 @@ returning the resultant string."
 	     (attrs (file-attributes file)))
 	(unless attrs
 	  (error "Cannot stat file `%s'" file))
-	(setq when (float-time (nth attr-index attrs))))
+	(setq when (nth attr-index attrs)))
       (goto-char (1+ end)))
     `(lambda (file)
        (let ((attrs (file-attributes file)))
 	 (if attrs
 	     (,(if (eq qual ?-)
-		   '<
+		   'time-less-p
 		 (if (eq qual ?+)
-		     '>
-		   '=)) ,when (float-time
-			       (nth ,attr-index attrs))))))))
+		     '(lambda (a b) (time-less-p b a))
+		   'time-equal-p))
+	      ,when (nth ,attr-index attrs)))))))
 
 (defun eshell-pred-file-type (type)
   "Return a test which tests that the file is of a certain TYPE.
 TYPE must be a character, and should be one of the possible options
-that 'ls -l' will show in the first column of its display. "
+that `ls -l' will show in the first column of its display."
   (when (eq type ?%)
     (setq type (char-after))
     (if (memq type '(?b ?c))
@@ -460,7 +470,7 @@ that 'ls -l' will show in the first column of its display. "
   `(lambda (file)
      (let ((attrs (eshell-file-attributes (directory-file-name file))))
        (if attrs
-	   (memq (aref (nth 8 attrs) 0)
+	   (memq (aref (file-attribute-modes attrs) 0)
 		 ,(if (eq type ?%)
 		      '(?b ?c)
 		    (list 'quote (list type))))))))
@@ -489,7 +499,8 @@ that 'ls -l' will show in the first column of its display. "
 		   '<
 		 (if (eq qual ?+)
 		     '>
-		   '=)) (nth 1 attrs) ,amount))))))
+		   '=))
+	      (file-attribute-link-number attrs) ,amount))))))
 
 (defun eshell-pred-file-size ()
   "Return a predicate to test whether a file is of a given size."
@@ -518,7 +529,8 @@ that 'ls -l' will show in the first column of its display. "
 		   '<
 		 (if (eq qual ?+)
 		     '>
-		   '=)) (nth 7 attrs) ,amount))))))
+		   '=))
+	      (file-attribute-size attrs) ,amount))))))
 
 (defun eshell-pred-substitute (&optional repeat)
   "Return a modifier function that will substitute matches."
@@ -545,7 +557,8 @@ that 'ls -l' will show in the first column of its display. "
 	  (function
 	   (lambda (str)
 	     (if (string-match ,match str)
-		 (setq str (replace-match ,replace t nil str)))
+		 (setq str (replace-match ,replace t nil str))
+	       (error (concat str ": substitution failed")))
 	     str)) lst)))))
 
 (defun eshell-include-members (&optional invert-p)

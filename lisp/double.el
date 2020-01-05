@@ -1,6 +1,6 @@
 ;;; double.el --- support for keyboard remapping with double clicking
 
-;; Copyright (C) 1994, 1997-1998, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1994, 1997-1998, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -122,9 +122,10 @@ but not `C-u X' or `ESC X' since the X is not the prefix key."
 			 (append (make-list (1- (length (nth 1 entry)))
 					    127)
 				 (nth 2 entry)
-				 '(magic-end)))
+				 '(magic-end)
+                                 unread-command-events))
 		   (vector 127))
-	       (setq unread-command-events (list new))
+	       (push new unread-command-events)
 	       [ignore])))
 	  ((eq key 'magic-end)
 	   ;; End of double event.  Ignore.
@@ -134,7 +135,8 @@ but not `C-u X' or `ESC X' since the X is not the prefix key."
 	   (let ((exp (nth 1 (assoc key double-map))))
 	     (setq double-last-event key)
 	     (setq unread-command-events
-		   (append (substring exp 1) '(magic-start)))
+		   (append (substring exp 1) '(magic-start)
+                           unread-command-events))
 	     (vector (aref exp 0)))))))
 
 ;;; Mode
@@ -148,9 +150,6 @@ but not `C-u X' or `ESC X' since the X is not the prefix key."
 ;;;###autoload
 (define-minor-mode double-mode
   "Toggle special insertion on double keypresses (Double mode).
-With a prefix argument ARG, enable Double mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 When Double mode is enabled, some keys will insert different
 strings when pressed twice.  See `double-map' for details."

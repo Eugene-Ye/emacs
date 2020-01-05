@@ -1,6 +1,6 @@
 ;;; mailalias.el --- expand and complete mailing address aliases -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985, 1987, 1995-1997, 2001-2014 Free Software
+;; Copyright (C) 1985, 1987, 1995-1997, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -50,14 +50,18 @@
 When t this still needs to be initialized.")
 
 (defvar mail-address-field-regexp
-  "^\\(Resent-\\)?\\(To\\|From\\|CC\\|BCC\\|Reply-to\\):")
+  "^\\(Resent-\\)?\\(To\\|From\\|Cc\\|Bcc\\|Reply-To\\):")
 
-(defvar pattern)
+;; `pattern' is bound dynamically before evaluating the forms in
+;; `mail-complete-alist' and may be part of user customizations of
+;; that variable.
+(with-suppressed-warnings ((lexical pattern))
+  (defvar pattern))
 
 (defcustom mail-complete-alist
   ;; Don't refer to mail-address-field-regexp here;
   ;; that confuses some things such as cus-dep.el.
-  '(("^\\(Resent-\\)?\\(To\\|From\\|CC\\|BCC\\|Reply-to\\):"
+  '(("^\\(Resent-\\)?\\(To\\|From\\|Cc\\|Bcc\\|Reply-To\\):"
      . (mail-get-names pattern))
     ("Newsgroups:" . (if (boundp 'gnus-active-hashtb)
                          gnus-active-hashtb
@@ -77,7 +81,7 @@ If not on matching header, `mail-complete-function' gets called instead."
 ;;;###autoload
 (defcustom mail-complete-style 'angles
   "Specifies how \\[mail-complete] formats the full name when it completes.
-If `nil', they contain just the return address like:
+If nil, they contain just the return address like:
 	king@grassland.com
 If `parens', they look like:
 	king@grassland.com (Elvis Parsley)
@@ -119,18 +123,23 @@ completed.  `pattern' is nil when `mail-directory-requery' is nil.
 
 The value might look like this:
 
-  '(remote-shell-program \"HOST\" \"-nl\" \"USER\" \"COMMAND\")
+  (remote-shell-program \"HOST\" \"-nl\" \"USER\" \"COMMAND\")
 
 or like this:
 
-  '(remote-shell-program \"HOST\" \"-n\" \"COMMAND '^\" pattern \"'\")"
+  (remote-shell-program \"HOST\" \"-n\" \"COMMAND \\='^\" pattern \"\\='\")"
   :type 'sexp
   :group 'mailalias)
 (put 'mail-directory-process 'risky-local-variable t)
 
 (defcustom mail-directory-stream nil
   "List of (HOST SERVICE) for stream connection to mail directory."
-  :type 'sexp
+  :type '(choice (const nil)
+                 (list (string :tag "Host name or ip address")
+                       (choice (integer :tag "Service port number")
+                               (string :tag "Service name"))
+                       (plist :inline t
+                              :tag "Additional open-network-stream parameters")))
   :group 'mailalias)
 (put 'mail-directory-stream 'risky-local-variable t)
 
@@ -164,7 +173,7 @@ When t this still needs to be initialized.")
 (defun expand-mail-aliases (beg end &optional exclude)
   "Expand all mail aliases in suitable header fields found between BEG and END.
 If interactive, expand in header fields.
-Suitable header fields are `To', `From', `CC' and `BCC', `Reply-to', and
+Suitable header fields are `To', `From', `Cc' and `Bcc', `Reply-To', and
 their `Resent-' variants.
 
 Optional second arg EXCLUDE may be a regular expression defining text to be
@@ -512,7 +521,7 @@ PREFIX is the string we want to complete."
 				     mail-aliases))
 				(if (consp mail-local-names)
 				    mail-local-names)
-				(or directory 
+				(or directory
 				    (when (consp mail-directory-names)
 				      mail-directory-names)))
 			(lambda (a b)

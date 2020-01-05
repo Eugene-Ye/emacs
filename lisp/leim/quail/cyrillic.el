@@ -1,6 +1,6 @@
 ;;; cyrillic.el --- Quail package for inputting Cyrillic characters
 
-;; Copyright (C) 1997-1998, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2001-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
 ;;   2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -235,8 +235,8 @@
  ("^" ?:)
  ("&" ??)
  ("*" ?*)
- ("(" ?()
- (")" ?))
+ ("(" ?\()
+ (")" ?\))
  ("_" ?_)
  ("+" ?+)
  ("~" ?Ё)
@@ -618,7 +618,7 @@
  "cyrillic-ukrainian" "Ukrainian" "ЖU" nil
  "ЄЇЕРТЗ-ІЎ UKRAINIAN
 
-Sorry, but 'ghe with upturn' is not included in ISO 8859-5."
+Sorry, but `ghe with upturn' is not included in ISO 8859-5."
  nil t t t t nil nil nil nil nil t)
 
 ;;  1! 2" 3# 4$ 5% 6& 7' 8( 9) 0= /? +* <>
@@ -789,8 +789,8 @@ Sorry, but 'ghe with upturn' is not included in ISO 8859-5."
  ("^" ?:)
  ("&" ??)
  ("*" ?*)
- ("(" ?()
- (")" ?))
+ ("(" ?\()
+ (")" ?\))
  ("_" ?_)
  ("+" ?+)
  ("~" ?')
@@ -831,6 +831,120 @@ Sorry, but 'ghe with upturn' is not included in ISO 8859-5."
  ("|" ?Ґ))
 ;;
 
+(quail-define-package
+ "uzbek-cyrillic" "Ўзбекча" "Ўзб" nil
+ "ЙЦУКЕН Uzbek computer layout"
+ nil t t t t nil nil nil nil nil t)
+
+;; Ё 1! 2" 3№ 4; 5% 6: 7? 8* 9( 0) Ғ  Ҳ
+;;    Й  Ц  У  К  Е  Н  Г  Ш  Ў  З  Х  Ъ  \|
+;;     Ф  Қ  В  А  П  Р  О  Л  Д  Ж  Э
+;;      Я  Ч  С  М  И  Т  Ь  Б  Ю  .,
+
+(quail-define-rules
+ ("`" ?ё)
+ ("1" ?1)
+ ("2" ?2)
+ ("3" ?3)
+ ("4" ?4)
+ ("5" ?5)
+ ("6" ?6)
+ ("7" ?7)
+ ("8" ?8)
+ ("9" ?9)
+ ("0" ?0)
+ ("-" ?ғ)
+ ("=" ?ҳ)
+
+ ("q" ?й)
+ ("w" ?ц)
+ ("e" ?у)
+ ("r" ?к)
+ ("t" ?е)
+ ("y" ?н)
+ ("u" ?г)
+ ("i" ?ш)
+ ("o" ?ў)
+ ("p" ?з)
+ ("[" ?х)
+ ("]" ?ъ)
+ ("\\" ?\\)
+
+ ("a" ?ф)
+ ("s" ?қ)
+ ("d" ?в)
+ ("f" ?а)
+ ("g" ?п)
+ ("h" ?р)
+ ("j" ?о)
+ ("k" ?л)
+ ("l" ?д)
+ (";" ?ж)
+ ("'" ?э)
+
+ ("z" ?я)
+ ("x" ?ч)
+ ("c" ?с)
+ ("v" ?м)
+ ("b" ?и)
+ ("n" ?т)
+ ("m" ?ь)
+ ("," ?б)
+ ("." ?ю)
+ ("/" ?.)
+
+ ("~" ?Ё)
+ ("!" ?!)
+ ("@" ?\")
+ ("#" ?№)
+ ("$" ?\;)
+ ("%" ?%)
+ ("^" ?:)
+ ("&" ??)
+ ("*" ?*)
+ ("(" ?\()
+ (")" ?\))
+ ("_" ?Ғ)
+ ("+" ?Ҳ)
+
+ ("Q" ?Й)
+ ("W" ?Ц)
+ ("E" ?У)
+ ("R" ?К)
+ ("T" ?Е)
+ ("Y" ?Н)
+ ("U" ?Г)
+ ("I" ?Ш)
+ ("O" ?Ў)
+ ("P" ?З)
+ ("{" ?Х)
+ ("}" ?Ъ)
+ ("|" ?|)
+
+ ("A" ?Ф)
+ ("S" ?Қ)
+ ("D" ?В)
+ ("F" ?А)
+ ("G" ?П)
+ ("H" ?Р)
+ ("J" ?О)
+ ("K" ?Л)
+ ("L" ?Д)
+ (":" ?Ж)
+ ("\"" ?Э)
+
+ ("Z" ?Я)
+ ("X" ?Ч)
+ ("C" ?С)
+ ("V" ?М)
+ ("B" ?И)
+ ("N" ?Т)
+ ("M" ?Ь)
+ ("<" ?Б)
+ (">" ?Ю)
+ ("?" ?,))
+
+
 ;; Alexander Mikhailian says this is of limited use.  It has been
 ;; popular among emigrants or foreigners who have to type in Cyrillic
 ;; (mostly Russian) from time to time.
@@ -839,7 +953,7 @@ Sorry, but 'ghe with upturn' is not included in ISO 8859-5."
  "ЯВЕРТЫ Roman transcription
 
 This layout is based on Roman transcription by phonemic resemblance.
-When preceded by a '/', the second and the third rows (number key row) change
+When preceded by a `/', the second and the third rows (number key row) change
 as follows.
 
   keytop | Q  W  E  R  T  Y  U  I  O  P  A  S  D
@@ -1007,14 +1121,14 @@ are included.  Should handle most cases.  However:
   э (REVERSE ROUNDED E) = \"e\\\"
   х (KHA) when after с (S) = \"x\" or \"kh\"
   ъ (HARD SIGN) = \"~\", Ъ (CAPITAL HARD SIGN) = \"~~\",
-  ь (SOFT SIGN) = \"'\", Ь (CAPITAL SOFT SIGN) = \"''\",
+  ь (SOFT SIGN) = \"\\='\", Ь (CAPITAL SOFT SIGN) = \"\\='\\='\",
   я (YA) = \"ya\", \"ja\" or \"q\".
 
-Russian alphabet: a b v=w g d e yo=jo zh z i j=j' k l m n o p r s t
-u f h=kh=x c ch sh shch=sj=/s=/sht ~ y ' e\\ yu=ju ya=ja=q
+Russian alphabet: a b v=w g d e yo=jo zh z i j=j\\=' k l m n o p r s t
+u f h=kh=x c ch sh shch=sj=/s=/sht ~ y \\=' e\\ yu=ju ya=ja=q
 
 Also included are Ukrainian є (YE) = \"/e\", ї (YI) = \"yi\",
-ґ (GHE WITH UPTURN) = \"g'\",
+ґ (GHE WITH UPTURN) = \"g\\='\",
 Belarusian ў (SHORT U) = \"u~\",
 Serbo-Croatian ђ (DJE) = \"/d\", ћ (CHJE)= \"/ch\",
 Macedonian ѓ (GJE) = \"/g\", ѕ (DZE) = \"/s\", ќ (KJE) = \"/k\",
@@ -1244,8 +1358,8 @@ Unicode based."
 This phonetic layout replaces all the Latin letters with Bulgarian
 \(Cyrillic) letters based on similarities in their pronunciation or look.
 
-Note that, since the letters 'щ', 'ь', 'ю' and 'я' are attached to the
-']', '\', '`' and '[' keys respectively, Caps Lock does not affect them."
+Note that, since the letters `щ', `ь', `ю' and `я' are attached to the
+`]', `\\', `\\=`' and `[' keys respectively, Caps Lock does not affect them."
 nil t t t t nil nil nil nil nil t)
 
 ;;  Ю  1! 2@ 3№ 4$ 5% 6€ 7§ 8* 9( 0) -– =+ ьѝ
@@ -1332,7 +1446,7 @@ The letters Ч, Ш, Щ and Ю are not affected by Caps Lock."
 ;;  Ч
 ;;      Я  В  Е  Р  Т  Ъ  У  И  О  П  Ш  Щ
 ;;       А  С  Д  Ф  Г  Х  Й  К  Л        Ю
-;;        З  Ь  Ц  Ж  Б  Н  М
+;;        З  ьѝ Ц  Ж  Б  Н  М
 
 (quail-define-rules
  ("/&" ?§)
@@ -1364,7 +1478,7 @@ The letters Ч, Ш, Щ and Ю are not affected by Caps Lock."
  ("{" ?Ш)
  ("}" ?Щ)
  ("Y" ?Ъ)
- ("X" ?Ь)
+ ("X" ?ѝ)
  ("|" ?Ю)
  ("Q" ?Я)
  ("a" ?а)
@@ -1410,14 +1524,14 @@ This keyboard layout is standard for Bulgarian typewriters.
 The letters Ц, М, Ч, Р, Л, Б and Ы are not affected by Caps Lock.
 
 In addition to original Bulgarian typewriter layout, keys \\ and |
-are transformed into ' and Ы respectively.  Some keyboards mark these
+are transformed into \\=' and Ы respectively.  Some keyboards mark these
 keys as being transformed into ( and ) respectively.  For ( and ), use
-` and ~ respectively.  This input method follows XKB."
+\\=` and ~ respectively.  This input method follows XKB."
  nil t t t t nil nil nil nil nil t)
 
 ;;  () 1! 2? 3+ 4" 5% 6= 7: 8/ 9_ 0№ -I .V
 ;;      ,ы У  Е  И  Ш  Щ  К  С  Д  З  Ц  ;§
-;;       Ь  Я  А  О  Ж  Г  Т  Н  В  М  Ч  'Ы
+;;       ьѝ Я  А  О  Ж  Г  Т  Н  В  М  Ч  'Ы
 ;;        Ю  Й  Ъ  Э  Ф  Х  П  Р  Л  Б
 
 (quail-define-rules
@@ -1448,7 +1562,7 @@ keys as being transformed into ( and ) respectively.  For ( and ), use
  ("[" ?ц) ("{" ?Ц)
  ("]" ?\;) ("}" ?§)
 
- ("a" ?ь) ("A" ?Ь)
+ ("a" ?ь) ("A" ?ѝ)
  ("s" ?я) ("S" ?Я)
  ("d" ?а) ("D" ?А)
  ("f" ?о) ("F" ?О)
@@ -1472,6 +1586,131 @@ keys as being transformed into ( and ) respectively.  For ( and ), use
  ("." ?л) (">" ?Л)
  ("/" ?б) ("?" ?Б)
  ("\\" ?') ("|" ?Ы))
+
+;; This is a slight modification of the `cyrillic-yawerty' input
+;; method. In addition to the standard Russian letters, the Tuvan
+;; alphabet introduces three letters: `Ң', `Ө' and `Ү'. They were made
+;; available in combination with `/' and `N', `T' and `Y' respectively.
+(quail-define-package
+ "cyrillic-tuvan" "Tuvan" "ҢӨҮ" nil
+ "ЯВЕРТЫ Roman transcription of the Tuvan alphabet
+
+When preceded by a `/', the letters `N', `T' and `Y' change
+as follows.
+
+  keytop | N  T  Y  n  t  y
+ --------+------------------
+  input  | Ң  Ө  Ү  ң  ө  ү"
+ nil t t t t nil nil nil nil nil t)
+
+;;  1! 2ё 3ъ 4Ё 5% 6^ 7& 8* 9( 0) -_ Ч  Ю
+;;   Я  В  Е  Р  Т  Ы  У  И  О  П  Ш  Щ
+;;    А  С  Д  Ф  Г  Х  Й  К  Л  ;: '" Э
+;;     З  Ь  Ц  Ж  Б  Н  М  ,< .> /?
+
+(quail-define-rules
+ ("1" ?1)
+ ("2" ?2)
+ ("3" ?3)
+ ("4" ?4)
+ ("5" ?5)
+ ("6" ?6)
+ ("7" ?7)
+ ("8" ?8)
+ ("9" ?9)
+ ("0" ?0)
+ ("-" ?-)
+ ("=" ?ч)
+ ("`" ?ю)
+ ("q" ?я)
+ ("w" ?в)
+ ("e" ?е)
+ ("r" ?р)
+ ("t" ?т)
+ ("y" ?ы)
+ ("u" ?у)
+ ("i" ?и)
+ ("o" ?о)
+ ("p" ?п)
+ ("[" ?ш)
+ ("]" ?щ)
+ ("a" ?а)
+ ("s" ?с)
+ ("d" ?д)
+ ("f" ?ф)
+ ("g" ?г)
+ ("h" ?х)
+ ("j" ?й)
+ ("k" ?к)
+ ("l" ?л)
+ (";" ?\;)
+ ("'" ?')
+ ("\\" ?э)
+ ("z" ?з)
+ ("x" ?ь)
+ ("c" ?ц)
+ ("v" ?ж)
+ ("b" ?б)
+ ("n" ?н)
+ ("m" ?м)
+ ("," ?,)
+ ("." ?.)
+ ("/" ?/)
+
+ ("!" ?!)
+ ("@" ?ё)
+ ("#" ?ъ)
+ ("$" ?Ё)
+ ("%" ?%)
+ ("^" ?^)
+ ("&" ?&)
+ ("*" ?*)
+ ("(" ?\()
+ (")" ?\))
+ ("_" ?_)
+ ("+" ?Ч)
+ ("~" ?Ю)
+ ("Q" ?Я)
+ ("W" ?В)
+ ("E" ?Е)
+ ("R" ?Р)
+ ("T" ?Т)
+ ("Y" ?Ы)
+ ("U" ?У)
+ ("I" ?И)
+ ("O" ?О)
+ ("P" ?П)
+ ("{" ?Ш)
+ ("}" ?Щ)
+ ("A" ?А)
+ ("S" ?С)
+ ("D" ?Д)
+ ("F" ?Ф)
+ ("G" ?Г)
+ ("H" ?Х)
+ ("J" ?Й)
+ ("K" ?К)
+ ("L" ?Л)
+ (":" ?:)
+ ("\"" ?\")
+ ("|" ?Э)
+ ("Z" ?З)
+ ("X" ?Ь)
+ ("C" ?Ц)
+ ("V" ?Ж)
+ ("B" ?Б)
+ ("N" ?Н)
+ ("M" ?М)
+ ("<" ?<)
+ (">" ?>)
+ ("?" ??)
+
+ ("/n" ?ң)
+ ("/t" ?ө)
+ ("/y" ?ү)
+ ("/N" ?Ң)
+ ("/T" ?Ө)
+ ("/Y" ?Ү))
 
 ;; Local Variables:
 ;; coding: utf-8

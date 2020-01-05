@@ -1,6 +1,6 @@
 ;;; align.el --- align text to a specific column, by regexp -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -206,7 +206,7 @@ If nil, then no messages will ever be printed to the minibuffer."
 
 (defcustom align-dq-string-modes
   (append align-lisp-modes align-c++-modes align-perl-modes
-	  '(python-mode))
+          '(python-mode vhdl-mode))
   "A list of modes where double quoted strings should be excluded."
   :type '(repeat symbol)
   :group 'align)
@@ -219,7 +219,7 @@ If nil, then no messages will ever be printed to the minibuffer."
 
 (defcustom align-open-comment-modes
   (append align-lisp-modes align-c++-modes align-perl-modes
-	  '(python-mode makefile-mode))
+          '(python-mode makefile-mode vhdl-mode))
   "A list of modes with a single-line comment syntax.
 These are comments as in Lisp, which have a beginning, but end with
 the line (i.e., `comment-end' is an empty string)."
@@ -399,7 +399,7 @@ The possible settings for `align-region-separate' are:
 		   (lambda (end reverse)
 		     (funcall (if reverse 're-search-backward
 				're-search-forward)
-			      (concat "[^ \t\n\\\\]"
+			      (concat "[^ \t\n\\]"
 				      (regexp-quote comment-start)
 				      "\\(.+\\)$") end t))))
      (modes    . align-open-comment-modes))
@@ -411,7 +411,7 @@ The possible settings for `align-region-separate' are:
     (c-variable-declaration
      (regexp   . ,(concat "[*&0-9A-Za-z_]>?[&*]*\\(\\s-+[*&]*\\)"
 			  "[A-Za-z_][0-9A-Za-z:_]*\\s-*\\(\\()\\|"
-			  "=[^=\n].*\\|(.*)\\|\\(\\[.*\\]\\)*\\)?"
+			  "=[^=\n].*\\|(.*)\\|\\(\\[.*\\]\\)*\\)"
 			  "\\s-*[;,]\\|)\\s-*$\\)"))
      (group    . 1)
      (modes    . align-c++-modes)
@@ -438,7 +438,7 @@ The possible settings for `align-region-separate' are:
      (tab-stop . nil))
 
     (perl-assignment
-     (regexp   . ,(concat "[^=!^&*-+<>/| \t\n]\\(\\s-*\\)=[~>]?"
+     (regexp   . ,(concat "[^=!^&*+<>/| \t\n-]\\(\\s-*\\)=[~>]?"
 			  "\\(\\s-*\\)\\([^>= \t\n]\\|$\\)"))
      (group    . (1 2))
      (modes    . align-perl-modes)
@@ -452,7 +452,7 @@ The possible settings for `align-region-separate' are:
      (tab-stop . nil))
 
     (make-assignment
-     (regexp   . "^\\s-*\\w+\\(\\s-*\\):?=\\(\\s-*\\)\\([^\t\n \\\\]\\|$\\)")
+     (regexp   . "^\\s-*\\w+\\(\\s-*\\):?=\\(\\s-*\\)\\([^\t\n \\]\\|$\\)")
      (group    . (1 2))
      (modes    . '(makefile-mode))
      (tab-stop . nil))
@@ -577,7 +577,7 @@ The possible settings for `align-region-separate' are:
 		     (eq '- current-prefix-arg)))))
 
     (css-declaration
-     (regexp . "^\\s-*\\w+:\\(\\s-*\\).*;")
+     (regexp . "^\\s-*\\(?:\\w-?\\)+:\\(\\s-*\\).*;")
      (group . (1))
      (modes . '(css-mode html-mode))))
   "A list describing all of the available alignment rules.
@@ -759,7 +759,7 @@ The following attributes are meaningful:
 	  (lambda (end reverse)
 	    (funcall (if reverse 're-search-backward
 		       're-search-forward)
-		     (concat "[^ \t\n\\\\]"
+		     (concat "[^ \t\n\\]"
 			     (regexp-quote comment-start)
 			     "\\(.+\\)$") end t))))
      (modes  . align-open-comment-modes))
@@ -802,9 +802,10 @@ See the variable `align-exclude-rules-list' for more details.")
 (defvar align-highlight-overlays nil
   "The current overlays highlighting the text matched by a rule.")
 
-;; Sample extension rule set, for vhdl-mode.  This should properly be
-;; in vhdl-mode.el itself.
+(defvar align-regexp-history nil
+  "Input history for the full user-entered regex in `align-regexp'")
 
+;; Sample extension rule set for vhdl-mode.  This is now obsolete.
 (defcustom align-vhdl-rules-list
   `((vhdl-declaration
      (regexp   . "\\(signal\\|variable\\|constant\\)\\(\\s-+\\)\\S-")
@@ -839,17 +840,13 @@ See the variable `align-exclude-rules-list' for more details.")
   "Alignment rules for `vhdl-mode'.  See `align-rules-list' for more info."
   :type align-rules-list-type
   :group 'align)
-
 (put 'align-vhdl-rules-list 'risky-local-variable t)
+(make-obsolete-variable 'align-vhdl-rules-list "no longer used." "27.1")
 
 (defun align-set-vhdl-rules ()
   "Setup the `align-mode-rules-list' variable for `vhdl-mode'."
+  (declare (obsolete nil "27.1"))
   (setq align-mode-rules-list align-vhdl-rules-list))
-
-(add-hook 'vhdl-mode-hook 'align-set-vhdl-rules)
-
-(add-to-list 'align-dq-string-modes 'vhdl-mode)
-(add-to-list 'align-open-comment-modes 'vhdl-mode)
 
 ;;; User Functions:
 
@@ -888,15 +885,15 @@ on the format of these lists."
       (let ((sec-first end)
 	    (sec-last beg))
 	(align-region beg end
-		      (or exclude-rules
-			  align-mode-exclude-rules-list
-			  align-exclude-rules-list) nil
 		      separator
-		      (function
-		       (lambda (b e mode)
-			 (when (and mode (listp mode))
-			   (setq sec-first (min sec-first b)
-				 sec-last  (max sec-last e))))))
+		      nil ; rules
+                      (or exclude-rules
+			  align-mode-exclude-rules-list
+			  align-exclude-rules-list)
+                      (lambda (b e mode)
+                        (when (consp mode)
+                          (setq sec-first (min sec-first b)
+                                sec-last  (max sec-last e)))))
 	(if (< sec-first sec-last)
 	    (align-region sec-first sec-last 'entire
 			  (or rules align-mode-rules-list align-rules-list)
@@ -946,7 +943,7 @@ construct a rule to pass to `align-region', which does the real work."
     (list (region-beginning) (region-end))
     (if current-prefix-arg
 	(list (read-string "Complex align using regexp: "
-			   "\\(\\s-*\\)")
+                          "\\(\\s-*\\)" 'align-regexp-history)
 	      (string-to-number
 	       (read-string
 		"Parenthesis group to modify (justify if negative): " "1"))
@@ -1051,7 +1048,9 @@ to be colored."
 
 ;;;###autoload
 (defun align-newline-and-indent ()
-  "A replacement function for `newline-and-indent', aligning as it goes."
+  "A replacement function for `newline-and-indent', aligning as it goes.
+The alignment is done by calling `align' on the region that was
+indented."
   (interactive)
   (let ((separate (or (if (and (symbolp align-region-separate)
 			       (boundp align-region-separate))
@@ -1211,9 +1210,12 @@ have been aligned.  No changes will be made to the buffer."
 	  (when area
 	    (if func
 		(funcall func
-			 (marker-position (car area))
-			 (marker-position (cdr area))
-			 change)
+                         (marker-position (car area))
+                         (marker-position (if (and justify
+                                                   (consp (cdr area)))
+                                              (cadr area)
+                                            (cdr area)))
+                         change)
 	      (if (not (and justify
 			    (consp (cdr area))))
 		  (goto-char (cdr area))
@@ -1317,8 +1319,7 @@ aligner would have dealt with are."
 	     (modes (assq 'modes rule)))
 	;; unless the `run-if' form tells us not to, look for the
 	;; rule..
-	(unless (or (and modes (not (memq major-mode
-					  (eval (cdr modes)))))
+	(unless (or (and modes (not (apply #'derived-mode-p (eval (cdr modes)))))
 		    (and run-if (not (funcall (cdr run-if)))))
 	  (let* ((case-fold-search case-fold-search)
 		 (case-fold (assq 'case-fold rule))
@@ -1348,7 +1349,7 @@ aligner would have dealt with are."
 	      (if real-beg
 		  (goto-char beg)
 		(if (or (not thissep) (eq thissep 'entire))
-		    (error "Cannot determine alignment region for '%s'"
+		    (error "Cannot determine alignment region for `%s'"
 			   (symbol-name (cdr (assq 'title rule)))))
 		(beginning-of-line)
 		(while (and (not (eobp))
@@ -1437,12 +1438,12 @@ aligner would have dealt with are."
                               (message
                                "Aligning `%s' (rule %d of %d) %d%%..."
                                (symbol-name symbol) rule-index rule-count
-                               (/ (* (- (point) real-beg) 100)
-                                  (- end-mark real-beg)))
+                               (floor (* (- (point) real-beg) 100.0)
+                                      (- end-mark real-beg)))
                             (message
                              "Aligning %d%%..."
-                             (/ (* (- (point) real-beg) 100)
-                                (- end-mark real-beg))))))
+                             (floor (* (- (point) real-beg) 100.0)
+                                    (- end-mark real-beg))))))
 
                     ;; if the search ended us on the beginning of
                     ;; the next line, move back to the end of the

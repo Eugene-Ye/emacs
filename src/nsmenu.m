@@ -1,12 +1,12 @@
-/* NeXT/Open/GNUstep and MacOSX Cocoa menu and toolbar module.
-   Copyright (C) 2007-2014 Free Software Foundation, Inc.
+/* NeXT/Open/GNUstep and macOS Cocoa menu and toolbar module.
+   Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /*
 By Adrian Robert, based on code from original nsmenu.m (Carl Edman,
@@ -22,7 +22,7 @@ Christian Limpach, Scott Bender, Christophe de Dinechin) and code in the
 Carbon version by Yamamoto Mitsuharu. */
 
 /* This should be the first include, as it may set up #defines affecting
-   interpretation of even the system includes. */
+   interpretation of even the system includes.  */
 #include <config.h>
 
 #include "lisp.h"
@@ -37,6 +37,7 @@ Carbon version by Yamamoto Mitsuharu. */
 #include "termhooks.h"
 #include "keyboard.h"
 #include "menu.h"
+#include "pdumper.h"
 
 #define NSMENUPROFILE 0
 
@@ -45,29 +46,15 @@ Carbon version by Yamamoto Mitsuharu. */
 #include <sys/types.h>
 #endif
 
-#if 0
-int menu_trace_num = 0;
-#define NSTRACE(x)        fprintf (stderr, "%s:%d: [%d] " #x "\n",        \
-                                __FILE__, __LINE__, ++menu_trace_num)
-#else
-#define NSTRACE(x)
-#endif
 
 #if 0
-/* Include lisp -> C common menu parsing code */
+/* Include lisp -> C common menu parsing code.  */
 #define ENCODE_MENU_STRING(str) ENCODE_UTF_8 (str)
 #include "nsmenu_common.c"
 #endif
 
-extern Lisp_Object Qundefined, Qmenu_enable, Qmenu_bar_update_hook;
-extern Lisp_Object QCtoggle, QCradio;
-
-Lisp_Object Qdebug_on_next_call;
-extern Lisp_Object Qoverriding_local_map, Qoverriding_terminal_local_map;
-
 extern long context_menu_value;
-EmacsMenu *mainMenu, *svcsMenu, *dockMenu;
-
+EmacsMenu *svcsMenu;
 /* Nonzero means a menu is currently active.  */
 static int popup_activated_flag;
 
@@ -76,7 +63,7 @@ static int trackingMenu;
 
 
 /* NOTE: toolbar implementation is at end,
-  following complete menu implementation. */
+   following complete menu implementation.  */
 
 
 /* ==========================================================================
@@ -88,7 +75,7 @@ static int trackingMenu;
 
 /* Supposed to discard menubar and free storage.  Since we share the
    menubar among frames and update its context for the focused window,
-   there is nothing to do here. */
+   there is nothing to do here.  */
 void
 free_frame_menubar (struct frame *f)
 {
@@ -106,7 +93,7 @@ popup_activated (void)
 /* --------------------------------------------------------------------------
     Update menubar.  Three cases:
     1) ! deep_p, submenu = nil: Fresh switch onto a frame -- either set up
-       just top-level menu strings (OS X), or goto case (2) (GNUstep).
+       just top-level menu strings (macOS), or goto case (2) (GNUstep).
     2) deep_p, submenu = nil: Recompute all submenus.
     3) deep_p, submenu = non-nil: Update contents of a single submenu.
    -------------------------------------------------------------------------- */
@@ -127,7 +114,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
   long t;
 #endif
 
-  NSTRACE (ns_update_menubar);
+  NSTRACE ("ns_update_menubar");
 
   if (f != SELECTED_FRAME ())
       return;
@@ -137,7 +124,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
   block_input ();
   pool = [[NSAutoreleasePool alloc] init];
 
-  /* Menu may have been created automatically; if so, discard it. */
+  /* Menu may have been created automatically; if so, discard it.  */
   if ([menu isKindOfClass: [EmacsMenu class]] == NO)
     {
       [menu release];
@@ -148,12 +135,6 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
     {
       menu = [[EmacsMenu alloc] initWithTitle: ns_app_name];
       needsSet = YES;
-    }
-  else
-    {  /* close up anything on there */
-      id attMenu = [menu attachedMenu];
-      if (attMenu != nil)
-        [attMenu close];
     }
 
 #if NSMENUPROFILE
@@ -167,7 +148,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
 
   if (deep_p)
     {
-      /* Fully parse one or more of the submenus. */
+      /* Fully parse one or more of the submenus.  */
       int n = 0;
       int *submenu_start, *submenu_end;
       bool *submenu_top_level_items;
@@ -192,8 +173,8 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
       set_buffer_internal_1 (XBUFFER (buffer));
 
       /* TODO: for some reason this is not needed in other terms,
-           but some menu updates call Info-extract-pointer which causes
-           abort-on-error if waiting-for-input.  Needs further investigation. */
+	 but some menu updates call Info-extract-pointer which causes
+	 abort-on-error if waiting-for-input.  Needs further investigation.  */
       owfi = waiting_for_input;
       waiting_for_input = 0;
 
@@ -234,10 +215,10 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
 	    break;
 
           /* FIXME: we'd like to only parse the needed submenu, but this
-               was causing crashes in the _common parsing code.. need to make
-               sure proper initialization done.. */
-/*        if (submenu && strcmp ([[submenu title] UTF8String], SSDATA (string)))
-             continue; */
+	     was causing crashes in the _common parsing code: need to make
+	     sure proper initialization done.  */
+	  /* if (submenu && strcmp ([[submenu title] UTF8String], SSDATA (string)))
+               continue; */
 
 	  submenu_start[i] = menu_items_used;
 
@@ -287,17 +268,17 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
 
       set_buffer_internal_1 (prev);
 
-      /* Compare the new menu items with previous, and leave off if no change */
+      /* Compare the new menu items with previous, and leave off if no change.  */
       /* FIXME: following other terms here, but seems like this should be
-           done before parse stage 2 above, since its results aren't used */
+	 done before parse stage 2 above, since its results aren't used.  */
       if (previous_menu_items_used
           && (!submenu || (submenu && submenu == last_submenu))
           && menu_items_used == previous_menu_items_used)
         {
           for (i = 0; i < previous_menu_items_used; i++)
             /* FIXME: this ALWAYS fails on Buffers menu items.. something
-                 about their strings causes them to change every time, so we
-                 double-check failures */
+	       about their strings causes them to change every time, so we
+	       double-check failures.  */
             if (!EQ (previous_items[i], AREF (menu_items, i)))
               if (!(STRINGP (previous_items[i])
                     && STRINGP (AREF (menu_items, i))
@@ -306,7 +287,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
                   break;
           if (i == previous_menu_items_used)
             {
-              /* No change.. */
+              /* No change.  */
 
 #if NSMENUPROFILE
               ftime (&tb);
@@ -322,16 +303,16 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
               return;
             }
         }
-      /* The menu items are different, so store them in the frame */
-      /* FIXME: this is not correct for single-submenu case */
+      /* The menu items are different, so store them in the frame.  */
+      /* FIXME: this is not correct for single-submenu case.  */
       fset_menu_bar_vector (f, menu_items);
       f->menu_bar_items_used = menu_items_used;
 
-      /* Calls restore_menu_items, etc., as they were outside */
+      /* Calls restore_menu_items, etc., as they were outside.  */
       unbind_to (specpdl_count, Qnil);
 
       /* Parse stage 2a: now GC cannot happen during the lifetime of the
-         widget_value, so it's safe to store data from a Lisp_String */
+         widget_value, so it's safe to store data from a Lisp_String.  */
       wv = first_wv->contents;
       for (i = 0; i < ASIZE (items); i += 4)
 	{
@@ -346,7 +327,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
 	}
 
       /* Now, update the NS menu; if we have a submenu, use that, otherwise
-         create a new menu for each sub and fill it. */
+         create a new menu for each sub and fill it.  */
       if (submenu)
         {
           const char *submenuTitle = [[submenu title] UTF8String];
@@ -378,7 +359,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
       wv->button_type = BUTTON_TYPE_NONE;
       first_wv = wv;
 
-      /* Make widget-value tree w/ just the top level menu bar strings */
+      /* Make widget-value tree with just the top level menu bar strings.  */
       items = FRAME_MENU_BAR_ITEMS (f);
       if (NILP (items))
         {
@@ -389,7 +370,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
         }
 
 
-      /* check if no change.. this mechanism is a bit rough, but ready */
+      /* Check if no change: this mechanism is a bit rough, but ready.  */
       n = ASIZE (items) / 4;
       if (f == last_f && n_previous_strings == n)
         {
@@ -397,7 +378,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
             {
 	      string = AREF (items, 4*i+1);
 
-              if (EQ (string, make_number (0))) // FIXME: Why???  --Stef
+              if (EQ (string, make_fixnum (0))) // FIXME: Why???  --Stef
                 continue;
               if (NILP (string))
                 {
@@ -436,10 +417,10 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
 	  wv->call_data = (void *) (intptr_t) (-1);
 
 #ifdef NS_IMPL_COCOA
-          /* we'll update the real copy under app menu when time comes */
+          /* We'll update the real copy under app menu when time comes.  */
           if (!strcmp ("Services", wv->name))
             {
-              /* but we need to make sure it will update on demand */
+              /* But we need to make sure it will update on demand.  */
               [svcsMenu setFrame: f];
             }
           else
@@ -481,7 +462,7 @@ ns_update_menubar (struct frame *f, bool deep_p, EmacsMenu *submenu)
 
 /* Main emacs core entry point for menubar menus: called to indicate that the
    frame's menus have changed, and the *step representation should be updated
-   from Lisp. */
+   from Lisp.  */
 void
 set_frame_menubar (struct frame *f, bool first_time, bool deep_p)
 {
@@ -489,7 +470,7 @@ set_frame_menubar (struct frame *f, bool first_time, bool deep_p)
 }
 
 void
-x_activate_menubar (struct frame *f)
+ns_activate_menubar (struct frame *f)
 {
 #ifdef NS_IMPL_COCOA
   ns_update_menubar (f, true, nil);
@@ -509,11 +490,11 @@ x_activate_menubar (struct frame *f)
 
 /* Menu that can define itself from Emacs "widget_value"s and will lazily
    update itself when user clicked.  Based on Carbon/AppKit implementation
-   by Yamamoto Mitsuharu. */
+   by Yamamoto Mitsuharu.  */
 @implementation EmacsMenu
 
 /* override designated initializer */
-- initWithTitle: (NSString *)title
+- (instancetype)initWithTitle: (NSString *)title
 {
   frame = 0;
   if ((self = [super initWithTitle: title]))
@@ -523,7 +504,7 @@ x_activate_menubar (struct frame *f)
 
 
 /* used for top-level */
-- initWithTitle: (NSString *)title frame: (struct frame *)f
+- (instancetype)initWithTitle: (NSString *)title frame: (struct frame *)f
 {
   [self initWithTitle: title];
   frame = f;
@@ -552,9 +533,14 @@ x_activate_menubar (struct frame *f)
 {
   ++trackingMenu;
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 1070
   // On 10.6 we get repeated calls, only the one for NSSystemDefined is "real".
-  if ([[NSApp currentEvent] type] != NSSystemDefined) return;
+  if (
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
+      NSAppKitVersionNumber < NSAppKitVersionNumber10_7 &&
+#endif
+      [[NSApp currentEvent] type] != NSEventTypeSystemDefined)
+    return;
 #endif
 
   /* When dragging from one menu to another, we get willOpen followed by didClose,
@@ -571,8 +557,8 @@ x_activate_menubar (struct frame *f)
 
 #endif /* NS_IMPL_COCOA */
 
-/* delegate method called when a submenu is being opened: run a 'deep' call
-   to set_frame_menubar */
+/* Delegate method called when a submenu is being opened: run a 'deep' call
+   to set_frame_menubar.  */
 - (void)menuNeedsUpdate: (NSMenu *)menu
 {
   if (!FRAME_LIVE_P (frame))
@@ -597,7 +583,7 @@ x_activate_menubar (struct frame *f)
     return;
 /*fprintf (stderr, "Updating menu '%s'\n", [[self title] UTF8String]); NSLog (@"%@\n", event); */
 #ifdef NS_IMPL_GNUSTEP
-  /* Don't know how to do this for anything other than OSX >= 10.5
+  /* Don't know how to do this for anything other than Mac OS X 10.5 and later.
      This is wrong, as it might run Lisp code in the event loop.  */
   ns_update_menubar (frame, true, self);
 #endif
@@ -623,9 +609,9 @@ x_activate_menubar (struct frame *f)
 -(NSString *)parseKeyEquiv: (const char *)key
 {
   const char *tpos = key;
-  keyEquivModMask = NSCommandKeyMask;
+  keyEquivModMask = NSEventModifierFlagCommand;
 
-  if (!key || !strlen (key))
+  if (!key || !*key)
     return @"";
 
   while (*tpos == ' ' || *tpos == '(')
@@ -658,24 +644,33 @@ x_activate_menubar (struct frame *f)
 
       keyEq = [self parseKeyEquiv: wv->key];
 #ifdef NS_IMPL_COCOA
-      /* OS X just ignores modifier strings longer than one character */
+      /* macOS mangles modifier strings longer than one character.  */
       if (keyEquivModMask == 0)
-        title = [title stringByAppendingFormat: @" (%@)", keyEq];
+        {
+          title = [title stringByAppendingFormat: @" (%@)", keyEq];
+          item = [self addItemWithTitle: (NSString *)title
+                                 action: @selector (menuDown:)
+                          keyEquivalent: @""];
+        }
+      else
+        {
 #endif
-
-      item = [self addItemWithTitle: (NSString *)title
-                             action: @selector (menuDown:)
-                      keyEquivalent: keyEq];
+          item = [self addItemWithTitle: (NSString *)title
+                                 action: @selector (menuDown:)
+                          keyEquivalent: keyEq];
+#ifdef NS_IMPL_COCOA
+        }
+#endif
       [item setKeyEquivalentModifierMask: keyEquivModMask];
 
       [item setEnabled: wv->enabled];
 
-      /* Draw radio buttons and tickboxes */
+      /* Draw radio buttons and tickboxes.  */
       if (wv->selected && (wv->button_type == BUTTON_TYPE_TOGGLE ||
                            wv->button_type == BUTTON_TYPE_RADIO))
-        [item setState: NSOnState];
+        [item setState: NSControlStateValueOn];
       else
-        [item setState: NSOffState];
+        [item setState: NSControlStateValueOff];
 
       [item setTag: (NSInteger)wv->call_data];
     }
@@ -711,7 +706,6 @@ x_activate_menubar (struct frame *f)
   widget_value *wv = (widget_value *)wvptr;
 
   /* clear existing contents */
-  [self setMenuChangedMessagesEnabled: NO];
   [self clear];
 
   /* add new contents */
@@ -735,7 +729,6 @@ x_activate_menubar (struct frame *f)
         }
     }
 
-  [self setMenuChangedMessagesEnabled: YES];
 #ifdef NS_IMPL_GNUSTEP
   if ([[self window] isVisible])
     [self sizeToFit];
@@ -743,7 +736,7 @@ x_activate_menubar (struct frame *f)
 }
 
 
-/* adds an empty submenu and returns it */
+/* Adds an empty submenu and returns it.  */
 - (EmacsMenu *)addSubmenuWithTitle: (const char *)title forFrame: (struct frame *)f
 {
   NSString *titleStr = [NSString stringWithUTF8String: title];
@@ -756,7 +749,7 @@ x_activate_menubar (struct frame *f)
   return submenu;
 }
 
-/* run a menu in popup mode */
+/* Run a menu in popup mode.  */
 - (Lisp_Object)runMenuAt: (NSPoint)p forFrame: (struct frame *)f
                  keymaps: (bool)keymaps
 {
@@ -764,16 +757,16 @@ x_activate_menubar (struct frame *f)
   NSEvent *e, *event;
   long retVal;
 
-/*   p = [view convertPoint:p fromView: nil]; */
+  /* p = [view convertPoint:p fromView: nil]; */
   p.y = NSHeight ([view frame]) - p.y;
   e = [[view window] currentEvent];
-   event = [NSEvent mouseEventWithType: NSRightMouseDown
+   event = [NSEvent mouseEventWithType: NSEventTypeRightMouseDown
                               location: p
                          modifierFlags: 0
                              timestamp: [e timestamp]
                           windowNumber: [[view window] windowNumber]
-                               context: [e context]
-                           eventNumber: 0/*[e eventNumber] */
+                               context: nil
+                           eventNumber: 0 /* [e eventNumber] */
                             clickCount: 1
                               pressure: 0];
 
@@ -807,6 +800,8 @@ ns_menu_show (struct frame *f, int x, int y, int menuflags,
   widget_value *wv, *first_wv = 0;
   bool keymaps = (menuflags & MENU_KEYMAPS);
 
+  NSTRACE ("ns_menu_show");
+
   block_input ();
 
   p.x = x; p.y = y;
@@ -817,14 +812,14 @@ ns_menu_show (struct frame *f, int x, int y, int menuflags,
   first_wv = wv;
 
 #if 0
-  /* FIXME: a couple of one-line differences prevent reuse */
+  /* FIXME: a couple of one-line differences prevent reuse.  */
   wv = digest_single_submenu (0, menu_items_used, 0);
 #else
   {
   widget_value *save_wv = 0, *prev_wv = 0;
   widget_value **submenu_stack
     = alloca (menu_items_used * sizeof *submenu_stack);
-/*   Lisp_Object *subprefix_stack
+  /* Lisp_Object *subprefix_stack
        = alloca (menu_items_used * sizeof *subprefix_stack); */
   int submenu_depth = 0;
   int first_pane = 1;
@@ -834,7 +829,7 @@ ns_menu_show (struct frame *f, int x, int y, int menuflags,
   i = 0;
   while (i < menu_items_used)
     {
-      if (EQ (AREF (menu_items, i), Qnil))
+      if (NILP (AREF (menu_items, i)))
 	{
 	  submenu_stack[submenu_depth++] = save_wv;
 	  save_wv = prev_wv;
@@ -1009,24 +1004,33 @@ free_frame_tool_bar (struct frame *f)
    -------------------------------------------------------------------------- */
 {
   EmacsView *view = FRAME_NS_VIEW (f);
+
+  NSTRACE ("free_frame_tool_bar");
+
   block_input ();
   view->wait_for_tool_bar = NO;
+
+  /* Note: This triggers an animation, which calls windowDidResize
+     repeatedly.  */
+  f->output_data.ns->in_animation = 1;
   [[view toolbar] setVisible: NO];
-  FRAME_TOOLBAR_HEIGHT (f) = 0;
+  f->output_data.ns->in_animation = 0;
+
   unblock_input ();
 }
 
 void
 update_frame_tool_bar (struct frame *f)
 /* --------------------------------------------------------------------------
-    Update toolbar contents
+    Update toolbar contents.
    -------------------------------------------------------------------------- */
 {
   int i, k = 0;
   EmacsView *view = FRAME_NS_VIEW (f);
-  NSWindow *window = [view window];
   EmacsToolbar *toolbar = [view toolbar];
   int oldh;
+
+  NSTRACE ("update_frame_tool_bar");
 
   if (view == nil || toolbar == nil) return;
   block_input ();
@@ -1039,7 +1043,7 @@ update_frame_tool_bar (struct frame *f)
   [toolbar clearAll];
 #endif
 
-  /* update EmacsToolbar as in GtkUtils, build items list */
+  /* Update EmacsToolbar as in GtkUtils, build items list.  */
   for (i = 0; i < f->n_tool_bar_items; ++i)
     {
 #define TOOLPROP(IDX) AREF (f->tool_bar_items, \
@@ -1056,9 +1060,9 @@ update_frame_tool_bar (struct frame *f)
       /* Check if this is a separator.  */
       if (EQ (TOOLPROP (TOOL_BAR_ITEM_TYPE), Qt))
         {
-          /* Skip separators.  Newer OSX don't show them, and on GNUstep they
-             are wide as a button, thus overflowing the toolbar most of
-             the time.  */
+          /* Skip separators.  Newer macOS don't show them, and on
+             GNUstep they are wide as a button, thus overflowing the
+             toolbar most of the time.  */
           continue;
         }
 
@@ -1067,7 +1071,7 @@ update_frame_tool_bar (struct frame *f)
       image = TOOLPROP (TOOL_BAR_ITEM_IMAGES);
       if (VECTORP (image))
 	{
-          /* NS toolbar auto-computes disabled and selected images */
+          /* NS toolbar auto-computes disabled and selected images.  */
           idx = TOOL_BAR_IMAGE_ENABLED_SELECTED;
 	  eassert (ASIZE (image) >= idx);
 	  image = AREF (image, idx);
@@ -1107,12 +1111,16 @@ update_frame_tool_bar (struct frame *f)
     }
 
   if (![toolbar isVisible])
+    {
+      f->output_data.ns->in_animation = 1;
       [toolbar setVisible: YES];
+      f->output_data.ns->in_animation = 0;
+    }
 
 #ifdef NS_IMPL_COCOA
   if ([toolbar changed])
     {
-      /* inform app that toolbar has changed */
+      /* Inform app that toolbar has changed.  */
       NSDictionary *dict = [toolbar configurationDictionary];
       NSMutableDictionary *newDict = [dict mutableCopy];
       NSEnumerator *keys = [[dict allKeys] objectEnumerator];
@@ -1132,12 +1140,6 @@ update_frame_tool_bar (struct frame *f)
       [newDict release];
     }
 #endif
-
-  FRAME_TOOLBAR_HEIGHT (f) =
-    NSHeight ([window frameRectForContentRect: NSMakeRect (0, 0, 0, 0)])
-    - FRAME_NS_TITLEBAR_HEIGHT (f);
-  if (FRAME_TOOLBAR_HEIGHT (f) < 0) // happens if frame is fullscreen.
-    FRAME_TOOLBAR_HEIGHT (f) = 0;
 
   if (oldh != FRAME_TOOLBAR_HEIGHT (f))
     [view updateFrameSize:YES];
@@ -1159,8 +1161,10 @@ update_frame_tool_bar (struct frame *f)
 
 @implementation EmacsToolbar
 
-- initForView: (EmacsView *)view withIdentifier: (NSString *)identifier
+- (instancetype)initForView: (EmacsView *)view withIdentifier: (NSString *)identifier
 {
+  NSTRACE ("[EmacsToolbar initForView: withIdentifier:]");
+
   self = [super initWithIdentifier: identifier];
   emacsView = view;
   [self setDisplayMode: NSToolbarDisplayModeIconOnly];
@@ -1175,6 +1179,8 @@ update_frame_tool_bar (struct frame *f)
 
 - (void)dealloc
 {
+  NSTRACE ("[EmacsToolbar dealloc]");
+
   [prevIdentifiers release];
   [activeIdentifiers release];
   [identifierToItem release];
@@ -1183,6 +1189,8 @@ update_frame_tool_bar (struct frame *f)
 
 - (void) clearActive
 {
+  NSTRACE ("[EmacsToolbar clearActive]");
+
   [prevIdentifiers release];
   prevIdentifiers = [activeIdentifiers copy];
   [activeIdentifiers removeAllObjects];
@@ -1192,6 +1200,8 @@ update_frame_tool_bar (struct frame *f)
 
 - (void) clearAll
 {
+  NSTRACE ("[EmacsToolbar clearAll]");
+
   [self clearActive];
   while ([[self items] count] > 0)
     [self removeItemAtIndex: 0];
@@ -1199,6 +1209,8 @@ update_frame_tool_bar (struct frame *f)
 
 - (BOOL) changed
 {
+  NSTRACE ("[EmacsToolbar changed]");
+
   return [activeIdentifiers isEqualToArray: prevIdentifiers] &&
     enablement == prevEnablement ? NO : YES;
 }
@@ -1209,6 +1221,8 @@ update_frame_tool_bar (struct frame *f)
                         helpText: (const char *)help
                          enabled: (BOOL)enabled
 {
+  NSTRACE ("[EmacsToolbar addDisplayItemWithImage: ...]");
+
   /* 1) come up w/identifier */
   NSString *identifier
     = [NSString stringWithFormat: @"%lu", (unsigned long)[img hash]];
@@ -1239,9 +1253,10 @@ update_frame_tool_bar (struct frame *f)
 }
 
 /* This overrides super's implementation, which automatically sets
-   all items to enabled state (for some reason). */
+   all items to enabled state (for some reason).  */
 - (void)validateVisibleItems
 {
+  NSTRACE ("[EmacsToolbar validateVisibleItems]");
 }
 
 
@@ -1251,23 +1266,37 @@ update_frame_tool_bar (struct frame *f)
       itemForItemIdentifier: (NSString *)itemIdentifier
   willBeInsertedIntoToolbar: (BOOL)flag
 {
-  /* look up NSToolbarItem by identifier and return... */
+  NSTRACE ("[EmacsToolbar toolbar: ...]");
+
+  /* Look up NSToolbarItem by identifier and return...  */
   return [identifierToItem objectForKey: itemIdentifier];
 }
 
 - (NSArray *)toolbarDefaultItemIdentifiers: (NSToolbar *)toolbar
 {
-  /* return entire set.. */
+  NSTRACE ("[EmacsToolbar toolbarDefaultItemIdentifiers:]");
+
+  /* Return entire set.  */
   return activeIdentifiers;
 }
 
 /* for configuration palette (not yet supported) */
 - (NSArray *)toolbarAllowedItemIdentifiers: (NSToolbar *)toolbar
 {
-  /* return entire set... */
+  NSTRACE ("[EmacsToolbar toolbarAllowedItemIdentifiers:]");
+
+  /* return entire set...  */
   return activeIdentifiers;
   //return [identifierToItem allKeys];
 }
+
+- (void)setVisible:(BOOL)shown
+{
+  NSTRACE ("[EmacsToolbar setVisible:%d]", shown);
+
+  [super setVisible:shown];
+}
+
 
 /* optional and unneeded */
 /* - toolbarWillAddItem: (NSNotification *)notification { } */
@@ -1285,17 +1314,17 @@ update_frame_tool_bar (struct frame *f)
    ========================================================================== */
 
 /* Needed because NeXTstep does not provide enough control over tooltip
-   display. */
+   display.  */
 @implementation EmacsTooltip
 
-- init
+- (instancetype)init
 {
   NSColor *col = [NSColor colorWithCalibratedRed: 1.0 green: 1.0
                                             blue: 0.792 alpha: 0.95];
   NSFont *font = [NSFont toolTipsFontOfSize: 0];
   NSFont *sfont = [font screenFont];
   int height = [sfont ascender] - [sfont descender];
-/*[font boundingRectForFont].size.height; */
+  /* [font boundingRectForFont].size.height; */
   NSRect r = NSMakeRect (0, 0, 100, height+6);
 
   textField = [[NSTextField alloc] initWithFrame: r];
@@ -1317,7 +1346,7 @@ update_frame_tool_bar (struct frame *f)
   [win setReleasedWhenClosed: NO];
   [win setDelegate: self];
   [[win contentView] addSubview: textField];
-/*  [win setBackgroundColor: col]; */
+  /* [win setBackgroundColor: col]; */
   [win setOpaque: NO];
 
   return self;
@@ -1343,6 +1372,16 @@ update_frame_tool_bar (struct frame *f)
   r.size.width = tooltipDims.width;
   r.size.height = tooltipDims.height;
   [textField setFrame: r];
+}
+
+- (void) setBackgroundColor: (NSColor *)col
+{
+  [textField setBackgroundColor: col];
+}
+
+- (void) setForegroundColor: (NSColor *)col
+{
+  [textField setTextColor: col];
 }
 
 - (void) showAtX: (int)x Y: (int)y for: (int)seconds
@@ -1394,29 +1433,19 @@ update_frame_tool_bar (struct frame *f)
 
    ========================================================================== */
 
-struct Popdown_data
-{
-  NSAutoreleasePool *pool;
-  EmacsDialogPanel *dialog;
-};
-
 static void
 pop_down_menu (void *arg)
 {
-  struct Popdown_data *unwind_data = arg;
+  EmacsDialogPanel *panel = arg;
 
-  block_input ();
   if (popup_activated_flag)
     {
-      EmacsDialogPanel *panel = unwind_data->dialog;
+      block_input ();
       popup_activated_flag = 0;
       [panel close];
-      [unwind_data->pool release];
       [[FRAME_NS_VIEW (SELECTED_FRAME ()) window] makeKeyWindow];
+      unblock_input ();
     }
-
-  xfree (unwind_data);
-  unblock_input ();
 }
 
 
@@ -1424,12 +1453,11 @@ Lisp_Object
 ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
 {
   id dialog;
-  Lisp_Object window, tem, title;
+  Lisp_Object tem, title;
   NSPoint p;
   BOOL isQ;
-  NSAutoreleasePool *pool;
 
-  NSTRACE (x-popup-dialog);
+  NSTRACE ("ns_popup_dialog");
 
   isQ = NILP (header);
 
@@ -1447,18 +1475,13 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
     contents = list2 (title, Fcons (build_string ("Ok"), Qt));
 
   block_input ();
-  pool = [[NSAutoreleasePool alloc] init];
   dialog = [[EmacsDialogPanel alloc] initFromContents: contents
                                            isQuestion: isQ];
 
   {
     ptrdiff_t specpdl_count = SPECPDL_INDEX ();
-    struct Popdown_data *unwind_data = xmalloc (sizeof (*unwind_data));
 
-    unwind_data->pool = pool;
-    unwind_data->dialog = dialog;
-
-    record_unwind_protect_ptr (pop_down_menu, unwind_data);
+    record_unwind_protect_ptr (pop_down_menu, dialog);
     popup_activated_flag = 1;
     tem = [dialog runDialogAt: p];
     unbind_to (specpdl_count, Qnil);  /* calls pop_down_menu */
@@ -1495,7 +1518,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
 #define TEXTHEIGHT	20.0
 #define MINCELLWIDTH	90.0
 
-- initWithContentRect: (NSRect)contentRect styleMask: (NSUInteger)aStyle
+- (instancetype)initWithContentRect: (NSRect)contentRect styleMask: (NSWindowStyleMask)aStyle
               backing: (NSBackingStoreType)backingType defer: (BOOL)flag
 {
   NSSize spacing = {SPACER, SPACER};
@@ -1512,7 +1535,6 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   area.size.width = ICONSIZE;
   area.size.height= ICONSIZE;
   img = [[NSImage imageNamed: @"NSApplicationIcon"] copy];
-  [img setScalesWhenResized: YES];
   [img setSize: NSMakeSize (ICONSIZE, ICONSIZE)];
   imgView = [[NSImageView alloc] initWithFrame: area];
   [imgView setImage: img];
@@ -1520,7 +1542,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   [img autorelease];
   [imgView autorelease];
 
-  aStyle = NSTitledWindowMask|NSClosableWindowMask|NSUtilityWindowMask;
+  aStyle = NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskUtilityWindow;
   flag = YES;
   rows = 0;
   cols = 1;
@@ -1537,7 +1559,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   [self setTitle: @""];
 
   area.origin.x   += ICONSIZE+2*SPACER;
-/*  area.origin.y   = TEXTHEIGHT; ICONSIZE/2-10+SPACER; */
+  /* area.origin.y   = TEXTHEIGHT; ICONSIZE/2-10+SPACER; */
   area.size.width = 400;
   area.size.height= TEXTHEIGHT;
   command = [[[NSTextField alloc] initWithFrame: area] autorelease];
@@ -1548,16 +1570,16 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   [command setSelectable: NO];
   [command setFont: [NSFont boldSystemFontOfSize: 13.0]];
 
-/*  area.origin.x   = ICONSIZE+2*SPACER;
+  /* area.origin.x = ICONSIZE+2*SPACER;
   area.origin.y   = TEXTHEIGHT + 2*SPACER;
   area.size.width = 400;
   area.size.height= 2;
   tem = [[[NSBox alloc] initWithFrame: area] autorelease];
   [[self contentView] addSubview: tem];
   [tem setTitlePosition: NSNoTitle];
-  [tem setAutoresizingMask: NSViewWidthSizable];*/
+  [tem setAutoresizingMask: NSViewWidthSizable]; */
 
-/*  area.origin.x = ICONSIZE+2*SPACER; */
+  /* area.origin.x = ICONSIZE+2*SPACER; */
   area.origin.y += TEXTHEIGHT+SPACER;
   area.size.width = 400;
   area.size.height= TEXTHEIGHT;
@@ -1572,7 +1594,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   [cell setBordered: NO];
   [cell setEnabled: NO];
   [cell setCellAttribute: NSCellIsInsetButton to: 8];
-  [cell setBezelStyle: NSRoundedBezelStyle];
+  [cell setBezelStyle: NSBezelStyleRounded];
 
   matrix = [[NSMatrix alloc] initWithFrame: contentRect
                                       mode: NSHighlightModeMatrix
@@ -1585,7 +1607,6 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   [matrix autorelease];
 
   [[self contentView] addSubview: matrix];
-  [self setOneShot: YES];
   [self setReleasedWhenClosed: YES];
   [self setHidesOnDeactivate: YES];
   return self;
@@ -1611,24 +1632,24 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   int row = 0;
   int buttons = 0, btnnr = 0;
 
-  for (; XTYPE (lst) == Lisp_Cons; lst = XCDR (lst))
+  for (; CONSP (lst); lst = XCDR (lst))
     {
       item = XCAR (list);
-      if (XTYPE (item) == Lisp_Cons)
+      if (CONSP (item))
         ++buttons;
     }
 
   if (buttons > 0)
     button_values = xmalloc (buttons * sizeof *button_values);
 
-  for (; XTYPE (list) == Lisp_Cons; list = XCDR (list))
+  for (; CONSP (list); list = XCDR (list))
     {
       item = XCAR (list);
-      if (XTYPE (item) == Lisp_String)
+      if (STRINGP (item))
         {
           [self addString: SSDATA (item) row: row++];
         }
-      else if (XTYPE (item) == Lisp_Cons)
+      else if (CONSP (item))
         {
           button_values[btnnr] = XCDR (item);
           [self addButton: SSDATA (XCAR (item)) value: btnnr row: row++];
@@ -1700,12 +1721,12 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
 }
 
 
-- initFromContents: (Lisp_Object)contents isQuestion: (BOOL)isQ
+- (instancetype)initFromContents: (Lisp_Object)contents isQuestion: (BOOL)isQ
 {
   Lisp_Object head;
   [super init];
 
-  if (XTYPE (contents) == Lisp_Cons)
+  if (CONSP (contents))
     {
       head = Fcar (contents);
       [self process_dialog: Fcdr (contents)];
@@ -1713,7 +1734,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
   else
     head = contents;
 
-  if (XTYPE (head) == Lisp_String)
+  if (STRINGP (head))
       [title setStringValue:
                  [NSString stringWithUTF8String: SSDATA (head)]];
   else if (isQ == YES)
@@ -1725,7 +1746,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
     int i;
     NSRect r, s, t;
 
-    if (cols == 1 && rows > 1)	/* Never told where to split */
+    if (cols == 1 && rows > 1)	/* Never told where to split.  */
       {
         [matrix addColumn];
         for (i = 0; i < rows/2; i++)
@@ -1778,7 +1799,7 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
 
 - (void)timeout_handler: (NSTimer *)timedEntry
 {
-  NSEvent *nxev = [NSEvent otherEventWithType: NSApplicationDefined
+  NSEvent *nxev = [NSEvent otherEventWithType: NSEventTypeApplicationDefined
                             location: NSMakePoint (0, 0)
                        modifierFlags: 0
                            timestamp: 0
@@ -1789,9 +1810,9 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
                                data2: 0];
 
   timer_fired = YES;
-  /* We use sto because stopModal/abortModal out of the main loop does not
-     seem to work in 10.6.  But as we use stop we must send a real event so
-     the stop is seen and acted upon.  */
+  /* We use stop because stopModal/abortModal out of the main loop
+     does not seem to work in 10.6.  But as we use stop we must send a
+     real event so the stop is seen and acted upon.  */
   [NSApp stop:self];
   [NSApp postEvent: nxev atStart: NO];
 }
@@ -1822,14 +1843,14 @@ ns_popup_dialog (struct frame *f, Lisp_Object header, Lisp_Object contents)
       ret = dialog_return;
       if (! timer_fired)
         {
-          if (tmo != nil) [tmo invalidate]; /* Cancels timer */
+          if (tmo != nil) [tmo invalidate]; /* Cancels timer.  */
           break;
         }
     }
 
   if (EQ (ret, Qundefined) && window_closed)
     /* Make close button pressed equivalent to C-g.  */
-    Fsignal (Qquit, Qnil);
+    quit ();
 
   return ret;
 }
@@ -1853,7 +1874,7 @@ DEFUN ("ns-reset-menu", Fns_reset_menu, Sns_reset_menu, 0, 0, 0,
 
 
 DEFUN ("menu-or-popup-active-p", Fmenu_or_popup_active_p, Smenu_or_popup_active_p, 0, 0, 0,
-       doc: /* Return t if a menu or popup dialog is active.  */)
+       doc: /* SKIP: real doc in xmenu.c.  */)
      (void)
 {
   return popup_activated () ? Qt : Qnil;
@@ -1872,10 +1893,10 @@ syms_of_nsmenu (void)
   /* Don't know how to keep track of this in Next/Open/GNUstep.  Always
      update menus there.  */
   trackingMenu = 1;
+  PDUMPER_REMEMBER_SCALAR (trackingMenu);
 #endif
   defsubr (&Sns_reset_menu);
   defsubr (&Smenu_or_popup_active_p);
 
-  Qdebug_on_next_call = intern_c_string ("debug-on-next-call");
-  staticpro (&Qdebug_on_next_call);
+  DEFSYM (Qdebug_on_next_call, "debug-on-next-call");
 }

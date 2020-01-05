@@ -1,6 +1,6 @@
 ;;; semantic/db-find.el --- Searching through semantic databases.
 
-;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: tags
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -196,7 +196,7 @@ expunge duplicates.")
   "Concrete search index for `semanticdb-find'.
 This class will cache data derived during various searches.")
 
-(defmethod semantic-reset ((idx semanticdb-find-search-index))
+(cl-defmethod semantic-reset ((idx semanticdb-find-search-index))
   "Reset the object IDX."
   (require 'semantic/scope)
   ;; Clear the include path.
@@ -208,7 +208,7 @@ This class will cache data derived during various searches.")
   (semantic-scope-reset-cache)
   )
 
-(defmethod semanticdb-synchronize ((idx semanticdb-find-search-index)
+(cl-defmethod semanticdb-synchronize ((idx semanticdb-find-search-index)
 				   new-tags)
   "Synchronize the search index IDX with some NEW-TAGS."
   ;; Reset our parts.
@@ -220,7 +220,7 @@ This class will cache data derived during various searches.")
      (semantic-reset (semanticdb-get-table-index tab))))
   )
 
-(defmethod semanticdb-partial-synchronize ((idx semanticdb-find-search-index)
+(cl-defmethod semanticdb-partial-synchronize ((idx semanticdb-find-search-index)
 					   new-tags)
   "Synchronize the search index IDX with some changed NEW-TAGS."
   ;; Only reset if include statements changed.
@@ -297,14 +297,14 @@ refreshed when things change.  See `semanticdb-ref-test'.
 Note for overloading:  If you opt to overload this function for your
 major mode, and your routine takes a long time, be sure to call
 
- (semantic-throw-on-input 'your-symbol-here)
+ (semantic-throw-on-input \\='your-symbol-here)
 
 so that it can be called from the idle work handler."
   )
 
 (defun semanticdb-find-translate-path-default (path brutish)
   "Translate PATH into a list of semantic tables.
-If BRUTISH is non nil, return all tables associated with PATH.
+If BRUTISH is non-nil, return all tables associated with PATH.
 Default action as described in `semanticdb-find-translate-path'."
   (if (semanticdb-find-results-p path)
       ;; nil means perform the search over these results.
@@ -316,7 +316,7 @@ Default action as described in `semanticdb-find-translate-path'."
 ;;;###autoload
 (define-overloadable-function semanticdb-find-table-for-include (includetag &optional table)
   "For a single INCLUDETAG found in TABLE, find a `semanticdb-table' object
-INCLUDETAG is a semantic TAG of class 'include.
+INCLUDETAG is a semantic TAG of class `include'.
 TABLE is a semanticdb table that identifies where INCLUDETAG came from.
 TABLE is optional if INCLUDETAG has an overlay of :filename attribute."
   )
@@ -362,7 +362,7 @@ Default action as described in `semanticdb-find-translate-path'."
   "Are there any incomplete entries in CACHE?"
   (let ((ans nil))
     (dolist (tab cache)
-      (when (and (semanticdb-table-child-p tab)
+      (when (and (cl-typep tab 'semanticdb-table)
 		 (not (number-or-marker-p (oref tab pointmax))))
 	(setq ans t))
       )
@@ -399,10 +399,10 @@ Default action as described in `semanticdb-find-translate-path'."
   (let ((table (cond ((null path)
 		      semanticdb-current-table)
 		     ((bufferp path)
-		      (semantic-buffer-local-value 'semanticdb-current-table path))
+		      (buffer-local-value 'semanticdb-current-table path))
 		     ((and (stringp path) (file-exists-p path))
 		      (semanticdb-file-table-object path t))
-		     ((semanticdb-abstract-table-child-p path)
+		     ((cl-typep path 'semanticdb-abstract-table)
 		      path)
 		     (t nil))))
     (if table
@@ -434,7 +434,7 @@ Default action as described in `semanticdb-find-translate-path'."
   "All include tags scanned, plus action taken on the tag.
 Each entry is an alist:
   (ACTION . TAG)
-where ACTION is one of 'scanned, 'duplicate, 'lost
+where ACTION is one of `scanned', `duplicate', `lost'
 and TAG is a clone of the include tag that was found.")
 (make-variable-buffer-local 'semanticdb-find-scanned-include-tags)
 
@@ -854,7 +854,7 @@ This makes it appear more like the results of a `semantic-find-' call.
 Optional FIND-FILE-MATCH loads all files associated with RESULTS
 into buffers.  This has the side effect of enabling `semantic-tag-buffer' to
 return a value.
-If FIND-FILE-MATCH is 'name, then only the filename is stored
+If FIND-FILE-MATCH is `name', then only the filename is stored
 in each tag instead of loading each file into a buffer.
 If the input RESULTS are not going to be used again, and if
 FIND-FILE-MATCH is nil, you can use `semanticdb-fast-strip-find-results'
@@ -902,7 +902,7 @@ instead."
 This makes it appear more like the results of a `semantic-find-' call.
 This is like `semanticdb-strip-find-results', except the input list RESULTS
 will be changed."
-  (apply #'nconc (mapcar #'cdr results)))
+  (mapcan #'cdr results))
 
 (defun semanticdb-find-results-p (resultp)
   "Non-nil if RESULTP is in the form of a semanticdb search result.
@@ -910,7 +910,7 @@ This query only really tests the first entry in the list that is RESULTP,
 but should be good enough for debugging assertions."
   (and (listp resultp)
        (listp (car resultp))
-       (semanticdb-abstract-table-child-p (car (car resultp)))
+       (cl-typep (car (car resultp)) 'semanticdb-abstract-table)
        (or (semantic-tag-p (car (cdr (car resultp))))
 	   (null (car (cdr (car resultp)))))))
 
@@ -930,7 +930,7 @@ but should be good enough for debugging assertions."
 	    (length result))))
 
 (defun semanticdb-find-result-with-nil-p (resultp)
-  "Non-nil of RESULTP is in the form of a semanticdb search result.
+  "Non-nil if RESULTP is in the form of a semanticdb search result.
 The value nil is valid where a TABLE usually is, but only if the TAG
 results include overlays.
 This query only really tests the first entry in the list that is RESULTP,
@@ -938,7 +938,7 @@ but should be good enough for debugging assertions."
   (and (listp resultp)
        (listp (car resultp))
        (let ((tag-to-test (car-safe (cdr (car resultp)))))
-	 (or (and (semanticdb-abstract-table-child-p (car (car resultp)))
+	 (or (and (cl-typep (car (car resultp)) 'semanticdb-abstract-table)
 		  (or (semantic-tag-p tag-to-test)
 		      (null tag-to-test)))
 	     (and (null (car (car resultp)))
@@ -1085,7 +1085,7 @@ Returns result."
   "Log that TABLE has been searched and RESULT was found."
   (when semanticdb-find-log-flag
     (with-current-buffer semanticdb-find-log-buffer-name
-      (insert "Table: " (object-print table)
+      (insert "Table: " (cl-prin1-to-string table)
 	      " Result: " (int-to-string (length result)) " tags"
 	      "\n")
       )
@@ -1114,7 +1114,7 @@ for backward compatibility.
 If optional argument BRUTISH is non-nil, then ignore include statements,
 and search all tables in this project tree."
   (let (found match)
-    (save-excursion
+    (save-current-buffer
       ;; If path is a buffer, set ourselves up in that buffer
       ;; so that the override methods work correctly.
       (when (bufferp path) (set-buffer path))
@@ -1127,7 +1127,7 @@ and search all tables in this project tree."
 	    ;; databases and not associated with a file.
 	    (unless (and find-file-match
 			 (obj-of-class-p
-			  (car tableandtags) semanticdb-search-results-table))
+			  (car tableandtags) 'semanticdb-search-results-table))
 	      (when (setq match (funcall function
 					 (car tableandtags) (cdr tableandtags)))
 		(when find-file-match
@@ -1144,7 +1144,7 @@ and search all tables in this project tree."
 	  ;; `semanticdb-search-results-table', since those are system
 	  ;; databases and not associated with a file.
 	  (unless (and find-file-match
-		       (obj-of-class-p table semanticdb-search-results-table))
+		       (obj-of-class-p table 'semanticdb-search-results-table))
 	    (when (and table (setq match (funcall function table nil)))
 	      (semanticdb-find-log-activity table match)
 	      (when find-file-match
@@ -1304,25 +1304,25 @@ associated with that tag should be loaded into a buffer."
 ;; Override these with system databases to as new types of back ends.
 
 ;;; Top level Searches
-(defmethod semanticdb-find-tags-by-name-method ((table semanticdb-abstract-table) name &optional tags)
+(cl-defmethod semanticdb-find-tags-by-name-method ((table semanticdb-abstract-table) name &optional tags)
   "In TABLE, find all occurrences of tags with NAME.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
   (semantic-find-tags-by-name name (or tags (semanticdb-get-tags table))))
 
-(defmethod semanticdb-find-tags-by-name-regexp-method ((table semanticdb-abstract-table) regexp &optional tags)
+(cl-defmethod semanticdb-find-tags-by-name-regexp-method ((table semanticdb-abstract-table) regexp &optional tags)
   "In TABLE, find all occurrences of tags matching REGEXP.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
   (semantic-find-tags-by-name-regexp regexp (or tags (semanticdb-get-tags table))))
 
-(defmethod semanticdb-find-tags-for-completion-method ((table semanticdb-abstract-table) prefix &optional tags)
+(cl-defmethod semanticdb-find-tags-for-completion-method ((table semanticdb-abstract-table) prefix &optional tags)
   "In TABLE, find all occurrences of tags matching PREFIX.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
   (semantic-find-tags-for-completion prefix (or tags (semanticdb-get-tags table))))
 
-(defmethod semanticdb-find-tags-by-class-method ((table semanticdb-abstract-table) class &optional tags)
+(cl-defmethod semanticdb-find-tags-by-class-method ((table semanticdb-abstract-table) class &optional tags)
   "In TABLE, find all occurrences of tags of CLASS.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
@@ -1333,14 +1333,20 @@ Returns a table of all matching tags."
       (semantic-find-tags-included (or tags (semanticdb-get-tags table)))
     (semantic-find-tags-by-class class (or tags (semanticdb-get-tags table)))))
 
-(defmethod semanticdb-find-tags-external-children-of-type-method ((table semanticdb-abstract-table) parent &optional tags)
+(declare-function semantic-find-tags-external-children-of-type
+		  "semantic/find" (type &optional table))
+
+(cl-defmethod semanticdb-find-tags-external-children-of-type-method ((table semanticdb-abstract-table) parent &optional tags)
    "In TABLE, find all occurrences of tags whose parent is the PARENT type.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
    (require 'semantic/find)
    (semantic-find-tags-external-children-of-type parent (or tags (semanticdb-get-tags table))))
 
-(defmethod semanticdb-find-tags-subclasses-of-type-method ((table semanticdb-abstract-table) parent &optional tags)
+(declare-function semantic-find-tags-subclasses-of-type
+		  "semantic/find" (type &optional table))
+
+(cl-defmethod semanticdb-find-tags-subclasses-of-type-method ((table semanticdb-abstract-table) parent &optional tags)
    "In TABLE, find all occurrences of tags whose parent is the PARENT type.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
@@ -1348,7 +1354,7 @@ Returns a table of all matching tags."
    (semantic-find-tags-subclasses-of-type parent (or tags (semanticdb-get-tags table))))
 
 ;;; Deep Searches
-(defmethod semanticdb-deep-find-tags-by-name-method ((table semanticdb-abstract-table) name &optional tags)
+(cl-defmethod semanticdb-deep-find-tags-by-name-method ((table semanticdb-abstract-table) name &optional tags)
   "In TABLE, find all occurrences of tags with NAME.
 Search in all tags in TABLE, and all components of top level tags in
 TABLE.
@@ -1356,7 +1362,7 @@ Optional argument TAGS is a list of tags to search.
 Return a table of all matching tags."
   (semantic-find-tags-by-name name (semantic-flatten-tags-table (or tags (semanticdb-get-tags table)))))
 
-(defmethod semanticdb-deep-find-tags-by-name-regexp-method ((table semanticdb-abstract-table) regexp &optional tags)
+(cl-defmethod semanticdb-deep-find-tags-by-name-regexp-method ((table semanticdb-abstract-table) regexp &optional tags)
   "In TABLE, find all occurrences of tags matching REGEXP.
 Search in all tags in TABLE, and all components of top level tags in
 TABLE.
@@ -1364,7 +1370,7 @@ Optional argument TAGS is a list of tags to search.
 Return a table of all matching tags."
   (semantic-find-tags-by-name-regexp regexp (semantic-flatten-tags-table (or tags (semanticdb-get-tags table)))))
 
-(defmethod semanticdb-deep-find-tags-for-completion-method ((table semanticdb-abstract-table) prefix &optional tags)
+(cl-defmethod semanticdb-deep-find-tags-for-completion-method ((table semanticdb-abstract-table) prefix &optional tags)
   "In TABLE, find all occurrences of tags matching PREFIX.
 Search in all tags in TABLE, and all components of top level tags in
 TABLE.

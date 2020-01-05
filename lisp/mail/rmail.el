@@ -1,6 +1,7 @@
-;;; rmail.el --- main code of "RMAIL" mail reader for Emacs
+;;; rmail.el --- main code of "RMAIL" mail reader for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1988, 1993-1998, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1988, 1993-1998, 2000-2020 Free Software
+;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: mail
@@ -18,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -38,6 +39,8 @@
 
 (require 'mail-utils)
 (require 'rfc2047)
+
+(require 'rmail-loaddefs)
 
 (declare-function compilation--message->loc "compile" (cl-x) t)
 (declare-function epa--find-coding-system-for-mime-charset "epa" (mime-charset))
@@ -97,7 +100,7 @@ its character representation and its display representation.")
 
 (defvar rmail-header-style 'normal
   "The current header display style choice, one of
-'normal (selected headers) or 'full (all headers).")
+`normal' (selected headers) or `full' (all headers).")
 
 (defvar rmail-mime-decoded nil
   "Non-nil if message has been processed by `rmail-show-mime-function'.")
@@ -160,7 +163,7 @@ its character representation and its display representation.")
 (put 'rmail-spool-directory 'standard-value
      '((cond ((file-exists-p "/var/mail") "/var/mail/")
 	     ((file-exists-p "/var/spool/mail") "/var/spool/mail/")
-	     ((memq system-type '(hpux usg-unix-v irix)) "/usr/mail/")
+	     ((memq system-type '(hpux usg-unix-v)) "/usr/mail/")
 	     (t "/usr/spool/mail/"))))
 
 ;;;###autoload
@@ -173,7 +176,7 @@ its character representation and its display representation.")
 	 "/var/mail/")
 	;; Many GNU/Linux systems use this name.
 	((file-exists-p "/var/spool/mail") "/var/spool/mail/")
-	((memq system-type '(hpux usg-unix-v irix)) "/usr/mail/")
+	((memq system-type '(hpux usg-unix-v)) "/usr/mail/")
 	(t "/usr/spool/mail/")))
   "Name of directory used by system mailer for delivering new mail.
 Its name should end with a slash."
@@ -188,9 +191,6 @@ Its name should end with a slash."
   :group 'rmail-retrieve
   :type '(choice (const nil) string))
 
-(define-obsolete-variable-alias 'rmail-pop-password
-  'rmail-remote-password "22.1")
-
 (defcustom rmail-remote-password nil
   "Password to use when reading mail from a remote server.
 This setting is ignored for mailboxes whose URL already contains a password."
@@ -198,9 +198,6 @@ This setting is ignored for mailboxes whose URL already contains a password."
 		 (const :tag "Not Required" nil))
   :group 'rmail-retrieve
   :version "22.1")
-
-(define-obsolete-variable-alias 'rmail-pop-password-required
-  'rmail-remote-password-required "22.1")
 
 (defcustom rmail-remote-password-required nil
   "Non-nil if a password is required when reading mail from a remote server."
@@ -238,6 +235,7 @@ please report it with \\[report-emacs-bug].")
 (declare-function mail-dont-reply-to "mail-utils" (destinations))
 (declare-function rmail-update-summary "rmailsum" (&rest ignore))
 (declare-function rmail-mime-toggle-hidden "rmailmm" ())
+(declare-function rmail-mime-entity-truncated "rmailmm" (entity))
 
 (defun rmail-probe (prog)
   "Determine what flavor of movemail PROG is.
@@ -274,7 +272,7 @@ Otherwise, look for `movemail' in the directories in
 	  ;; rmail-insert-inbox-text before r1.439 fell back to using
 	  ;; (expand-file-name "movemail" exec-directory) and just
 	  ;; assuming it would work.
-	  ;; http://lists.gnu.org/archive/html/bug-gnu-emacs/2008-02/msg00087.html
+	  ;; https://lists.gnu.org/r/bug-gnu-emacs/2008-02/msg00087.html
 	  (let ((progname (expand-file-name
 			   (concat "movemail"
 				   (if (memq system-type '(ms-dos windows-nt))
@@ -287,7 +285,7 @@ Otherwise, look for `movemail' in the directories in
 		  (throw 'scan x))))))))))
 
 (defvar rmail-movemail-variant-in-use nil
-  "The movemail variant currently in use. Known variants are:
+  "The movemail variant currently in use.  Known variants are:
 
   `emacs'     Means any implementation, compatible with the native Emacs one.
               This is the default;
@@ -297,7 +295,7 @@ mail URLs as the source mailbox.")
 ;;;###autoload
 (defun rmail-movemail-variant-p (&rest variants)
   "Return t if the current movemail variant is any of VARIANTS.
-Currently known variants are 'emacs and 'mailutils."
+Currently known variants are `emacs' and `mailutils'."
   (when (not rmail-movemail-variant-in-use)
     ;; Autodetect
     (setq rmail-movemail-variant-in-use (rmail-autodetect)))
@@ -315,7 +313,7 @@ Currently known variants are 'emacs and 'mailutils."
 If non-nil, this variable is used to identify the correspondent
 when receiving new mail.  If it matches the address of the sender,
 the recipient is taken as correspondent of a mail.
-If nil \(default value\), your `user-login-name' and `user-mail-address'
+If nil \(default value), your `user-login-name' and `user-mail-address'
 are used to exclude yourself as correspondent.
 
 Usually you don't have to set this variable, except if you collect mails
@@ -359,6 +357,9 @@ explicitly.")
 	  "\\|^importance:\\|^envelope-to:\\|^delivery-date\\|^openpgp:"
 	  "\\|^mbox-line:\\|^cancel-lock:"
 	  "\\|^DomainKey-Signature:\\|^dkim-signature:"
+	  "\\|^ARC-.*:"
+	  "\\|^Received-SPF:"
+	  "\\|^Authentication-Results:"
 	  "\\|^resent-face:\\|^resent-x.*:\\|^resent-organization:\\|^resent-openpgp:"
 	  "\\|^x-.*:"))
   "Regexp to match header fields that Rmail should normally hide.
@@ -392,7 +393,7 @@ go to that message and type \\[rmail-toggle-header] twice."
   "Regexp to match Header fields that Rmail should display.
 If nil, display all header fields except those matched by
 `rmail-ignored-headers'."
-  :type '(choice regexp (const :tag "All"))
+  :type '(choice regexp (const :tag "All" nil))
   :group 'rmail-headers)
 
 ;;;###autoload
@@ -406,7 +407,7 @@ If nil, display all header fields except those matched by
 (defcustom rmail-highlighted-headers (purecopy "^From:\\|^Subject:")
   "Regexp to match Header fields that Rmail should normally highlight.
 A value of nil means don't highlight.  Uses the face `rmail-highlight'."
-  :type 'regexp
+  :type '(choice regexp (const :tag "None" nil))
   :group 'rmail-headers)
 
 (defface rmail-highlight
@@ -527,7 +528,7 @@ still the current message in the Rmail buffer.")
 ;; It's not clear what it should do now, since there is nothing that
 ;; records when a message is shown for the first time (unseen is not
 ;; necessarily the same thing).
-;; See http://lists.gnu.org/archive/html/emacs-devel/2009-03/msg00013.html
+;; See https://lists.gnu.org/r/emacs-devel/2009-03/msg00013.html
 (defcustom rmail-message-filter nil
   "If non-nil, a filter function for new messages in RMAIL.
 Called with region narrowed to the message, including headers,
@@ -691,8 +692,9 @@ Element N specifies the summary line for message N+1.")
 This is set to nil by default.")
 
 (defcustom rmail-get-coding-function nil
-  "Function of no args to try to determine coding system for a message."
-  :type 'function
+  "Function of no args to try to determine coding system for a message.
+If nil, just search for `rmail-mime-charset-pattern'."
+  :type '(choice (const nil) function)
   :group 'rmail
   :version "24.4")
 
@@ -777,8 +779,8 @@ The first parenthesized expression should match the MIME-charset name.")
     (concat
      "From "
 
-     ;; Many things can happen to an RFC 822 mailbox before it is put into
-     ;; a `From' line.  The leading phrase can be stripped, e.g.
+     ;; Many things can happen to an RFC 822 (or later) mailbox before it is
+     ;; put into a `From' line.  The leading phrase can be stripped, e.g.
      ;; `Joe <@w.x:joe@y.z>' -> `<@w.x:joe@y.z>'.  The <> can be stripped, e.g.
      ;; `<@x.y:joe@y.z>' -> `@x.y:joe@y.z'.  Everything starting with a CRLF
      ;; can be removed, e.g.
@@ -849,7 +851,7 @@ that knows the exact ordering of the \\( \\) subexpressions.")
 	       (beginning-of-line) (end-of-line)
 	       (1 font-lock-comment-delimiter-face nil t)
 	       (5 font-lock-comment-face nil t)))
-	    '("^\\(X-[a-z0-9-]+\\|In-reply-to\\|Date\\):.*\\(\n[ \t]+.*\\)*$"
+	    '("^\\(X-[a-z0-9-]+\\|In-Reply-To\\|Date\\):.*\\(\n[ \t]+.*\\)*$"
 	      . 'rmail-header-name))))
   "Additional expressions to highlight in Rmail mode.")
 
@@ -888,12 +890,12 @@ that knows the exact ordering of the \\( \\) subexpressions.")
 Signal an error and set `rmail-mime-feature' to nil if the feature
 isn't provided."
   (when rmail-enable-mime
-    (condition-case err
+    (condition-case nil
 	(require rmail-mime-feature)
       (error
        (display-warning
 	'rmail
-	(format "Although MIME support is requested
+	(format-message "Although MIME support is requested
 through `rmail-enable-mime' being non-nil, the required feature
 `%s' (the value of `rmail-mime-feature')
 is not available in the current session.
@@ -1001,8 +1003,8 @@ If `rmail-display-summary' is non-nil, make a summary for this RMAIL file."
   "Report that the buffer is not in the mbox file format.
 MSGNUM, if present, indicates the malformed message."
   (if msgnum
-      (error "Message %d is not a valid RFC2822 message" msgnum)
-    (error "Message is not a valid RFC2822 message")))
+      (error "Message %d is not a valid RFC 822 (or later) message" msgnum)
+    (error "Message is not a valid RFC 822 (or later) message")))
 
 (defun rmail-convert-babyl-to-mbox ()
   "Convert the mail file from Babyl version 5 to mbox.
@@ -1323,8 +1325,7 @@ Instead, these commands are available:
   (let ((finding-rmail-file (not (eq major-mode 'rmail-mode))))
     (rmail-mode-2)
     (when (and finding-rmail-file
-	       (null coding-system-for-read)
-	       (default-value 'enable-multibyte-characters))
+	       (null coding-system-for-read))
       (let ((rmail-enable-multibyte t))
 	(rmail-require-mime-maybe)
 	(rmail-convert-file-maybe)
@@ -1585,13 +1586,12 @@ Hook `rmail-quit-hook' is run after expunging."
   (interactive)
   ;; This let var was called rmail-buffer, but that interfered
   ;; with the buffer-local var used in summary buffers.
-  (let ((buffer-to-bury (current-buffer)))
-    (if (rmail-summary-exists)
-	(let (window)
-	  (while (setq window (get-buffer-window rmail-summary-buffer))
-	    (quit-window nil window))
-	  (bury-buffer rmail-summary-buffer)))
-    (quit-window)))
+  (if (rmail-summary-exists)
+      (let (window)
+        (while (setq window (get-buffer-window rmail-summary-buffer))
+          (quit-window nil window))
+        (bury-buffer rmail-summary-buffer)))
+  (quit-window))
 
 (defun rmail-duplicate-message ()
   "Create a duplicated copy of the current message.
@@ -1752,22 +1752,21 @@ not be a new one).  It returns non-nil if it got any new messages."
   (or (eq buffer-undo-list t)
       (setq buffer-undo-list nil))
   (let ((all-files (if file-name (list file-name) rmail-inbox-list))
-	(rmail-enable-multibyte (default-value 'enable-multibyte-characters))
+	(rmail-enable-multibyte t)
 	found)
     (unwind-protect
 	(progn
 	  ;; This loops if any members of the inbox list have the same
 	  ;; basename (see "name conflict" below).
 	  (while all-files
-	    (let ((opoint (point))
-		  ;; If buffer has not changed yet, and has not been
+	    (let (;; If buffer has not changed yet, and has not been
 		  ;; saved yet, don't replace the old backup file now.
 		  (make-backup-files (and make-backup-files
 					  (buffer-modified-p)))
 		  (buffer-read-only nil)
 		  ;; Don't make undo records while getting mail.
 		  (buffer-undo-list t)
-		  delete-files success files file-last-names)
+		  delete-files files file-last-names)
 	      ;; Pull files off all-files onto files as long as there is
 	      ;; no name conflict.  A conflict happens when two inbox
 	      ;; file names have the same last component.
@@ -1786,7 +1785,7 @@ not be a new one).  It returns non-nil if it got any new messages."
 	      ;; Make sure we end with a blank line unless there are
 	      ;; no messages, as required by mbox format (Bug#9974).
 	      (unless (bobp)
-		(while (not (looking-back "\n\n"))
+		(while (not (looking-back "\n\n" (- (point) 2)))
 		  (insert "\n")))
 	      (setq found (or
 			   (rmail-get-new-mail-1 file-name files delete-files)
@@ -1815,9 +1814,21 @@ not be a new one).  It returns non-nil if it got any new messages."
 	;; Read in the contents of the inbox files, renaming them as
 	;; necessary, and adding to the list of files to delete
 	;; eventually.
-	(if file-name
-	    (rmail-insert-inbox-text files nil)
-	  (setq delete-files (rmail-insert-inbox-text files t)))
+	(unwind-protect
+	    (progn
+	      ;; Set modified now to lock the file, so that we don't
+	      ;; encounter locking problems later in the middle of
+	      ;; reading the mail.
+	      (set-buffer-modified-p t)
+	      (if file-name
+		  (rmail-insert-inbox-text files nil)
+		(setq delete-files (rmail-insert-inbox-text files t))))
+	  ;; If there was no new mail, or we aborted before actually
+	  ;; trying to get any, mark buffer unmodified.  Otherwise the
+	  ;; buffer is correctly marked modified and the file locked
+	  ;; until we save out the new mail.
+	  (if (= (point-min) (point-max))
+	      (set-buffer-modified-p nil)))
 	;; Scan the new text and convert each message to
 	;; Rmail/mbox format.
 	(goto-char (point-min))
@@ -1869,14 +1880,19 @@ not be a new one).  It returns non-nil if it got any new messages."
 	(setq result (> new-messages 0))
 	result))))
 
+(defun rmail-remote-proto-p (proto)
+  "Return non-nil if string PROTO refers to a remote mailbox protocol."
+  (string-match-p "^\\(imap\\|pop\\)s?$" proto))
+
 (defun rmail-parse-url (file)
-  "Parse the supplied URL. Return (list MAILBOX-NAME REMOTE PASSWORD GOT-PASSWORD)
-WHERE MAILBOX-NAME is the name of the mailbox suitable as argument to the
-actual version of `movemail', REMOTE is non-nil if MAILBOX-NAME refers to
-a remote mailbox, PASSWORD is the password if it should be
-supplied as a separate argument to `movemail' or nil otherwise, GOT-PASSWORD
-is non-nil if the user has supplied the password interactively.
-"
+  "Parse a mailbox URL string FILE.
+Return (MAILBOX-NAME PROTO PASSWORD GOT-PASSWORD), where MAILBOX-NAME is
+the name of the mailbox suitable as argument to the actual version of
+`movemail', PROTO is the movemail protocol (use `rmail-remote-proto-p'
+to see if it refers to a remote mailbox), PASSWORD is the password if it
+should be supplied as a separate argument to `movemail' or nil otherwise,
+and GOT-PASSWORD is non-nil if the user has supplied the password
+interactively."
   (cond
    ((string-match "^\\([^:]+\\)://\\(\\([^:@]+\\)\\(:\\([^@]+\\)\\)?@\\)?.*" file)
       (let (got-password supplied-password
@@ -1886,32 +1902,35 @@ is non-nil if the user has supplied the password interactively.
 	    (host  (substring file (or (match-end 2)
 				       (+ 3 (match-end 1))))))
 
-	(if (not pass)
-	    (when rmail-remote-password-required
-	      (setq got-password (not (rmail-have-password)))
-	      (setq supplied-password (rmail-get-remote-password
-				       (string-equal proto "imap"))))
-	  ;; The password is embedded.  Strip it out since movemail
-	  ;; does not really like it, in spite of the movemail spec.
-	  (setq file (concat proto "://" user "@" host)))
+	(if (rmail-remote-proto-p proto)
+	    (if (not pass)
+		(when rmail-remote-password-required
+		  (setq got-password (not (rmail-have-password)))
+		  (setq supplied-password (rmail-get-remote-password
+					   (string-match "^imaps?" proto))))
+	      ;; FIXME
+	      ;; The password is embedded.  Strip it out since movemail
+	      ;; does not really like it, in spite of the movemail spec.
+	      (setq file (concat proto "://" user "@" host))))
 
 	(if (rmail-movemail-variant-p 'emacs)
 	    (if (string-equal proto "pop")
 		(list (concat "po:" user ":" host)
-		      t
+		      proto
 		      (or pass supplied-password)
 		      got-password)
 	      (error "Emacs movemail does not support %s protocol" proto))
 	  (list file
-		(or (string-equal proto "pop") (string-equal proto "imap"))
+		proto
 		(or supplied-password pass)
 		got-password))))
 
    ((string-match "^po:\\([^:]+\\)\\(:\\(.*\\)\\)?" file)
     (let (got-password supplied-password
-          (proto "pop")
-	  (user  (match-string 1 file))
-	  (host  (match-string 3 file)))
+          ;; (proto "pop")
+	  ;; (user  (match-string 1 file))
+	  ;; (host  (match-string 3 file))
+          )
 
       (when rmail-remote-password-required
 	(setq got-password (not (rmail-have-password)))
@@ -1944,8 +1963,7 @@ SIZE is the original size of the newly read mail.
 Value is the size of the newly read mail after conversion."
   ;; Detect previous Babyl format files.
   (let ((case-fold-search nil)
-	(old-file file)
-	new-file)
+	(old-file file))
     (cond ((looking-at "BABYL OPTIONS:")
 	   ;; The new mail is in Babyl version 5 format.  Use unrmail
 	   ;; to convert it.
@@ -1966,23 +1984,18 @@ Value is the size of the newly read mail after conversion."
     size))
 
 (defun rmail-insert-inbox-text (files renamep)
-  ;; Detect a locked file now, so that we avoid moving mail
-  ;; out of the real inbox file.  (That could scare people.)
-  (or (memq (file-locked-p buffer-file-name) '(nil t))
-      (error "RMAIL file %s is locked"
-	     (file-name-nondirectory buffer-file-name)))
-  (let (file tofile delete-files movemail popmail got-password password)
+  (let (file tofile delete-files proto got-password password)
     (while files
       ;; Handle remote mailbox names specially; don't expand as filenames
       ;; in case the userid contains a directory separator.
       (setq file (car files))
       (let ((url-data (rmail-parse-url file)))
 	(setq file (nth 0 url-data))
-	(setq popmail (nth 1 url-data))
+	(setq proto (nth 1 url-data))
 	(setq password (nth 2 url-data))
 	(setq got-password (nth 3 url-data)))
 
-      (if popmail
+      (if proto
 	  (setq renamep t)
 	(setq file (file-truename
 		    (substitute-in-file-name (expand-file-name file)))))
@@ -2003,25 +2016,28 @@ Value is the size of the newly read mail after conversion."
 		     (expand-file-name buffer-file-name))))
       ;; Always use movemail to rename the file,
       ;; since there can be mailboxes in various directories.
-      (when (not popmail)
+      (when (not proto)
 	;; On some systems, /usr/spool/mail/foo is a directory
 	;; and the actual inbox is /usr/spool/mail/foo/foo.
 	(if (file-directory-p file)
 	    (setq file (expand-file-name (user-login-name)
 					 file))))
-      (cond (popmail
-	     (message "Getting mail from the remote server ..."))
+      (cond (proto
+	     (message "Getting mail from %s..."
+		      (if (rmail-remote-proto-p proto)
+			  "the remote server"
+			proto)))
 	    ((and (file-exists-p tofile)
-		  (/= 0 (nth 7 (file-attributes tofile))))
+		  (/= 0 (file-attribute-size (file-attributes tofile))))
 	     (message "Getting mail from %s..." tofile))
 	    ((and (file-exists-p file)
-		  (/= 0 (nth 7 (file-attributes file))))
+		  (/= 0 (file-attribute-size (file-attributes file))))
 	     (message "Getting mail from %s..." file)))
       ;; Set TOFILE if have not already done so, and
       ;; rename or copy the file FILE to TOFILE if and as appropriate.
       (cond ((not renamep)
 	     (setq tofile file))
-	    ((or (file-exists-p tofile) (and (not popmail)
+	    ((or (file-exists-p tofile) (and (not proto)
 					     (not (file-exists-p file))))
 	     nil)
 	    (t
@@ -2056,9 +2072,11 @@ Value is the size of the newly read mail after conversion."
 		   ;; If we just read the password, most likely it is
 		   ;; wrong.  Otherwise, see if there is a specific
 		   ;; reason to think that the problem is a wrong passwd.
-		   (if (or got-password
-			   (re-search-forward rmail-remote-password-error
-					      nil t))
+		   (if (and proto
+                            (rmail-remote-proto-p proto)
+			    (or got-password
+				(re-search-forward rmail-remote-password-error
+						   nil t)))
 		       (rmail-set-remote-password nil))
 
 		   ;; If using Mailutils, remove initial error code
@@ -2091,7 +2109,7 @@ Value is the size of the newly read mail after conversion."
 	    ;; Make sure the read-in mbox data properly ends with a
 	    ;; blank line unless it is of size 0.
 	    (unless (zerop size)
-	      (while (not (looking-back "\n\n"))
+	      (while (not (looking-back "\n\n" (- (point) 2)))
 		(insert "\n")))
 	    (if (not (and rmail-preserve-inbox (string= file tofile)))
 		(setq delete-files (cons tofile delete-files)))))
@@ -2126,13 +2144,13 @@ Value is the size of the newly read mail after conversion."
 Call with point at the end of the message."
   (unless (bolp)
     (insert "\n"))
-  (unless (looking-back "\n\n")
+  (unless (looking-back "\n\n" (- (point) 2))
     (insert "\n")))
 
 (defun rmail-add-mbox-headers ()
-  "Validate the RFC2822 format for the new messages.
+  "Validate the RFC 822 (or later) format for the new messages.
 Point should be at the first new message.
-An error is signaled if the new messages are not RFC2822
+An error is signaled if the new messages are not RFC 822 (or later)
 compliant.
 Unless an Rmail attribute header already exists, add it to the
 new messages.  Return the number of new messages."
@@ -2143,7 +2161,7 @@ new messages.  Return the number of new messages."
 	    (value "------U-")
 	    (case-fold-search nil)
 	    (delim (concat "\n\n" rmail-unix-mail-delimiter))
-	    limit stop)
+	    stop)
 	;; Detect an empty inbox file.
 	(unless (= start (point-max))
 	  ;; Scan the new messages to establish a count and to ensure that
@@ -2290,7 +2308,7 @@ If nil, that means the current message."
 (defun rmail-get-attr-value (attr state)
   "Return the character value for ATTR.
 ATTR is a (numeric) index, an offset into the mbox attribute
-header value. STATE is one of nil, t, or a character value."
+header value.  STATE is one of nil, t, or a character value."
   (cond
    ((numberp state) state)
    ((not state) ?-)
@@ -2557,7 +2575,7 @@ the message.  Point is at the beginning of the message."
   (save-excursion
     (setq deleted-head
 	  (cons (if (and (search-forward (concat rmail-attribute-header ": ") message-end t)
-			 (looking-at "?D"))
+			 (looking-at "\\?D"))
 		    ?D
 		  ?\s) deleted-head))))
 
@@ -2655,16 +2673,12 @@ Ask the user whether to add that list name to `mail-mailing-lists'."
 			      (concat "^\\("
 				      (regexp-quote (user-login-name))
 				      "\\($\\|@\\)\\|"
-				      (regexp-quote
-				       (or user-mail-address
-					   (concat (user-login-name) "@"
-						   (or mail-host-address
-						       (system-name)))))
+				      (regexp-quote user-mail-address)
 				      "\\>\\)"))
 			  addr))
 			(y-or-n-p
-			 (format "Add `%s' to `mail-mailing-lists'? "
-				 addr)))
+			 (format-message "Add `%s' to `mail-mailing-lists'? "
+					 addr)))
 	       (customize-save-variable 'mail-mailing-lists
 					(cons addr mail-mailing-lists)))))))))
 
@@ -2724,7 +2738,7 @@ N defaults to the current message."
       ;; (a default of "text/plain; charset=US-ASCII" is assumed) or
       ;; the base content type is either text or message.
       (or (not content-type-header)
-	  (string-match text-regexp content-type-header)))))
+	  (and (string-match text-regexp content-type-header) t)))))
 
 (defcustom rmail-show-message-verbose-min 200000
   "Message size at which to show progress messages for displaying it."
@@ -2761,7 +2775,8 @@ The current mail message becomes the message displayed."
   (let ((mbox-buf rmail-buffer)
 	(view-buf rmail-view-buffer)
 	blurb beg end body-start coding-system character-coding
-	is-text-message header-style)
+	is-text-message header-style
+	showing-message)
     (if (not msg)
 	(setq msg rmail-current-message))
     (unless (setq blurb (rmail-no-mail-p))
@@ -2787,7 +2802,8 @@ The current mail message becomes the message displayed."
 	(setq beg (rmail-msgbeg msg)
 	      end (rmail-msgend msg))
 	(when (> (- end beg) rmail-show-message-verbose-min)
-	  (message "Showing message %d" msg))
+	  (setq showing-message t)
+	  (message "Showing message %d..." msg))
 	(narrow-to-region beg end)
 	(goto-char beg)
 	(with-current-buffer rmail-view-buffer
@@ -2795,7 +2811,12 @@ The current mail message becomes the message displayed."
 	  ;; rmail-header-style based on the binding in effect when
 	  ;; this function is called; `rmail-toggle-headers' can
 	  ;; inspect this value to determine how to toggle.
-	  (set (make-local-variable 'rmail-header-style) header-style))
+	  (set (make-local-variable 'rmail-header-style) header-style)
+          ;; In case viewing the previous message sets the paragraph
+          ;; direction non-nil, we reset it here to allow independent
+          ;; dynamic determination of paragraph direction in every
+          ;; message.
+          (setq bidi-paragraph-direction nil))
 	(if (and rmail-enable-mime
 		 rmail-show-mime-function
 		 (re-search-forward "mime-version: 1.0" nil t))
@@ -2880,11 +2901,11 @@ The current mail message becomes the message displayed."
 	(rmail-swap-buffers)
 	(setq rmail-buffer-swapped t)
 	(run-hooks 'rmail-show-message-hook)
-	(when (> (- end beg) rmail-show-message-verbose-min)
-	  (message "Showing message %d...done" msg))))
+	(when showing-message
+	  (setq blurb (format "Showing message %d...done" msg)))))
     blurb))
 
-(defun rmail-copy-headers (beg end &optional ignored-headers)
+(defun rmail-copy-headers (beg _end &optional ignored-headers)
   "Copy displayed header fields to the message viewer buffer.
 BEG and END marks the start and end positions of the message in
 the mbox buffer.  If the optional argument IGNORED-HEADERS is
@@ -2937,7 +2958,8 @@ buffer to the end of the headers."
 			      (1+ (match-beginning 0))
 			    (point-max))))
 	      (if (and (looking-at ignored-headers)
-		       (not (looking-at rmail-nonignored-headers)))
+		       (not (and rmail-nonignored-headers
+				 (looking-at rmail-nonignored-headers))))
 		  (goto-char lim)
 		(append-to-buffer rmail-view-buffer (point) lim)
 		(goto-char lim))))
@@ -3147,7 +3169,7 @@ or forward if N is negative."
   (rmail-maybe-set-message-counters)
   (rmail-show-message rmail-total-messages))
 
-(defun rmail-next-error-move (msg-pos bad-marker)
+(defun rmail-next-error-move (msg-pos _bad-marker)
   "Move to an error locus (probably grep hit) in an Rmail buffer.
 MSG-POS is a marker pointing at the error message in the grep buffer.
 BAD-MARKER is a marker that ought to point at where to move to,
@@ -3371,21 +3393,15 @@ Interactively, empty argument means use same regexp used last time."
 
 (defun rmail-simplified-subject (&optional msgnum)
   "Return the simplified subject of message MSGNUM (or current message).
-Simplifying the subject means stripping leading and trailing whitespace,
-and typical reply prefixes such as Re:."
-  (let ((subject (or (rmail-get-header "Subject" msgnum) "")))
+Simplifying the subject means stripping leading and trailing
+whitespace, replacing whitespace runs with a single space and
+removing prefixes such as Re:, Fwd: and so on and mailing list
+tags such as [tag]."
+  (let ((subject (or (rmail-get-header "Subject" msgnum) ""))
+	(regexp "\\`[ \t\n]*\\(\\(\\w\\{1,3\\}:\\|\\[[^]]+]\\)[ \t\n]+\\)*"))
     (setq subject (rfc2047-decode-string subject))
-    (if (string-match "\\`[ \t]+" subject)
-	(setq subject (substring subject (match-end 0))))
-    (if (string-match rmail-reply-regexp subject)
-	(setq subject (substring subject (match-end 0))))
-    (if (string-match "[ \t]+\\'" subject)
-	(setq subject (substring subject 0 (match-beginning 0))))
-    ;; If Subject is long, mailers will break it into several lines at
-    ;; arbitrary places, so normalize whitespace by replacing every
-    ;; run of whitespace characters with a single space.
-    (setq subject (replace-regexp-in-string "[ \t\n]+" " " subject))
-    subject))
+    (setq subject (replace-regexp-in-string regexp "" subject))
+    (replace-regexp-in-string "[ \t\n]+" " " subject)))
 
 (defun rmail-simplified-subject-regexp ()
   "Return a regular expression matching the current simplified subject.
@@ -3457,21 +3473,20 @@ STATE non-nil means mark as deleted."
   "Back up to deleted message, select it, and undelete it."
   (interactive "p")
   (set-buffer rmail-buffer)
-  (let (value)
-    (dotimes (i count)
-      (let ((msg rmail-current-message))
-	(while (and (> msg 0)
-		    (not (rmail-message-deleted-p msg)))
-	  (setq msg (1- msg)))
-	(if (= msg 0)
-	    (error "No previous deleted message")
-	  (if (/= msg rmail-current-message)
-	      (rmail-show-message msg))
-	  (rmail-set-attribute rmail-deleted-attr-index nil)
-	  (if (rmail-summary-exists)
-	      (with-current-buffer rmail-summary-buffer
-		(rmail-summary-mark-undeleted msg))))))
-    (rmail-maybe-display-summary)))
+  (dotimes (_ count)
+    (let ((msg rmail-current-message))
+      (while (and (> msg 0)
+                  (not (rmail-message-deleted-p msg)))
+        (setq msg (1- msg)))
+      (if (= msg 0)
+          (error "No previous deleted message")
+        (if (/= msg rmail-current-message)
+            (rmail-show-message msg))
+        (rmail-set-attribute rmail-deleted-attr-index nil)
+        (if (rmail-summary-exists)
+            (with-current-buffer rmail-summary-buffer
+              (rmail-summary-mark-undeleted msg))))))
+  (rmail-maybe-display-summary))
 
 (defun rmail-delete-forward (&optional count)
   "Delete this message and move to next nondeleted one.
@@ -3485,7 +3500,7 @@ Returns t if a new message is displayed after the delete, or nil otherwise."
   (let (value backward)
     (if (< count 0)
 	(setq count (- count) backward t))
-    (dotimes (i count)
+    (dotimes (_ count)
       (rmail-set-attribute rmail-deleted-attr-index t)
       (run-hooks 'rmail-delete-message-hook)
       (let ((del-msg rmail-current-message))
@@ -3532,8 +3547,10 @@ If `rmail-confirm-expunge' is non-nil, ask user to confirm."
   (and (stringp rmail-deleted-vector)
        (string-match "D" rmail-deleted-vector)
        (if rmail-confirm-expunge
-	   (funcall rmail-confirm-expunge
-		    "Erase deleted messages from Rmail file? ")
+	   (and (funcall rmail-confirm-expunge
+			 "Erase deleted messages from Rmail file? ")
+		;; In case r-c-e's function returns non-nil, non-t
+		t)
 	 t)))
 
 (defun rmail-only-expunge (&optional dont-show)
@@ -3775,14 +3792,14 @@ original message into it."
 
 (defun rmail-reply (just-sender)
   "Reply to the current message.
-Normally include CC: to all other recipients of original message;
+Normally include Cc: to all other recipients of original message;
 prefix argument means ignore them.  While composing the reply,
 use \\[mail-yank-original] to yank the original message into it."
   (interactive "P")
   (if (zerop rmail-current-message)
       (error "There is no message to reply to"))
   (let (from reply-to cc subject date to message-id references
-	     resent-to resent-cc resent-reply-to
+	     ;; resent-to resent-cc resent-reply-to
 	     (msgnum rmail-current-message))
     (rmail-apply-in-message
      rmail-current-message
@@ -3797,35 +3814,36 @@ use \\[mail-yank-original] to yank the original message into it."
 	     date (mail-fetch-field "date")
 	     message-id (mail-fetch-field "message-id")
 	     references (mail-fetch-field "references" nil nil t)
-	     resent-reply-to (mail-fetch-field "resent-reply-to" nil t)
 	     ;; Bug#512.  It's inappropriate to reply to these addresses.
-;;;	     resent-cc (and (not just-sender)
-;;;			    (mail-fetch-field "resent-cc" nil t))
-;;;	     resent-to (or (mail-fetch-field "resent-to" nil t) "")
-;;;	     resent-subject (mail-fetch-field "resent-subject")
-;;;	     resent-date (mail-fetch-field "resent-date")
-;;;	     resent-message-id (mail-fetch-field "resent-message-id")
+	     ;;resent-reply-to (mail-fetch-field "resent-reply-to" nil t)
+	     ;;resent-cc (and (not just-sender)
+	     ;;   	    (mail-fetch-field "resent-cc" nil t))
+	     ;;resent-to (or (mail-fetch-field "resent-to" nil t) "")
+	     ;;resent-subject (mail-fetch-field "resent-subject")
+	     ;;resent-date (mail-fetch-field "resent-date")
+	     ;;resent-message-id (mail-fetch-field "resent-message-id")
 	     )
        (unless just-sender
 	 (if (mail-fetch-field "mail-followup-to" nil t)
 	     ;; If this header field is present, use it instead of the
-	     ;; To and CC fields.
+	     ;; To and Cc fields.
 	     (setq to (mail-fetch-field "mail-followup-to" nil t))
 	   (setq cc (or (mail-fetch-field "cc" nil t) "")
 		 to (or (mail-fetch-field "to" nil t) ""))))))
     ;; Merge the resent-to and resent-cc into the to and cc.
     ;; Bug#512.  It's inappropriate to reply to these addresses.
-;;;    (if (and resent-to (not (equal resent-to "")))
-;;;	(if (not (equal to ""))
-;;;	    (setq to (concat to ", " resent-to))
-;;;	  (setq to resent-to)))
-;;;    (if (and resent-cc (not (equal resent-cc "")))
-;;;	(if (not (equal cc ""))
-;;;	    (setq cc (concat cc ", " resent-cc))
-;;;	  (setq cc resent-cc)))
+    ;;(if (and resent-to (not (equal resent-to "")))
+    ;;    (setq to (if (not (equal to ""))
+    ;;                 (concat to ", " resent-to)
+    ;;               resent-to)))
+    ;;(if (and resent-cc (not (equal resent-cc "")))
+    ;;    (setq cc (if (not (equal cc ""))
+    ;;                 (concat cc ", " resent-cc)
+    ;;               resent-cc)))
     ;; Add `Re: ' to subject if not there already.
     (and (stringp subject)
-	 (setq subject
+	 (setq subject (rfc2047-decode-string subject)
+	       subject
 	       (concat rmail-reply-prefix
 		       (if (let ((case-fold-search t))
 			     (string-match rmail-reply-regexp subject))
@@ -3899,9 +3917,9 @@ which is an element of rmail-msgref-vector."
 	     (setq tem (copy-sequence tem))
 	     (set-text-properties 0 (length tem) nil tem)
 	     (setq tem (copy-sequence tem))
-	     ;; Use prin1 to fake RFC822 quoting
+	     ;; Use prin1 to fake RFC 822 (or later) quoting
 	     (let ((field (prin1-to-string tem)))
-	       ;; Wrap it in parens to make it a comment according to RFC822
+	       ;; Wrap it in parens to make it a comment.
 	       (if date
 		   (concat "(" field "'s message of " date ")")
 		 (concat "(" field ")"))))))
@@ -3930,7 +3948,7 @@ which is an element of rmail-msgref-vector."
              (if message-id
                  ;; "<AA259@bar.edu> (message from Unix Loser on 1-Apr-89)"
                  (concat message-id " (" field ")")
-	       ;; Wrap in parens to make it a comment, for RFC822.
+	       ;; Wrap in parens to make it a comment.
 	       (concat "(" field ")")))))
         (t
          ;; If we can't kludge it simply, do it correctly
@@ -4076,7 +4094,7 @@ typically for purposes of moderating a list."
 		    (set-syntax-table mail-abbrev-syntax-table)
 		    (goto-char before)
 		    (while (and (< (point) end)
-				(progn (forward-word 1)
+				(progn (forward-word-strictly 1)
 				       (<= (point) end)))
 		      (expand-abbrev))
 		    (set-syntax-table old-syntax-table))
@@ -4111,6 +4129,7 @@ typically for purposes of moderating a list."
 	  "^ *---+ +Original message follows +---+ *$\\|"
 	  "^ *---+ +Your message follows +---+ *$\\|"
 	  "^|? *---+ +Message text follows: +---+ *|?$\\|"
+          "^ *---+ +This is a copy of \\w+ message, including all the headers.*---+ *\n *---+ +The body of the message is [0-9]+ characters long; only the first *\n *---+ +[0-9]+ or so are included here\\. *$\\|"
 	  "^ *---+ +This is a copy of \\w+ message, including all the headers.*---+ *$")
   "A regexp that matches the separator before the text of a failed message.")
 
@@ -4139,6 +4158,9 @@ The message should be narrowed to just the headers."
 (autoload 'mail-position-on-field "sendmail")
 
 (declare-function rmail-mime-toggle-raw "rmailmm" (&optional state))
+
+(defvar rmail-mime-mbox-buffer)
+(defvar rmail-mime-view-buffer)
 
 (defun rmail-retry-failure ()
   "Edit a mail message which is based on the contents of the current message.
@@ -4256,7 +4278,7 @@ specifying headers which should not be copied into the new message."
 	      (if mail-self-blind
 		  (if resending
 		      (insert "Resent-Bcc: " (user-login-name) "\n")
-		    (insert "BCC: " (user-login-name) "\n"))))
+		    (insert "Bcc: " (user-login-name) "\n"))))
 	    (goto-char (point-min))
 	    (mail-position-on-field (if resending "Resent-To" "To") t))))))
 
@@ -4416,13 +4438,13 @@ current message into that RMAIL folder."
 (declare-function dframe-select-attached-frame "dframe" (&optional frame))
 (declare-function dframe-maybee-jump-to-attached-frame "dframe" ())
 
-(defun rmail-speedbar-button (text token indent)
+(defun rmail-speedbar-button (_text token _indent)
   "Execute an rmail command specified by TEXT.
 The command used is TOKEN.  INDENT is not used."
   (dframe-with-attached-buffer
    (funcall token t)))
 
-(defun rmail-speedbar-find-file (text token indent)
+(defun rmail-speedbar-find-file (text _token _indent)
   "Load in the rmail file TEXT.
 TOKEN and INDENT are not used."
   (dframe-with-attached-buffer
@@ -4441,7 +4463,7 @@ TOKEN and INDENT are not used."
 	  (forward-char -2)
 	  (speedbar-do-function-pointer)))))
 
-(defun rmail-speedbar-move-message (text token indent)
+(defun rmail-speedbar-move-message (_text token _indent)
   "From button TEXT, copy current message to the rmail file specified by TOKEN.
 TEXT and INDENT are not used."
   (dframe-with-attached-buffer
@@ -4496,14 +4518,91 @@ encoded string (and the same mask) will decode the string."
      (if (= curmask 0)
 	 (setq curmask mask))
      (setq charmask (% curmask 256))
-     (setq curmask (lsh curmask -8))
+     (setq curmask (ash curmask -8))
      (aset string-vector i (logxor charmask (aref string-vector i)))
      (setq i (1+ i)))
    (concat string-vector)))
 
+(defun rmail-epa-decrypt-1 (mime)
+  "Decrypt a single GnuPG encrypted text in a message.
+The starting string of the encrypted text should have just been regexp-matched.
+Argument MIME is non-nil if this is a mime message."
+  (let* ((armor-start (match-beginning 0))
+         (armor-prefix (buffer-substring
+                        (line-beginning-position)
+                        armor-start))
+         (armor-end-regexp)
+         armor-end after-end
+         unquote)
+    (if (string-match "<pre>\\'" armor-prefix)
+        (setq armor-prefix ""))
+
+    (setq armor-end-regexp
+          (concat "^"
+                  armor-prefix
+                  "-----END PGP MESSAGE-----$"))
+    (setq armor-end (re-search-forward armor-end-regexp
+                                       nil t))
+
+    (unless armor-end
+      (error "Encryption armor beginning has no matching end"))
+    (setq armor-start (move-marker (make-marker) armor-start))
+    (setq armor-end (move-marker (make-marker) armor-end))
+
+    (goto-char armor-start)
+
+    ;; Because epa--find-coding-system-for-mime-charset not autoloaded.
+    (require 'epa)
+
+    ;; Advance over this armor.
+    (goto-char armor-end)
+    (setq after-end (- (point-max) armor-end))
+
+    (when mime
+      (save-excursion
+        (goto-char armor-start)
+        (re-search-backward "^--" nil t)
+        (save-restriction
+          (narrow-to-region (point) armor-start)
+
+          ;; Use the charset specified in the armor.
+          (unless coding-system-for-read
+            (if (re-search-forward "^[ \t]*Charset[ \t\n]*:[ \t\n]*\\(.*\\)" nil t)
+                (setq coding-system-for-read
+                      (epa--find-coding-system-for-mime-charset
+                       (intern (downcase (match-string 1)))))))
+
+          (goto-char (point-min))
+          (if (re-search-forward "^[ \t]*Content-transfer-encoding[ \t\n]*:[ \t\n]*quoted-printable[ \t]*$" nil t)
+              (setq unquote t)))))
+
+    (when unquote
+      (let ((inhibit-read-only t))
+        (mail-unquote-printable-region armor-start
+                                       (- (point-max) after-end))))
+
+    (condition-case nil
+	(epa-decrypt-region
+	 armor-start (- (point-max) after-end)
+	 ;; Call back this function to prepare the output.
+	 (lambda ()
+	   (let ((inhibit-read-only t))
+	     (delete-region armor-start (- (point-max) after-end))
+	     (goto-char armor-start)
+	     (current-buffer))))
+      (error nil))
+
+    (list armor-start (- (point-max) after-end) mime
+          armor-end-regexp
+          (buffer-substring armor-start (- (point-max) after-end)))))
+
+(declare-function rmail-mime-entity-truncated "rmailmm" (entity))
+
 ;; Should this have a key-binding, or be in a menu?
 ;; There doesn't really seem to be an appropriate menu.
 ;; Eg the edit command is not in a menu either.
+
+(defvar rmail-mime-render-html-function) ; defcustom in rmailmm
 (defun rmail-epa-decrypt ()
   "Decrypt GnuPG or OpenPGP armors in current message."
   (interactive)
@@ -4512,12 +4611,14 @@ encoded string (and the same mask) will decode the string."
   ;; change it in one of the calls to `epa-decrypt-region'.
 
   (save-excursion
-    (let (decrypts (mime (rmail-mime-message-p)))
+    (let (decrypts (mime (rmail-mime-message-p))
+                   mime-disabled)
       (goto-char (point-min))
 
       ;; Turn off mime processing.
       (when (and mime
 		 (not (get-text-property (point-min) 'rmail-mime-hidden)))
+        (setq mime-disabled t)
 	(rmail-mime))
 
       ;; Now find all armored messages in the buffer
@@ -4526,97 +4627,89 @@ encoded string (and the same mask) will decode the string."
       (while (re-search-forward "-----BEGIN PGP MESSAGE-----$" nil t)
 	(let ((coding-system-for-read coding-system-for-read)
 	      (case-fold-search t)
-	      unquote
-	      armor-start armor-prefix armor-end after-end)
+	      (armor-start (match-beginning 0)))
+	  ;; Don't decrypt an armor that was copied into
+	  ;; the message from a message it is a reply to.
+	  (or (equal (buffer-substring (line-beginning-position)
+				       armor-start)
+		     "> ")
+	      (push (rmail-epa-decrypt-1 mime) decrypts))))
 
-	  (setq armor-start (match-beginning 0)
-		armor-prefix (buffer-substring
-			      (line-beginning-position)
-			      armor-start)
-		armor-end (re-search-forward
-			   (concat "^"
-				   armor-prefix
-				   "-----END PGP MESSAGE-----$")
-			   nil t))
-	  (unless armor-end
-	    (error "Encryption armor beginning has no matching end"))
-	  (goto-char armor-start)
-
-	  ;; Because epa--find-coding-system-for-mime-charset not autoloaded.
-	  (require 'epa)
-
-	  ;; Advance over this armor.
-	  (goto-char armor-end)
-	  (setq after-end (- (point-max) armor-end))
-
-	  (when mime
-	    (save-excursion
-	      (goto-char armor-start)
-	      (re-search-backward "^--" nil t)
-	      (save-restriction
-		(narrow-to-region (point) armor-start)
-
-		;; Use the charset specified in the armor.
-		(unless coding-system-for-read
-		  (if (re-search-forward "^Charset: \\(.*\\)" nil t)
-		      (setq coding-system-for-read
-			    (epa--find-coding-system-for-mime-charset
-			     (intern (downcase (match-string 1)))))))
-
-		(goto-char (point-min))
-		(if (re-search-forward "^[ \t]*Content-transfer-encoding[ \t]*:[ \t]*quoted-printable[ \t]*$" nil t)
-		    (setq unquote t)))))
-
-	  (when unquote
-	    (let ((inhibit-read-only t))
-	      (mail-unquote-printable-region armor-start
-					     (- (point-max) after-end))))
-
-	  ;; Decrypt it, maybe in place, maybe making new buffer.
-	  (epa-decrypt-region
-	   armor-start (- (point-max) after-end)
-	   ;; Call back this function to prepare the output.
-	   (lambda ()
-	     (let ((inhibit-read-only t))
-	       (delete-region armor-start (- (point-max) after-end))
-	       (goto-char armor-start)
-	       (current-buffer))))
-
-	  (push (list armor-start (- (point-max) after-end))
-		decrypts)))
-
-      (unless decrypts
-	(error "Nothing to decrypt"))
+      (when (and decrypts (eq major-mode 'rmail-mode))
+        (rmail-add-label "decrypt"))
 
       (when (and decrypts (rmail-buffers-swapped-p))
 	(when (y-or-n-p "Replace the original message? ")
 	  (setq decrypts (nreverse decrypts))
 	  (let ((beg (rmail-msgbeg rmail-current-message))
-		(end (rmail-msgend rmail-current-message))
-		(from-buffer (current-buffer)))
+		(end (rmail-msgend rmail-current-message)))
 	    (with-current-buffer rmail-view-buffer
 	      (narrow-to-region beg end)
 	      (goto-char (point-min))
 	      (dolist (d decrypts)
+		;; Find, in the real Rmail buffer, the same armors
+		;; that we found and decrypted in the view buffer.
 		(if (re-search-forward "-----BEGIN PGP MESSAGE-----$" nil t)
-		    (let (armor-start armor-end)
+		    (let (armor-start armor-end armor-end-regexp)
 		      (setq armor-start (match-beginning 0)
-			    armor-end (re-search-forward "^-----END PGP MESSAGE-----$"
-							 nil t))
+			    armor-end-regexp (nth 3 d)
+			    armor-end (re-search-forward
+				       armor-end-regexp
+				       nil t))
+
+		      ;; Found as expected -- now replace it with the decrypt.
 		      (when armor-end
 			(delete-region armor-start armor-end)
-			(insert-buffer-substring from-buffer (nth 0 d) (nth 1 d)))))))))))))
- 
+                        (insert (nth 4 d)))
+
+		      ;; Change the mime type (if this is in a mime part)
+		      ;; so this part will display by default
+		      ;; when the message is shown later.
+		      (when (nth 2 d)
+			(goto-char armor-start)
+			(when (re-search-backward "^--" nil t)
+			  (save-restriction
+			    (narrow-to-region (point) armor-start)
+			    (when (re-search-forward "^content-type[ \t\n]*:[ \t\n]*" nil t)
+			      (when (looking-at "[^\n \t;]+")
+				(let ((value (match-string 0)))
+				  (unless (member value '("text/plain" "text/html"))
+				    (replace-match "text/plain"))))))))
+		      )))))))
+
+      (when (and (null decrypts)
+                 mime mime-disabled)
+        ;; Re-enable mime processing.
+	(rmail-mime)
+        ;; Find each Show button and show that part.
+	(while (search-forward " Show " nil t)
+	  (forward-char -2)
+	  (let ((rmail-mime-render-html-function nil)
+		(entity (get-text-property (point) 'rmail-mime-entity)))
+            (unless (and (not (stringp entity))
+                         (rmail-mime-entity-truncated entity))
+              (push-button))))
+        (goto-char (point-min))
+        (while (re-search-forward "-----BEGIN PGP MESSAGE-----$" nil t)
+          (let ((coding-system-for-read coding-system-for-read)
+                (case-fold-search t))
+            (push (rmail-epa-decrypt-1 mime) decrypts)))
+
+        )
+
+      (unless decrypts
+	(error "Nothing to decrypt")))))
+
 
 ;;;;  Desktop support
 
-(defun rmail-restore-desktop-buffer (desktop-buffer-file-name
-				     desktop-buffer-name
-				     desktop-buffer-misc)
+(defun rmail-restore-desktop-buffer (file-name
+				     _buffer-name
+				     _buffer-misc)
   "Restore an rmail buffer specified in a desktop file."
-  (condition-case error
+  (condition-case nil
       (progn
-	(rmail-input desktop-buffer-file-name)
+	(rmail-input file-name)
 	(if (eq major-mode 'rmail-mode)
 	    (current-buffer)
 	  rmail-buffer))
@@ -4632,7 +4725,7 @@ encoded string (and the same mask) will decode the string."
 (defvar rmail-message-encoding nil)
 
 ;; Used in `write-region-annotate-functions' to write rmail files.
-(defun rmail-write-region-annotate (start end)
+(defun rmail-write-region-annotate (start _end)
   (when (and (null start) rmail-buffer-swapped)
     (unless (buffer-live-p rmail-view-buffer)
       (error "Buffer `%s' with real text of `%s' has disappeared"
@@ -4655,227 +4748,6 @@ encoded string (and the same mask) will decode the string."
 	  (if (rmail-buffers-swapped-p) rmail-buffer rmail-view-buffer)
 	(setq buffer-file-coding-system rmail-message-encoding))))
 (add-hook 'after-save-hook 'rmail-after-save-hook)
-
-
-;;; Start of automatically extracted autoloads.
-
-;;;### (autoloads nil "rmailedit" "rmailedit.el" "b155463a02e4aa9256ac21997ea003e9")
-;;; Generated autoloads from rmailedit.el
-
-(autoload 'rmail-edit-current-message "rmailedit" "\
-Edit the contents of this message.
-
-\(fn)" t nil)
-
-;;;***
-
-;;;### (autoloads nil "rmailkwd" "rmailkwd.el" "d462d15a119ee2a1733de2bc31bf347c")
-;;; Generated autoloads from rmailkwd.el
-
-(autoload 'rmail-add-label "rmailkwd" "\
-Add LABEL to labels associated with current RMAIL message.
-Completes (see `rmail-read-label') over known labels when reading.
-LABEL may be a symbol or string.  Only one label is allowed.
-
-\(fn LABEL)" t nil)
-
-(autoload 'rmail-kill-label "rmailkwd" "\
-Remove LABEL from labels associated with current RMAIL message.
-Completes (see `rmail-read-label') over known labels when reading.
-LABEL may be a symbol or string.  Only one label is allowed.
-
-\(fn LABEL)" t nil)
-
-(autoload 'rmail-read-label "rmailkwd" "\
-Read a label with completion, prompting with PROMPT.
-Completions are chosen from `rmail-label-obarray'.  The default
-is `rmail-last-label', if that is non-nil.  Updates `rmail-last-label'
-according to the choice made, and returns a symbol.
-
-\(fn PROMPT)" nil nil)
-
-(autoload 'rmail-previous-labeled-message "rmailkwd" "\
-Show previous message with one of the labels LABELS.
-LABELS should be a comma-separated list of label names.
-If LABELS is empty, the last set of labels specified is used.
-With prefix argument N moves backward N messages with these labels.
-
-\(fn N LABELS)" t nil)
-
-(autoload 'rmail-next-labeled-message "rmailkwd" "\
-Show next message with one of the labels LABELS.
-LABELS should be a comma-separated list of label names.
-If LABELS is empty, the last set of labels specified is used.
-With prefix argument N moves forward N messages with these labels.
-
-\(fn N LABELS)" t nil)
-
-;;;***
-
-;;;### (autoloads nil "rmailmm" "rmailmm.el" "6446c799d49a6df8519b11bfe2e3cbea")
-;;; Generated autoloads from rmailmm.el
-
-(autoload 'rmail-mime "rmailmm" "\
-Toggle the display of a MIME message.
-
-The actual behavior depends on the value of `rmail-enable-mime'.
-
-If `rmail-enable-mime' is non-nil (the default), this command toggles
-the display of a MIME message between decoded presentation form and
-raw data.  With optional prefix argument ARG, it toggles the display only
-of the MIME entity at point, if there is one.  The optional argument
-STATE forces a particular display state, rather than toggling.
-`raw' forces raw mode, any other non-nil value forces decoded mode.
-
-If `rmail-enable-mime' is nil, this creates a temporary \"*RMAIL*\"
-buffer holding a decoded copy of the message. Inline content-types are
-handled according to `rmail-mime-media-type-handlers-alist'.
-By default, this displays text and multipart messages, and offers to
-download attachments as specified by `rmail-mime-attachment-dirs-alist'.
-The arguments ARG and STATE have no effect in this case.
-
-\(fn &optional ARG STATE)" t nil)
-
-;;;***
-
-;;;### (autoloads nil "rmailmsc" "rmailmsc.el" "0950b0ad020610737220948bb3f37c17")
-;;; Generated autoloads from rmailmsc.el
-
-(autoload 'set-rmail-inbox-list "rmailmsc" "\
-Set the inbox list of the current RMAIL file to FILE-NAME.
-You can specify one file name, or several names separated by commas.
-If FILE-NAME is empty, remove any existing inbox list.
-
-This applies only to the current session.
-
-\(fn FILE-NAME)" t nil)
-
-;;;***
-
-;;;### (autoloads nil "rmailsort" "rmailsort.el" "4106a6e4898795822554ce931f531ab8")
-;;; Generated autoloads from rmailsort.el
-
-(autoload 'rmail-sort-by-date "rmailsort" "\
-Sort messages of current Rmail buffer by \"Date\" header.
-If prefix argument REVERSE is non-nil, sorts in reverse order.
-
-\(fn REVERSE)" t nil)
-
-(autoload 'rmail-sort-by-subject "rmailsort" "\
-Sort messages of current Rmail buffer by \"Subject\" header.
-Ignores any \"Re: \" prefix.  If prefix argument REVERSE is
-non-nil, sorts in reverse order.
-
-\(fn REVERSE)" t nil)
-
-(autoload 'rmail-sort-by-author "rmailsort" "\
-Sort messages of current Rmail buffer by author.
-This uses either the \"From\" or \"Sender\" header, downcased.
-If prefix argument REVERSE is non-nil, sorts in reverse order.
-
-\(fn REVERSE)" t nil)
-
-(autoload 'rmail-sort-by-recipient "rmailsort" "\
-Sort messages of current Rmail buffer by recipient.
-This uses either the \"To\" or \"Apparently-To\" header, downcased.
-If prefix argument REVERSE is non-nil, sorts in reverse order.
-
-\(fn REVERSE)" t nil)
-
-(autoload 'rmail-sort-by-correspondent "rmailsort" "\
-Sort messages of current Rmail buffer by other correspondent.
-This uses either the \"From\", \"Sender\", \"To\", or
-\"Apparently-To\" header, downcased.  Uses the first header not
-excluded by `mail-dont-reply-to-names'.  If prefix argument
-REVERSE is non-nil, sorts in reverse order.
-
-\(fn REVERSE)" t nil)
-
-(autoload 'rmail-sort-by-lines "rmailsort" "\
-Sort messages of current Rmail buffer by the number of lines.
-If prefix argument REVERSE is non-nil, sorts in reverse order.
-
-\(fn REVERSE)" t nil)
-
-(autoload 'rmail-sort-by-labels "rmailsort" "\
-Sort messages of current Rmail buffer by labels.
-LABELS is a comma-separated list of labels.  The order of these
-labels specifies the order of messages: messages with the first
-label come first, messages with the second label come second, and
-so on.  Messages that have none of these labels come last.
-If prefix argument REVERSE is non-nil, sorts in reverse order.
-
-\(fn REVERSE LABELS)" t nil)
-
-;;;***
-
-;;;### (autoloads nil "rmailsum" "rmailsum.el" "ee1fa556cd65d7ef457a97ab560e15da")
-;;; Generated autoloads from rmailsum.el
-
-(autoload 'rmail-summary "rmailsum" "\
-Display a summary of all messages, one line per message.
-
-\(fn)" t nil)
-
-(autoload 'rmail-summary-by-labels "rmailsum" "\
-Display a summary of all messages with one or more LABELS.
-LABELS should be a string containing the desired labels, separated by commas.
-
-\(fn LABELS)" t nil)
-
-(autoload 'rmail-summary-by-recipients "rmailsum" "\
-Display a summary of all messages with the given RECIPIENTS.
-Normally checks the To, From and Cc fields of headers;
-but if PRIMARY-ONLY is non-nil (prefix arg given),
- only look in the To and From fields.
-RECIPIENTS is a string of regexps separated by commas.
-
-\(fn RECIPIENTS &optional PRIMARY-ONLY)" t nil)
-
-(autoload 'rmail-summary-by-regexp "rmailsum" "\
-Display a summary of all messages according to regexp REGEXP.
-If the regular expression is found in the header of the message
-\(including in the date and other lines, as well as the subject line),
-Emacs will list the message in the summary.
-
-\(fn REGEXP)" t nil)
-
-(autoload 'rmail-summary-by-topic "rmailsum" "\
-Display a summary of all messages with the given SUBJECT.
-Normally checks just the Subject field of headers; but with prefix
-argument WHOLE-MESSAGE is non-nil, looks in the whole message.
-SUBJECT is a string of regexps separated by commas.
-
-\(fn SUBJECT &optional WHOLE-MESSAGE)" t nil)
-
-(autoload 'rmail-summary-by-senders "rmailsum" "\
-Display a summary of all messages whose \"From\" field matches SENDERS.
-SENDERS is a string of regexps separated by commas.
-
-\(fn SENDERS)" t nil)
-
-;;;***
-
-;;;### (autoloads nil "undigest" "undigest.el" "f30d93eb6a006ac64080a1ee8a45a1af")
-;;; Generated autoloads from undigest.el
-
-(autoload 'undigestify-rmail-message "undigest" "\
-Break up a digest message into its constituent messages.
-Leaves original message, deleted, before the undigestified messages.
-
-\(fn)" t nil)
-
-(autoload 'unforward-rmail-message "undigest" "\
-Extract a forwarded message from the containing message.
-This puts the forwarded message into a separate rmail message following
-the containing message.  This command is only useful when messages are
-forwarded with `rmail-enable-mime-composing' set to nil.
-
-\(fn)" t nil)
-
-;;;***
-
-;;; End of automatically extracted autoloads.
 
 
 (provide 'rmail)

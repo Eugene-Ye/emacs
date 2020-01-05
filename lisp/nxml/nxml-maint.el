@@ -1,6 +1,6 @@
-;;; nxml-maint.el --- commands for maintainers of nxml-*.el
+;;; nxml-maint.el --- commands for maintainers of nxml-*.el  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2003, 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2003, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: James Clark
 ;; Keywords: wp, hypermedia, languages, XML
@@ -18,53 +18,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
-
-;;; Generating files with Unicode char names.
-
-(require 'nxml-uchnm)
-
-(defun nxml-create-unicode-char-name-sets (file)
-  "Generate files containing char names from Unicode standard."
-  (interactive "fUnicodeData file: ")
-  (mapc (lambda (block)
-          (let ((nameset (nxml-unicode-block-char-name-set (nth 0 block))))
-            (save-excursion
-              (find-file (concat (get nameset 'nxml-char-name-set-file)
-                                 ".el"))
-              (erase-buffer)
-              (insert "(nxml-define-char-name-set '")
-              (prin1 nameset (current-buffer))
-              (insert "\n  '())\n")
-              (goto-char (- (point) 3)))))
-        nxml-unicode-blocks)
-  (save-excursion
-    (find-file file)
-    (goto-char (point-min))
-    (let ((blocks nxml-unicode-blocks)
-	  code name)
-      (while (re-search-forward "^\\([0-9A-F]+\\);\\([^<;][^;]*\\);"
-				nil
-				t)
-	(setq code (string-to-number (match-string 1) 16))
-	(setq name (match-string 2))
-	(while (and blocks
-		    (> code (nth 2 (car blocks))))
-	  (setq blocks (cdr blocks)))
-	(when (and (<= (nth 1 (car blocks)) code)
-		   (<= code (nth 2 (car blocks))))
-	  (save-excursion
-	    (find-file (concat (get (nxml-unicode-block-char-name-set
-				     (nth 0 (car blocks)))
-				    'nxml-char-name-set-file)
-			       ".el"))
-	    (insert "(")
-	    (prin1 name (current-buffer))
-	    (insert (format " #x%04X)\n    " code))))))))
 
 ;;; Parsing target repertoire files from ucs-fonts.
 ;; This is for converting the TARGET? files in
@@ -76,10 +34,10 @@
   (let (lst head)
     (with-current-buffer (find-file-noselect file)
       (goto-char (point-min))
-      (while (re-search-forward "^ *\\([a-FA-F0-9]\\{2\\}\\)[ \t]+" nil t)
+      (while (re-search-forward "^ *\\([[:xdigit:]]\\{2\\}\\)[ \t]+" nil t)
 	(let ((row (match-string 1))
 	      (eol (line-end-position)))
-	  (while (re-search-forward "\\([a-FA-F0-9]\\{2\\}\\)-\\([a-FA-F0-9]\\{2\\}\\)\\|\\([a-FA-F0-9]\\{2\\}\\)" eol t)
+	  (while (re-search-forward "\\([[:xdigit:]]\\{2\\}\\)-\\([[:xdigit:]]\\{2\\}\\)\\|\\([[:xdigit:]]\\{2\\}\\)" eol t)
 	    (setq lst
 		  (cons (if (match-beginning 3)
 			    (concat "#x" row (match-string 3))

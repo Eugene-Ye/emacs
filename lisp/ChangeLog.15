@@ -628,7 +628,7 @@
 	(global-auto-revert-ignore-buffer): Remove leading "*" from docs.
 
 2011-02-19  Dmitry Bolshakov  <dmitry.bolshakov@bridge-quest.com>
-            Dima Kogan  <dkogan@cds.caltech.edu>  (tiny change)
+	    Dima Kogan  <dkogan@cds.caltech.edu>  (tiny change)
 
 	* progmodes/hideshow.el (hs-find-block-beginning)
 	(hs-hide-level-recursive): Ignore comments when parsing braces
@@ -2970,7 +2970,7 @@
 	* loadup.el (symbol-file-load-history-loaded): Remove; unused.
 
 2010-12-15  Jari Aalto  <jari.aalto@cante.net>
-            Scott Evans  <gse@antisleep.com>
+	    Scott Evans  <gse@antisleep.com>
 
 	* rect.el (rectange--default-line-number-format)
 	(rectangle-number-line-callback): New functions.
@@ -4156,7 +4156,7 @@
 	coreutils.  Reported by Klaus Reichl
 	<Klaus.Reichl@thalesgroup.com>.
 
-2010-11-13  Hrvoje Niksic  <hniksic@xemacs.org>
+2010-11-13  Hrvoje Nikšić  <hniksic@xemacs.org>
 
 	* simple.el (count-words-region): New function.
 
@@ -5820,7 +5820,7 @@
 	* epa.el (epa-passphrase-callback-function): Say what we're
 	querying the password for.
 
-	* ibuffer.el (ibuffer-visit-buffer): To mimick list-buffers
+	* ibuffer.el (ibuffer-visit-buffer): To mimic list-buffers
 	behavior, don't bury the ibuffer buffer when visiting other buffers.
 
 2010-10-08  Chong Yidong  <cyd@stupidchicken.com>
@@ -7986,7 +7986,7 @@
 	* iswitchb.el (iswitchb-kill-buffer): Re-make the list.
 
 2010-08-22  Kirk Kelsey  <kirk.kelsey@0x4b.net>
-            Stefan Monnier  <monnier@iro.umontreal.ca>
+	    Stefan Monnier  <monnier@iro.umontreal.ca>
 
 	* progmodes/make-mode.el (makefile-fill-paragraph): Account for the
 	extra backslash added to each line (bug#6890).
@@ -9002,7 +9002,7 @@
 	another buffer (e.g gnus-art).
 
 2010-07-13  Karl Fogel  <kfogel@red-bean.com>
-            Thierry Volpiatto  <thierry.volpiatto@gmail.com>
+	    Thierry Volpiatto  <thierry.volpiatto@gmail.com>
 
 	Preparation for setting bookmarks in Gnus article buffers (Bug#5975).
 
@@ -9833,7 +9833,7 @@
 	* window.el (pop-to-buffer): Remove the conditional that
 	compares new-window and old-window, so it will reselect
 	the selected window unconditionally.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-06/msg00078.html
+	https://lists.gnu.org/r/emacs-devel/2010-06/msg00078.html
 
 2010-06-07  Stefan Monnier  <monnier@iro.umontreal.ca>
 
@@ -9882,7 +9882,7 @@
 	of kill-ring: don't call menu-bar-update-yank-menu, don't push
 	interprogram-paste strings to kill-ring, and don't push the input
 	argument `string' to kill-ring.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-06/msg00072.html
+	https://lists.gnu.org/r/emacs-devel/2010-06/msg00072.html
 
 2010-06-04  Juanma Barranquero  <lekktu@gmail.com>
 
@@ -10301,7 +10301,7 @@
 	(rcirc-user-name-history): Add variable.
 
 2010-05-25  Ryan Yeske  <rcyeske@gmail.com>
-            Jonathan Rockway  <jon@jrock.us>
+	    Jonathan Rockway  <jon@jrock.us>
 
 	* net/rcirc.el (rcirc-server-alist): Add :pass.
 	(rcirc): When prompting for connection parameters, also prompt for
@@ -10445,7 +10445,7 @@
 	* dired-x.el (dired-jump, dired-jump-other-window): Add arg
 	FILE-NAME to read from the minibuffer when called interactively
 	with prefix argument instead of using buffer-file-name.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-05/msg00534.html
+	https://lists.gnu.org/r/emacs-devel/2010-05/msg00534.html
 
 	* dired.el: Update autoloads.
 
@@ -10969,7 +10969,7 @@
 	* Version 23.2 released.
 
 2010-05-07  Deniz Dogan  <deniz.a.m.dogan@gmail.com>
-            Stefan Monnier  <monnier@iro.umontreal.ca>
+	    Stefan Monnier  <monnier@iro.umontreal.ca>
 
 	Highlight vendor specific properties.
 	* textmodes/css-mode.el (css-proprietary-nmstart-re): New var.
@@ -11162,7 +11162,7 @@
 	(filter-buffer-substring): Use it.  Remove unused arg `noprops'.
 
 2010-05-01  Toru TSUNEYOSHI  <t_tuneyosi@hotmail.com>
-            Michael Albinus  <michael.albinus@gmx.de>
+	    Michael Albinus  <michael.albinus@gmx.de>
 
 	Implement compression for inline methods.
 
@@ -11998,7 +11998,7 @@
 2010-04-05  Juri Linkov  <juri@jurta.org>
 
 	Scrolling commands which scroll a line instead of full screen.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg01452.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg01452.html
 
 	* simple.el (scroll-up-line, scroll-down-line): New commands.
 	Put property isearch-scroll=t on them.
@@ -12009,7 +12009,7 @@
 2010-04-05  Juri Linkov  <juri@jurta.org>
 
 	Scrolling commands which do not signal errors at top/bottom.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg01452.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg01452.html
 
 	* simple.el (scroll-up-command, scroll-down-command): New commands.
 	Put property isearch-scroll=t on them.
@@ -12063,7 +12063,7 @@
 	(electric-help-mode): Set it to original major-mode.  Doc fix.
 	(with-electric-help): Use `electric-help-orig-major-mode' instead
 	of (default-value 'major-mode).  Doc fix.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-04/msg00069.html
+	https://lists.gnu.org/r/emacs-devel/2010-04/msg00069.html
 
 2010-04-02  Sam Steingold  <sds@gnu.org>
 
@@ -12089,13 +12089,13 @@
 
 	* simple.el (next-line, previous-line): Re-throw a signal
 	with `signal' instead of using `ding'.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg01432.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg01432.html
 
 2010-03-31  Juri Linkov  <juri@jurta.org>
 
 	* simple.el (keyboard-escape-quit): Raise deselecting the active
 	region higher than exiting the minibuffer.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg00904.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg00904.html
 
 2010-03-31  Juri Linkov  <juri@jurta.org>
 
@@ -12184,7 +12184,7 @@
 2010-03-30  Juri Linkov  <juri@jurta.org>
 
 	Make occur handle multi-line matches cleanly with context.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg01280.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg01280.html
 
 	* replace.el (occur-accumulate-lines): Add optional arg `pt'.
 	(occur-engine): Add local variables `ret', `prev-after-lines',
@@ -12209,7 +12209,7 @@
 	values.
 
 2010-03-29  Phil Hagelberg  <phil@evri.com>
-            Chong Yidong  <cyd@stupidchicken.com>
+	    Chong Yidong  <cyd@stupidchicken.com>
 
 	* subr.el: Extend progress reporters to perform "spinning".
 	(progress-reporter-update, progress-reporter-do-update):
@@ -12379,7 +12379,7 @@
 2010-03-23  Juri Linkov  <juri@jurta.org>
 
 	Implement Occur multi-line matches.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg01044.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg01044.html
 
 	* replace.el (occur): Doc fix.
 	(occur-engine): Set `begpt' to the beginning of the first line.
@@ -12456,7 +12456,7 @@
 2010-03-21  Juri Linkov  <juri@jurta.org>
 
 	Fix message of multi-line occur regexps and multi-buffer header lines.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg00457.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg00457.html
 
 	* replace.el (occur-1): Don't display regexp if it is longer
 	than window-width.  Use `query-replace-descr' to display regexp.
@@ -12750,7 +12750,7 @@
 2010-03-10  Kim F. Storm  <storm@cua.dk>
 
 	Animated image API.
-	http://lists.gnu.org/archive/html/emacs-devel/2010-03/msg00211.html
+	https://lists.gnu.org/r/emacs-devel/2010-03/msg00211.html
 
 	* image.el (image-animate-max-time): New defcustom.
 	(image-animated-types): New defconst.
@@ -13908,7 +13908,7 @@
 	positions by using `bookmark-bmenu-marks-width', instead of hardcoding.
 	This fixes the `bookmark-bmenu-execute-deletions' bug reported here:
 
-	http://lists.gnu.org/archive/html/emacs-devel/2009-12/msg00819.html
+	https://lists.gnu.org/r/emacs-devel/2009-12/msg00819.html
 	From: Sun Yijiang <sunyijiang {_AT_} gmail.com>
 	To: emacs-devel {_AT_} gnu.org
 	Subject: bookmark.el bug report
@@ -15603,7 +15603,7 @@
 	* Makefile.in (ELCFILES): Adapt to subword.el move.
 
 2009-11-21  Thierry Volpiatto  <thierry.volpiatto@gmail.com>
-            Stefan Monnier  <monnier@iro.umontreal.ca>
+	    Stefan Monnier  <monnier@iro.umontreal.ca>
 
 	* bookmark.el (bookmark-bmenu-bookmark-column): Remove var.
 	(bookmark-bmenu-list): Save name on `bookmark-name-prop' text-prop.
@@ -16417,7 +16417,7 @@
 	* net/tramp.el (tramp-advice-file-expand-wildcards): Don't rely on
 	`ad-do-it'.
 
-2009-11-08  Andr  <m00naticus@gmail.com>  (tiny change)
+2009-11-08  Andrey Kotlarski  <m00naticus@gmail.com>  (tiny change)
 
 	* net/tramp.el (tramp-handle-write-region): Copy but rename temp file,
 	in order to keep context in SELinux.
@@ -19070,7 +19070,7 @@
 	indent buffer only if called interactively (Bug#4452).
 
 2009-09-19  Juanma Barranquero  <lekktu@gmail.com>
-            Eli Zaretskii  <eliz@gnu.org>
+	    Eli Zaretskii  <eliz@gnu.org>
 
 	This fixes bug#4197 (merged to bug#865, though not identical).
 	* server.el (server-auth-dir): Add docstring note about FAT32.
@@ -19816,7 +19816,7 @@
 	* files.el (find-alternate-file): If the old buffer is modified
 	and visiting a file, behave similarly to `kill-buffer' when
 	killing it, thus reverting to the pre-1.878 behavior; see
-	http://lists.gnu.org/archive/html/emacs-devel/2009-09/msg00101.html
+	https://lists.gnu.org/r/emacs-devel/2009-09/msg00101.html
 	for discussion.  Also, consult `buffer-file-name' as a variable
 	not as a function, for consistency with the rest of the code.
 
@@ -19887,7 +19887,7 @@
 	Don't call substitute-in-file-name on diary-file.
 
 2009-09-03  Eduard Wiebe  <usenet@pusto.de>
-            Stefan Monnier  <monnier@iro.umontreal.ca>
+	    Stefan Monnier  <monnier@iro.umontreal.ca>
 
 	* mail/footnote.el (footnote-prefix): Make it a defcustom.
 	(footnote-mode-map): Move initialization into the declaration.
@@ -20998,7 +20998,7 @@
 	* progmodes/hideshow.el (hs-special-modes-alist): Add js-mode entry.
 
 2009-08-14  Daniel Colascione  <dan.colascione@gmail.com>
-            Karl Landstrom  <karl.landstrom@brgeight.se>
+	    Karl Landstrom  <karl.landstrom@brgeight.se>
 
 	* progmodes/js.el: New file.
 
@@ -22765,7 +22765,7 @@
 	XZ is the successor to LZMA: <http://tukaani.org/xz/>
 
 2009-06-22  Dmitry Dzhus  <dima@sphinx.net.ru>
-            Nick Roberts  <nickrob@snap.net.nz>
+	    Nick Roberts  <nickrob@snap.net.nz>
 
 	* progmodes/gdb-mi.el: Pull further modified changes from Dmitry's
 	repository (http://sphinx.net.ru/hg/gdb-mi/).
@@ -22802,7 +22802,7 @@ See ChangeLog.14 for earlier changes.
 ;; coding: utf-8
 ;; End:
 
-  Copyright (C) 2009-2014 Free Software Foundation, Inc.
+  Copyright (C) 2009-2020 Free Software Foundation, Inc.
 
   This file is part of GNU Emacs.
 
@@ -22817,4 +22817,4 @@ See ChangeLog.14 for earlier changes.
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+  along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.

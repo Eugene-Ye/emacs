@@ -1,8 +1,8 @@
 ;;; ede/generic.el --- Base Support for generic build systems
 
-;; Copyright (C) 2010-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -74,7 +74,7 @@
 ;; The ede-generic-target-c-cpp has some example methods setting up
 ;; the pre-processor map and system include path.
 ;;
-;; NOTE: It is not necessary to modify ede-generic.el to add any of
+;; NOTE: It is not necessary to modify ede/generic.el to add any of
 ;; the above described support features.
 
 (require 'eieio-opt)
@@ -102,14 +102,14 @@ ROOTPROJ is nil, since there is only one project."
   (let* ((alobj ede-constructing))
     (when (not alobj) (error "Cannot load generic project without the autoload instance"))
     ;;;
-    ;; TODO - find the root dir. 
+    ;; TODO - find the root dir.
     (let ((rootdir dir))
       (funcall (oref alobj class-sym)
 	       (symbol-name (oref alobj class-sym))
 	       :name (file-name-nondirectory (directory-file-name dir))
 	       :version "1.0"
 	       :directory (file-name-as-directory rootdir)
-	       :file (expand-file-name (oref alobj :proj-file)
+	       :file (expand-file-name (oref alobj proj-file)
 				       rootdir)))
     ))
 
@@ -148,19 +148,19 @@ The class allocated value is replace by different sub classes.")
   "The baseclass for all generic EDE project types."
   :abstract t)
 
-(defmethod initialize-instance ((this ede-generic-project)
+(cl-defmethod initialize-instance ((this ede-generic-project)
 				&rest fields)
   "Make sure the targets slot is bound."
-  (call-next-method)
+  (cl-call-next-method)
   (unless (slot-boundp this 'targets)
     (oset this :targets nil))
   )
 
-(defmethod ede-project-root ((this ede-generic-project))
+(cl-defmethod ede-project-root ((this ede-generic-project))
   "Return my root."
   this)
 
-(defmethod ede-find-subproject-for-directory ((proj ede-generic-project)
+(cl-defmethod ede-find-subproject-for-directory ((proj ede-generic-project)
 					      dir)
   "Return PROJ, for handling all subdirs below DIR."
   proj)
@@ -211,12 +211,12 @@ All directories need at least one target.")
   (let ((match nil))
     (dolist (T targets)
       (when (and (object-of-class-p T class)
-		 (string= (oref T :path) dir))
+		 (string= (oref T path) dir))
 	(setq match T)
       ))
     match))
 
-(defmethod ede-find-target ((proj ede-generic-project) buffer)
+(cl-defmethod ede-find-target ((proj ede-generic-project) buffer)
   "Find an EDE target in PROJ for BUFFER.
 If one doesn't exist, create a new one for this directory."
   (let* ((ext (file-name-extension (buffer-file-name buffer)))
@@ -230,9 +230,9 @@ If one doesn't exist, create a new one for this directory."
     (when ext
       (dolist (C classes)
 	(let* ((classsym (intern (car C)))
-	       (extreg (oref classsym extension)))
+	       (extreg (oref-default classsym extension)))
 	  (when (and (not (string= extreg ""))
-		     (string-match (concat "^" extreg "$") ext))
+		     (string-match (concat "\\`\\(?:" extreg "\\)\\'") ext))
 	    (setq cls classsym)))))
     (when (not cls) (setq cls 'ede-generic-target-misc))
     ;; find a pre-existing matching target
@@ -241,7 +241,7 @@ If one doesn't exist, create a new one for this directory."
     (when (not ans)
       (setq ans (make-instance
 		 cls
-		 :name (oref cls shortname)
+		 :name (oref-default cls shortname)
 		 :path dir
 		 :source nil))
       (object-add-to-list proj :targets ans)
@@ -252,18 +252,18 @@ If one doesn't exist, create a new one for this directory."
 ;;
 ;; Derived projects need an autoloader so that EDE can find the
 ;; different projects on disk.
-(defun ede-generic-new-autoloader (internal-name external-name
-						 projectfile class)
+(defun ede-generic-new-autoloader (_internal-name external-name
+                                                  projectfile class)
   "Add a new EDE Autoload instance for identifying a generic project.
-INTERNAL-NAME is a long name that identifies this project type.
-EXTERNAL-NAME is a shorter human readable name to describe the project.
+INTERNAL-NAME is obsolete and ignored.
+EXTERNAL-NAME is a human readable name to describe the project; it
+must be unique among all autoloaded projects.
 PROJECTFILE is a file name that identifies a project of this type to EDE, such as
 a Makefile, or SConstruct file.
 CLASS is the EIEIO class that is used to track this project.  It should subclass
-the class `ede-generic-project' project."
+`ede-generic-project'."
   (ede-add-project-autoload
-   (ede-project-autoload internal-name
-			 :name external-name
+   (ede-project-autoload :name external-name
 			 :file 'ede/generic
 			 :proj-file projectfile
 			 :root-only nil
@@ -284,29 +284,31 @@ the class `ede-generic-project' project."
 (defun ede-enable-generic-projects ()
   "Enable generic project loaders."
   (interactive)
-  (ede-generic-new-autoloader "generic-makefile" "Make"
+  (ede-generic-new-autoloader "generic-makefile" "Generic Make"
 			      "Makefile" 'ede-generic-makefile-project)
-  (ede-generic-new-autoloader "generic-scons" "SCons"
+  (ede-generic-new-autoloader "generic-scons" "Generic SCons"
 			      "SConstruct" 'ede-generic-scons-project)
-  (ede-generic-new-autoloader "generic-cmake" "CMake"
+  (ede-generic-new-autoloader "generic-cmake" "Generic CMake"
 			      "CMakeLists" 'ede-generic-cmake-project)
 
   ;; Super Generic found via revision control tags.
-  (ede-generic-new-autoloader "generic-git" "Git"
+  (ede-generic-new-autoloader "generic-git" "Generic Git"
 			      ".git" 'ede-generic-vc-project)
-  (ede-generic-new-autoloader "generic-bzr" "Bazaar"
+  (ede-generic-new-autoloader "generic-bzr" "Generic Bazaar"
 			      ".bzr" 'ede-generic-vc-project)
-  (ede-generic-new-autoloader "generic-hg" "Mercurial"
+  (ede-generic-new-autoloader "generic-hg" "Generic Mercurial"
 			      ".hg" 'ede-generic-vc-project)
-  (ede-generic-new-autoloader "generic-svn" "Subversions"
+  (ede-generic-new-autoloader "generic-svn" "Generic Subversions"
 			      ".svn" 'ede-generic-vc-project)
-  (ede-generic-new-autoloader "generic-cvs" "CVS"
+  (ede-generic-new-autoloader "generic-cvs" "Generic CVS"
 			      "CVS" 'ede-generic-vc-project)
+  (ede-generic-new-autoloader "generic-mtn" "Generic Monotone"
+                              "_MTN" 'ede-generic-vc-project)
 
   ;; Take advantage of existing 'projectile' based projects.
   ;; @TODO - if projectile supports compile commands etc, can we
   ;; read that out?  Howto if projectile is not part of core emacs.
-  (ede-generic-new-autoloader "generic-projectile" ".projectile"
+  (ede-generic-new-autoloader "generic-projectile" "Generic .projectile"
 			      ".projectile" 'ede-generic-vc-project)
 
   )
@@ -322,7 +324,7 @@ the class `ede-generic-project' project."
    )
   "Generic Project for makefiles.")
 
-(defmethod ede-generic-setup-configuration ((proj ede-generic-makefile-project) config)
+(cl-defmethod ede-generic-setup-configuration ((proj ede-generic-makefile-project) config)
   "Setup a configuration for Make."
   (oset config build-command "make -k")
   (oset config debug-command "gdb ")
@@ -335,7 +337,7 @@ the class `ede-generic-project' project."
    )
   "Generic Project for scons.")
 
-(defmethod ede-generic-setup-configuration ((proj ede-generic-scons-project) config)
+(cl-defmethod ede-generic-setup-configuration ((proj ede-generic-scons-project) config)
   "Setup a configuration for SCONS."
   (oset config build-command "scons")
   (oset config debug-command "gdb ")
@@ -348,7 +350,7 @@ the class `ede-generic-project' project."
    )
   "Generic Project for cmake.")
 
-(defmethod ede-generic-setup-configuration ((proj ede-generic-cmake-project) config)
+(cl-defmethod ede-generic-setup-configuration ((proj ede-generic-cmake-project) config)
   "Setup a configuration for CMake."
   (oset config build-command "cmake")
   (oset config debug-command "gdb ")
@@ -359,7 +361,7 @@ the class `ede-generic-project' project."
   ()
   "Generic project found via Version Control files.")
 
-(defmethod ede-generic-setup-configuration ((proj ede-generic-vc-project) config)
+(cl-defmethod ede-generic-setup-configuration ((proj ede-generic-vc-project) config)
   "Setup a configuration for projects identified by revision control."
   )
 

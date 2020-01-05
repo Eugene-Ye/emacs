@@ -1,6 +1,6 @@
 ;;; metamail.el --- Metamail interface for GNU Emacs
 
-;; Copyright (C) 1993, 1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993, 1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Masanobu UMEDA <umerin@mse.kyutech.ac.jp>
 ;; Keywords: mail, news, mime, multimedia
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -150,7 +150,7 @@ redisplayed as output is inserted."
 
 ;;;###autoload
 (defun metamail-region (beg end &optional viewmode buffer nodisplay)
-  "Process current region through 'metamail'.
+  "Process current region through `metamail'.
 Optional argument VIEWMODE specifies the value of the
 EMACS_VIEW_MODE environment variable (defaulted to 1).
 Optional argument BUFFER specifies a buffer to be filled (nil

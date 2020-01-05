@@ -1,6 +1,6 @@
 ;;; package-x.el --- Package extras
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Tom Tromey <tromey@redhat.com>
 ;; Created: 10 Mar 2007
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -47,6 +47,8 @@
 
 (defcustom package-archive-upload-base "/path/to/archive"
   "The base location of the archive to which packages are uploaded.
+The commands in the package-x library will use this as base
+location.
 This should be an absolute directory name.  If the archive is on
 another machine, you may specify a remote name in the usual way,
 e.g. \"/ssh:foo@example.com:/var/www/packages/\".
@@ -122,7 +124,7 @@ Return the file contents, as a string, or nil if unsuccessful."
 	 (buffer-substring-no-properties (point-min) (point-max)))))))
 
 (defun package--archive-contents-from-file ()
-  "Parse the archive-contents at `package-archive-upload-base'"
+  "Parse the archive-contents at `package-archive-upload-base'."
   (let ((file (expand-file-name "archive-contents"
 				package-archive-upload-base)))
     (if (not (file-exists-p file))
@@ -156,6 +158,7 @@ DESCRIPTION is the text of the news item."
 			       archive-url))
 
 (declare-function lm-commentary "lisp-mnt" (&optional file))
+(defvar tar-data-buffer)
 
 (defun package-upload-buffer-internal (pkg-desc extension &optional archive-url)
   "Upload a package whose contents are in the current buffer.
@@ -201,12 +204,16 @@ if it exists."
 	       (split-version (package-desc-version pkg-desc))
 	       (commentary
                 (pcase file-type
-                  (`single (lm-commentary))
-                  (`tar nil))) ;; FIXME: Get it from the README file.
+                  ('single (lm-commentary))
+                  ('tar nil))) ;; FIXME: Get it from the README file.
                (extras (package-desc-extras pkg-desc))
 	       (pkg-version (package-version-join split-version))
 	       (pkg-buffer (current-buffer)))
 
+          ;; `package-upload-file' will error if given a directory,
+          ;; but we check it here as well just in case.
+          (when (eq 'dir file-type)
+            (user-error "Can't upload directory, tar it instead"))
 	  ;; Get archive-contents from ARCHIVE-URL if it's non-nil, or
 	  ;; from `package-archive-upload-base' otherwise.
 	  (let ((contents (or (package--archive-contents-from-url archive-url)
@@ -243,7 +250,7 @@ if it exists."
 	        	     (concat (symbol-name pkg-name) "-readme.txt")
 	        	     package-archive-upload-base)))
 
-	    (set-buffer pkg-buffer)
+	    (set-buffer (if (eq file-type 'tar) tar-data-buffer pkg-buffer))
 	    (write-region (point-min) (point-max)
 			  (expand-file-name
 			   (format "%s-%s.%s" pkg-name pkg-version extension)
@@ -268,7 +275,9 @@ if it exists."
 (defun package-upload-buffer ()
   "Upload the current buffer as a single-file Emacs Lisp package.
 If `package-archive-upload-base' does not specify a valid upload
-destination, prompt for one."
+destination, prompt for one.
+Signal an error if the current buffer is not visiting a simple
+package (a \".el\" file)."
   (interactive)
   (save-excursion
     (save-restriction
@@ -276,13 +285,19 @@ destination, prompt for one."
       (let ((pkg-desc (package-buffer-info)))
 	(package-upload-buffer-internal pkg-desc "el")))))
 
+;;;###autoload
 (defun package-upload-file (file)
   "Upload the Emacs Lisp package FILE to the package archive.
 Interactively, prompt for FILE.  The package is considered a
 single-file package if FILE ends in \".el\", and a multi-file
 package if FILE ends in \".tar\".
+Automatically extract package attributes and update the archive's
+contents list with this information.
 If `package-archive-upload-base' does not specify a valid upload
-destination, prompt for one."
+destination, prompt for one.  If the directory does not exist, it
+is created.  The directory need not have any initial contents
+\(i.e., you can use this command to populate an initially empty
+archive)."
   (interactive "fPackage file name: ")
   (with-temp-buffer
     (insert-file-contents file)

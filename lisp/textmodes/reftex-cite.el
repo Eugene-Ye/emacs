@@ -1,6 +1,6 @@
 ;;; reftex-cite.el --- creating citations with RefTeX
 
-;; Copyright (C) 1997-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <dominik@science.uva.nl>
 ;; Maintainer: auctex-devel@gnu.org
@@ -18,13 +18,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 
 (require 'reftex)
 
@@ -73,8 +73,8 @@ The expanded value is cached."
 
 ;;;###autoload
 (defun reftex-bib-or-thebib ()
-  "Test if BibTeX or \begin{thebibliography} should be used for the citation.
-Find the bof of the current file"
+  "Test if BibTeX or \\begin{thebibliography} should be used for the citation.
+Find the bof of the current file."
   (let* ((docstruct (symbol-value reftex-docstruct-symbol))
          (rest (or (member (list 'bof (buffer-file-name)) docstruct)
                    docstruct))
@@ -172,10 +172,32 @@ If RETURN is non-nil, just return the entry and restore point."
         (if item
             (progn (end-of-line)
                    (re-search-forward
-                    "\\\\bibitem\\|\\end{thebibliography}")
+                    "\\\\bibitem\\|\\\\end{thebibliography}")
                    (1- (match-beginning 0)))
           (progn (forward-list 1) (point)))
       (error (min (point-max) (+ 300 (point)))))))
+
+(defun reftex--query-search-regexps (default)
+  "Query for regexps for searching entries using DEFAULT as default.
+Return a list of regular expressions."
+  (split-string
+   (completing-read
+    (concat
+     "Regex { && Regex...}: "
+     "[" default "]: ")
+    ;; Ensure default is always in the completion list.
+    (let ((def (when default (list default)))
+          (coll (if reftex-mode
+                    (if (fboundp 'LaTeX-bibitem-list)
+                        (LaTeX-bibitem-list)
+                      (cdr (assoc 'bibview-cache
+                                  (symbol-value reftex-docstruct-symbol))))
+                  nil)))
+      (if (and def (member def coll))
+          coll
+        (cons def coll)))
+    nil nil nil 'reftex-cite-regexp-hist)
+   "[ \t]*&&[ \t]*"))
 
 ;;; Parse bibtex buffers
 (defun reftex-extract-bib-entries (buffers)
@@ -189,20 +211,7 @@ Return list with entries."
 
     ;; Read a regexp, completing on known citation keys.
     (setq default (regexp-quote (reftex-get-bibkey-default)))
-    (setq re-list
-          (split-string
-           (completing-read
-            (concat
-             "Regex { && Regex...}: "
-             "[" default "]: ")
-            (if reftex-mode
-                (if (fboundp 'LaTeX-bibitem-list)
-                    (LaTeX-bibitem-list)
-                  (cdr (assoc 'bibview-cache
-                              (symbol-value reftex-docstruct-symbol))))
-              nil)
-            nil nil nil 'reftex-cite-regexp-hist)
-           "[ \t]*&&[ \t]*"))
+    (setq re-list (reftex--query-search-regexps default))
 
     (if (or (null re-list ) (equal re-list '("")))
         (setq re-list (list default)))
@@ -210,7 +219,9 @@ Return list with entries."
     (setq first-re (car re-list)    ; We'll use the first re to find things,
           rest-re  (cdr re-list))   ; the others to narrow down.
     (if (string-match "\\`[ \t]*\\'" (or first-re ""))
-        (error "Empty regular expression"))
+        (user-error "Empty regular expression"))
+    (if (string-match first-re "")
+        (user-error "Regular expression matches the empty string."))
 
     (save-excursion
       (save-window-excursion
@@ -228,11 +239,11 @@ Return list with entries."
               (message "No such BibTeX file %s (ignored)" buffer)
             (message "Scanning bibliography database %s" buffer1)
 	    (unless (verify-visited-file-modtime buffer1)
-		 (when (y-or-n-p
-			(format "File %s changed on disk.  Reread from disk? "
-				(file-name-nondirectory
-				 (buffer-file-name buffer1))))
-		   (with-current-buffer buffer1 (revert-buffer t t)))))
+              (when (y-or-n-p
+                     (format "File %s changed on disk.  Reread from disk? "
+                             (file-name-nondirectory
+                              (buffer-file-name buffer1))))
+                (with-current-buffer buffer1 (revert-buffer t t)))))
 
           (set-buffer buffer1)
           (reftex-with-special-syntax-for-bib
@@ -385,27 +396,14 @@ The environment should be located in FILES."
 					       (buffer-substring-no-properties
 						start end)
 					       "[ \t\n\r]*\\\\bibitem[ \t]*\
-\\(\\[[^]]*]\\)*\[ \t]*"))))))
+\\(\\[[^]]*]\\)*[ \t]*"))))))
 	      (goto-char end))))))
     (unless entries
       (error "No bibitems found"))
 
     ;; Read a regexp, completing on known citation keys.
     (setq default (regexp-quote (reftex-get-bibkey-default)))
-    (setq re-list
-          (split-string
-           (completing-read
-            (concat
-             "Regex { && Regex...}: "
-             "[" default "]: ")
-            (if reftex-mode
-                (if (fboundp 'LaTeX-bibitem-list)
-                    (LaTeX-bibitem-list)
-                  (cdr (assoc 'bibview-cache
-                              (symbol-value reftex-docstruct-symbol))))
-              nil)
-            nil nil nil 'reftex-cite-regexp-hist)
-           "[ \t]*&&[ \t]*"))
+    (setq re-list (reftex--query-search-regexps default))
 
     (if (or (null re-list ) (equal re-list '("")))
         (setq re-list (list default)))
@@ -449,7 +447,7 @@ If FIELD is empty try \"editor\" field."
         (setq names (reftex-get-bib-field "editor" entry)))
     (while (string-match "\\band\\b[ \t]*" names)
       (setq names (replace-match "\n" nil t names)))
-    (while (string-match "[\\.a-zA-Z\\-]+\\.[ \t]*\\|,.*\\|[{}]+" names)
+    (while (string-match "[-.a-zA-Z]+\\.[ \t]*\\|,.*\\|[{}]+" names)
       (setq names (replace-match "" nil t names)))
     (while (string-match "^[ \t]+\\|[ \t]+$" names)
       (setq names (replace-match "" nil t names)))
@@ -477,7 +475,7 @@ If RAW is non-nil, keep double quotes/curly braces delimiting fields."
         (goto-char (point-min))
 
         (if (re-search-forward "@\\(\\(?:\\w\\|\\s_\\)+\\)[ \t\n\r]*\
-\[{(][ \t\n\r]*\\([^ \t\n\r,]+\\)" nil t)
+[{(][ \t\n\r]*\\([^ \t\n\r,]+\\)" nil t)
             (setq alist
                   (list
                    (cons "&type" (downcase (reftex-match-string 1)))
@@ -543,7 +541,14 @@ If FORMAT is non-nil `format' entry accordingly."
        (extra
         (cond
          ((equal type "article")
-          (concat (reftex-get-bib-field "journal" entry) " "
+          (concat (let ((jt (reftex-get-bib-field "journal" entry)))
+                    ;; biblatex prefers the alternative journaltitle
+                    ;; field, so check if that exists in case journal
+                    ;; is empty.
+                    (if (zerop (length jt))
+                        (reftex-get-bib-field "journaltitle" entry)
+                      jt))
+                  " "
                   (reftex-get-bib-field "volume" entry) ", "
                   (reftex-get-bib-field "pages" entry)))
          ((equal type "book")
@@ -739,7 +744,7 @@ While entering the regexp, completion on knows citation keys is possible.
       (if (> arg 1)
           (progn
             (skip-chars-backward "}")
-            (decf arg)
+            (cl-decf arg)
             (reftex-do-citation arg))
         (forward-char 1)))
 
@@ -758,7 +763,10 @@ in order to only add another reference in the same cite command."
       (setq format "%l"))
 
      ((and (stringp macro)
-           (string-match "\\`\\\\cite\\|cite\\'" macro))
+           ;; Match also commands from biblatex ending with `s'
+           ;; (\parencites) or `*' (\parencite*) and `texts?'
+           ;; (\footcitetext and \footcitetexts).
+           (string-match "\\`\\\\cite\\|cite\\([s*]\\|texts?\\)?\\'" macro))
       ;; We are already inside a cite macro
       (if (or (not arg) (not (listp arg)))
           (setq format
@@ -1188,7 +1196,7 @@ created files in the variables `reftex-create-bibtex-header' or
              (widen)
              (goto-char (point-min))
              (while (re-search-forward "^[ \t]*@\\(?:\\w\\|\\s_\\)+[ \t\n\r]*\
-\[{(][ \t\n\r]*\\([^ \t\n\r,]+\\)" nil t)
+[{(][ \t\n\r]*\\([^ \t\n\r,]+\\)" nil t)
                (setq key (match-string 1)
                      beg (match-beginning 0)
                      end (progn
@@ -1205,7 +1213,7 @@ created files in the variables `reftex-create-bibtex-header' or
                  ;; check for crossref entries
                  (let* ((attr-list (reftex-parse-bibtex-entry nil beg end))
                         (xref-key (cdr (assoc "crossref" attr-list))))
-                   (if xref-key (pushnew xref-key keys)))
+                   (if xref-key (cl-pushnew xref-key keys)))
                  ;; check for string references
                  (let* ((raw-fields (reftex-parse-bibtex-entry nil beg end t))
                         (string-fields (reftex-get-string-refs raw-fields)))
@@ -1257,5 +1265,5 @@ created files in the variables `reftex-create-bibtex-header' or
 ;;; reftex-cite.el ends here
 
 ;; Local Variables:
-;; generated-autoload-file: "reftex.el"
+;; generated-autoload-file: "reftex-loaddefs.el"
 ;; End:

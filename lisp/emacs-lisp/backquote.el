@@ -1,6 +1,6 @@
 ;;; backquote.el --- implement the ` Lisp construct
 
-;; Copyright (C) 1990, 1992, 1994, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1990, 1992, 1994, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Rick Sladkey <jrs@world.std.com>
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -43,7 +43,7 @@
 (defun backquote-list*-function (first &rest list)
   "Like `list' but the last argument is the tail of the new list.
 
-For example (backquote-list* 'a 'b 'c) => (a b . c)"
+For example (backquote-list* \\='a \\='b \\='c) => (a b . c)"
   ;; The recursive solution is much nicer:
   ;; (if list (cons first (apply 'backquote-list*-function list)) first))
   ;; but Emacs is not very good at efficiently processing recursion.
@@ -60,7 +60,7 @@ For example (backquote-list* 'a 'b 'c) => (a b . c)"
 (defmacro backquote-list*-macro (first &rest list)
   "Like `list' but the last argument is the tail of the new list.
 
-For example (backquote-list* 'a 'b 'c) => (a b . c)"
+For example (backquote-list* \\='a \\='b \\='c) => (a b . c)"
   ;; The recursive solution is much nicer:
   ;; (if list (list 'cons first (cons 'backquote-list*-macro list)) first))
   ;; but Emacs is not very good at efficiently processing such things.
@@ -99,9 +99,9 @@ places where expressions are evaluated and inserted or spliced in.
 For example:
 
 b              => (ba bb bc)		; assume b has this value
-`(a b c)       => (a b c)		; backquote acts like quote
-`(a ,b c)      => (a (ba bb bc) c)	; insert the value of b
-`(a ,@b c)     => (a ba bb bc c)	; splice in the value of b
+\\=`(a b c)       => (a b c)		; backquote acts like quote
+\\=`(a ,b c)      => (a (ba bb bc) c)	; insert the value of b
+\\=`(a ,@b c)     => (a ba bb bc c)	; splice in the value of b
 
 Vectors work just like lists.  Nested backquotes are permitted."
   (cdr (backquote-process structure)))
@@ -120,9 +120,7 @@ Vectors work just like lists.  Nested backquotes are permitted."
 This simply recurses through the body."
   (let ((exp (backquote-listify (list (cons 0 (list 'quote (car s))))
                                 (backquote-process (cdr s) level))))
-    (if (eq (car-safe exp) 'quote)
-        (cons 0 (list 'quote s))
-      (cons 1 exp))))
+    (cons (if (eq (car-safe exp) 'quote) 0 1) exp)))
 
 (defun backquote-process (s &optional level)
   "Process the body of a backquote.
@@ -248,5 +246,15 @@ LEVEL is only used internally and indicates the nesting level:
 		  (append heads (list tail))))
 	tail))
      (t (cons 'list heads)))))
+
+
+;; Give `,' and `,@' documentation strings which can be examined by C-h f.
+(put '\, 'function-documentation
+     "See `\\=`' (also `pcase') for the usage of `,'.")
+(put '\, 'reader-construct t)
+
+(put '\,@ 'function-documentation
+     "See `\\=`' for the usage of `,@'.")
+(put '\,@ 'reader-construct t)
 
 ;;; backquote.el ends here

@@ -1,6 +1,6 @@
 ;;; advice.el --- An overloading mechanism for Emacs Lisp functions  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1994, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Hans Chalupsky <hans@cs.buffalo.edu>
 ;; Maintainer: emacs-devel@gnu.org
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; LCD Archive Entry:
 ;; advice|Hans Chalupsky|hans@cs.buffalo.edu|
@@ -168,7 +168,8 @@
 ;;  "Switch to non-existing buffers only upon confirmation."
 ;;  (interactive "BSwitch to buffer: ")
 ;;  (if (or (get-buffer (ad-get-arg 0))
-;;          (y-or-n-p (format "`%s' does not exist, create? " (ad-get-arg 0))))
+;;          (y-or-n-p (format-message "`%s' does not exist, create? "
+;;                                    (ad-get-arg 0))))
 ;;      ad-do-it))
 ;;
 ;;(defadvice find-file (before existing-files-only activate)
@@ -501,7 +502,7 @@
 ;; important advantage is that it allows the implementation of forward advice.
 ;; Advice information for a certain function accumulates as the value of the
 ;; `advice-info' property of the function symbol.  This accumulation is
-;; completely independent of the fact that that function might not yet be
+;; completely independent of the fact that the function might not yet be
 ;; defined.  The macros `defun' and `defmacro' check whether the
 ;; function/macro they defined had advice information
 ;; associated with it.  If so and forward advice is enabled, the original
@@ -1513,7 +1514,7 @@
 ;; `ad-return-value' in a piece of after advice. For example:
 ;;
 ;; (defmacro foom (x)
-;;   (` (list (, x))))
+;;   `(list ,x))
 ;; foom
 ;;
 ;; (foom '(a))
@@ -1546,8 +1547,8 @@
 ;; (defadvice foom (after fg-print-x act)
 ;;   "Print the value of X."
 ;;   (setq ad-return-value
-;;         (` (progn (print (, x))
-;;                   (, ad-return-value)))))
+;;         `(progn (print ,x)
+;;                 ,ad-return-value)))
 ;; foom
 ;;
 ;; (macroexpand '(foom '(a)))
@@ -1574,7 +1575,6 @@
 ;; ==============================
 
 (require 'macroexp)
-;; At run-time also, since ad-do-advised-functions returns code that uses it.
 (eval-when-compile (require 'cl-lib))
 
 ;; @@ Variable definitions:
@@ -1628,7 +1628,7 @@ COMPILE argument of `ad-activate' was supplied as nil."
 Only proper subtrees are considered, for example, if TREE is (1 (2 (3)) 4)
 then the subtrees will be 1 (2 (3)) 2 (3) 3 4, dotted structures are
 allowed too.  Once a qualifying subtree has been found its subtrees will
-not be considered anymore.  (ad-substitute-tree 'atom 'identity tree)
+not be considered anymore.  (ad-substitute-tree \\='atom \\='identity tree)
 generates a copy of TREE."
   (cond ((consp tReE)
          (cons (if (funcall sUbTrEe-TeSt (car tReE))
@@ -1661,18 +1661,14 @@ generates a copy of TREE."
 ;; (this list is maintained as a completion table):
 (defvar ad-advised-functions nil)
 
-(defmacro ad-pushnew-advised-function (function)
+(defun ad-pushnew-advised-function (function)
   "Add FUNCTION to `ad-advised-functions' unless its already there."
-  `(if (not (assoc (symbol-name ,function) ad-advised-functions))
-    (setq ad-advised-functions
-     (cons (list (symbol-name ,function))
-      ad-advised-functions))))
+  (add-to-list 'ad-advised-functions (symbol-name function)))
 
-(defmacro ad-pop-advised-function (function)
+(defun ad-pop-advised-function (function)
   "Remove FUNCTION from `ad-advised-functions'."
-  `(setq ad-advised-functions
-    (delq (assoc (symbol-name ,function) ad-advised-functions)
-     ad-advised-functions)))
+  (setq ad-advised-functions
+        (delete (symbol-name function) ad-advised-functions)))
 
 (defmacro ad-do-advised-functions (varform &rest body)
   "`dolist'-style iterator that maps over advised functions.
@@ -1682,14 +1678,14 @@ On each iteration VAR will be bound to the name of an advised function
 \(a symbol)."
   (declare (indent 1))
   `(dolist (,(car varform) ad-advised-functions)
-     (setq ,(car varform) (intern (car ,(car varform))))
+     (setq ,(car varform) (intern ,(car varform)))
      ,@body))
 
-(defun ad-get-advice-info (function)
+(defsubst ad-get-advice-info (function)
   (get function 'ad-advice-info))
 
-(defmacro ad-get-advice-info-macro (function)
-  `(get ,function 'ad-advice-info))
+(define-obsolete-function-alias 'ad-get-advice-info-macro
+  #'ad-get-advice-info "27.1")
 
 (defsubst ad-set-advice-info (function advice-info)
   (cond
@@ -1701,13 +1697,12 @@ On each iteration VAR will be bound to the name of an advised function
                      #'ad--defalias-fset)))
   (put function 'ad-advice-info advice-info))
 
-(defmacro ad-copy-advice-info (function)
-  `(copy-tree (get ,function 'ad-advice-info)))
+(defsubst ad-copy-advice-info (function)
+  (copy-tree (get function 'ad-advice-info)))
 
-(defmacro ad-is-advised (function)
+(defalias 'ad-is-advised #'ad-get-advice-info
   "Return non-nil if FUNCTION has any advice info associated with it.
-This does not mean that the advice is also active."
-  `(ad-get-advice-info-macro ,function))
+This does not mean that the advice is also active.")
 
 (defun ad-initialize-advice-info (function)
   "Initialize the advice info for FUNCTION.
@@ -1715,19 +1710,19 @@ Assumes that FUNCTION has not yet been advised."
   (ad-pushnew-advised-function function)
   (ad-set-advice-info function (list (cons 'active nil))))
 
-(defmacro ad-get-advice-info-field (function field)
+(defsubst ad-get-advice-info-field (function field)
   "Retrieve the value of the advice info FIELD of FUNCTION."
-  `(cdr (assq ,field (ad-get-advice-info-macro ,function))))
+  (cdr (assq field (ad-get-advice-info function))))
 
 (defun ad-set-advice-info-field (function field value)
   "Destructively modify VALUE of the advice info FIELD of FUNCTION."
-  (and (ad-is-advised function)
-       (cond ((assq field (ad-get-advice-info-macro function))
-	      ;; A field with that name is already present:
-              (rplacd (assq field (ad-get-advice-info-macro function)) value))
-	     (t;; otherwise, create a new field with that name:
-	      (nconc (ad-get-advice-info-macro function)
-		     (list (cons field value)))))))
+  (let ((info (ad-get-advice-info function)))
+    (and info
+         (cond ((assq field info)
+	        ;; A field with that name is already present:
+                (rplacd (assq field info) value))
+	       (t;; otherwise, create a new field with that name:
+	        (nconc info (list (cons field value))))))))
 
 ;; Don't make this a macro so we can use it as a predicate:
 (defun ad-is-active (function)
@@ -1831,7 +1826,7 @@ Redefining advices affect the construction of an advised definition."
 ;; @@ Interactive input functions:
 ;; ===============================
 
-(declare-function 'function-called-at-point "help")
+(declare-function function-called-at-point "help")
 
 (defun ad-read-advised-function (&optional prompt predicate default)
   "Read name of advised function with completion from the minibuffer.
@@ -1848,7 +1843,7 @@ function at point for which PREDICATE returns non-nil)."
 			      (require 'help)
 			      (function-called-at-point))))
 	      (and function
-		   (assoc (symbol-name function) ad-advised-functions)
+		   (member (symbol-name function) ad-advised-functions)
 		   (or (null predicate)
 		       (funcall predicate function))
 		   function))
@@ -1938,9 +1933,9 @@ be used to prompt for the function."
 ;; @@ Finding, enabling, adding and removing pieces of advice:
 ;; ===========================================================
 
-(defmacro ad-find-advice (function class name)
+(defsubst ad-find-advice (function class name)
   "Find the first advice of FUNCTION in CLASS with NAME."
-  `(assq ,name (ad-get-advice-info-field ,function ,class)))
+  (assq name (ad-get-advice-info-field function class)))
 
 (defun ad-advice-position (function class name)
   "Return position of first advice of FUNCTION in CLASS with NAME."
@@ -2108,34 +2103,33 @@ the cache-id will clear the cache."
 ;; @@ Accessing and manipulating function definitions:
 ;; ===================================================
 
-(defmacro ad-macrofy (definition)
+(defsubst ad-macrofy (definition)
   "Take a lambda function DEFINITION and make a macro out of it."
-  `(cons 'macro ,definition))
+  (cons 'macro definition))
 
-(defmacro ad-lambdafy (definition)
-  "Take a macro function DEFINITION and make a lambda out of it."
-  `(cdr ,definition))
+(defalias 'ad-lambdafy #'cdr
+  "Take a macro function DEFINITION and make a lambda out of it.")
 
-(defmacro ad-lambda-p (definition)
+(defsubst ad-lambda-p (definition)
   ;;"non-nil if DEFINITION is a lambda expression."
-  `(eq (car-safe ,definition) 'lambda))
+  (eq (car-safe definition) 'lambda))
 
 ;; see ad-make-advice for the format of advice definitions:
-(defmacro ad-advice-p (definition)
+(defsubst ad-advice-p (definition)
   ;;"non-nil if DEFINITION is a piece of advice."
-  `(eq (car-safe ,definition) 'advice))
+  (eq (car-safe definition) 'advice))
 
-(defmacro ad-compiled-p (definition)
+(defsubst ad-compiled-p (definition)
   "Return non-nil if DEFINITION is a compiled byte-code object."
-  `(or (byte-code-function-p ,definition)
-       (and (macrop ,definition)
-            (byte-code-function-p (ad-lambdafy ,definition)))))
+  (or (byte-code-function-p definition)
+       (and (macrop definition)
+            (byte-code-function-p (ad-lambdafy definition)))))
 
-(defmacro ad-compiled-code (compiled-definition)
+(defsubst ad-compiled-code (compiled-definition)
   "Return the byte-code object of a COMPILED-DEFINITION."
-  `(if (macrop ,compiled-definition)
-    (ad-lambdafy ,compiled-definition)
-    ,compiled-definition))
+  (if (macrop compiled-definition)
+    (ad-lambdafy compiled-definition)
+    compiled-definition))
 
 (defun ad-lambda-expression (definition)
   "Return the lambda expression of a function/macro/advice DEFINITION."
@@ -2149,7 +2143,6 @@ the cache-id will clear the cache."
 
 (defun ad-arglist (definition)
   "Return the argument list of DEFINITION."
-  (require 'help-fns)
   (help-function-arglist
    (if (or (macrop definition) (ad-advice-p definition))
        (cdr definition)
@@ -2419,8 +2412,8 @@ as if they had been supplied to a function with TARGET-ARGLIST directly.
 Excess source arguments will be neglected, missing source arguments will be
 supplied as nil.  Returns a `funcall' or `apply' form with the second element
 being `function' which has to be replaced by an actual function argument.
-Example: `(ad-map-arglists '(a &rest args) '(w x y z))' will return
-         `(funcall ad--addoit-function a (car args) (car (cdr args)) (nth 2 args))'."
+Example: (ad-map-arglists \\='(a &rest args) \\='(w x y z)) will return
+         (funcall ad--addoit-function a (car args) (car (cdr args)) (nth 2 args))."
   (let* ((parsed-source-arglist (ad-parse-arglist source-arglist))
 	 (source-reqopt-args (append (nth 0 parsed-source-arglist)
 				     (nth 1 parsed-source-arglist)))
@@ -2473,8 +2466,6 @@ Example: `(ad-map-arglists '(a &rest args) '(w x y z))' will return
 	       (format "%s-advice `%s'."
 		       (capitalize (symbol-name class))
 		       (ad-advice-name advice)))))))
-
-(require 'help-fns)	    ;For help-split-fundoc and help-add-fundoc-usage.
 
 (defun ad--make-advised-docstring (function &optional style)
   "Construct a documentation string for the advised FUNCTION.
@@ -2699,15 +2690,15 @@ should be modified.  The assembled function will be returned."
 ;; the added efficiency.  The validation itself is also pretty cheap, certainly
 ;; a lot cheaper than reconstructing an advised definition.
 
-(defmacro ad-get-cache-definition (function)
-  `(car (ad-get-advice-info-field ,function 'cache)))
+(defsubst ad-get-cache-definition (function)
+  (car (ad-get-advice-info-field function 'cache)))
 
-(defmacro ad-get-cache-id (function)
-  `(cdr (ad-get-advice-info-field ,function 'cache)))
+(defsubst ad-get-cache-id (function)
+  (cdr (ad-get-advice-info-field function 'cache)))
 
-(defmacro ad-set-cache (function definition id)
-  `(ad-set-advice-info-field
-    ,function 'cache (cons ,definition ,id)))
+(defsubst ad-set-cache (function definition id)
+  (ad-set-advice-info-field
+    function 'cache (cons definition id)))
 
 (defun ad-clear-cache (function)
   "Clears a previously cached advised definition of FUNCTION.
@@ -2815,7 +2806,7 @@ advised definition from scratch."
 ;; advised definition will be generated.
 
 (defun ad-preactivate-advice (function advice class position)
-  "Preactivate FUNCTION and returns the constructed cache."
+  "Preactivate FUNCTION and return the constructed cache."
   (let* ((advicefunname (ad-get-advice-info-field function 'advicefunname))
          (old-advice (symbol-function advicefunname))
 	 (old-advice-info (ad-copy-advice-info function))
@@ -2832,7 +2823,7 @@ advised definition from scratch."
 		    (ad-get-cache-id function))))
       (ad-set-advice-info function old-advice-info)
       (advice-remove function advicefunname)
-      (fset advicefunname old-advice)
+      (if advicefunname (fset advicefunname old-advice))
       (if old-advice (advice-add function :around advicefunname)))))
 
 
@@ -3100,16 +3091,15 @@ deactivation, which might run hooks and get into other trouble."
 
 
 ;; Completion alist of valid `defadvice' flags
-(defvar ad-defadvice-flags
-  '(("protect") ("disable") ("activate")
-    ("compile") ("preactivate")))
+(defconst ad-defadvice-flags
+  '("protect" "disable" "activate" "compile" "preactivate"))
 
 ;;;###autoload
 (defmacro defadvice (function args &rest body)
   "Define a piece of advice for FUNCTION (a symbol).
 The syntax of `defadvice' is as follows:
 
-  \(defadvice FUNCTION (CLASS NAME [POSITION] [ARGLIST] FLAG...)
+  (defadvice FUNCTION (CLASS NAME [POSITION] [ARGLIST] FLAG...)
     [DOCSTRING] [INTERACTIVE-FORM]
     BODY...)
 
@@ -3182,7 +3172,7 @@ usage: (defadvice FUNCTION (CLASS NAME [POSITION] [ARGLIST] FLAG...)
              (let ((completion
                     (try-completion (symbol-name flag) ad-defadvice-flags)))
                (cond ((eq completion t) flag)
-                     ((assoc completion ad-defadvice-flags)
+                     ((member completion ad-defadvice-flags)
                       (intern completion))
                      (t (error "defadvice: Invalid or ambiguous flag: %s"
                                flag))))))
@@ -3223,7 +3213,7 @@ usage: (defadvice FUNCTION (CLASS NAME [POSITION] [ARGLIST] FLAG...)
 For any members of FUNCTIONS that are not currently advised the rebinding will
 be a noop.  Any modifications done to the definitions of FUNCTIONS will be
 undone on exit of this macro."
-  (declare (indent 1))
+  (declare (indent 1) (obsolete nil "27.1"))
   (let* ((index -1)
 	 ;; Make let-variables to store current definitions:
 	 (current-bindings

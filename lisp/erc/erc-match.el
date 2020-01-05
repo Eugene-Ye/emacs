@@ -1,6 +1,6 @@
 ;;; erc-match.el --- Highlight messages matching certain regexps
 
-;; Copyright (C) 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Andreas Fuchs <asf@void.at>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -44,7 +44,7 @@ Group containing all things concerning pattern matching in ERC
 messages."
   :group 'erc)
 
-;;;###autoload (autoload 'erc-match-mode "erc-match")
+;;;###autoload(autoload 'erc-match-mode "erc-match")
 (define-erc-module match nil
   "This mode checks whether messages match certain patterns.  If so,
 they are hidden or highlighted.  This is controlled via the variables
@@ -84,17 +84,17 @@ Useful to mark nicks from dangerous hosts."
 
 (defcustom erc-current-nick-highlight-type 'keyword
   "Determines how to highlight text in which your current nickname appears
-\(does not apply to text sent by you\).
+\(does not apply to text sent by you).
 
 The following values are allowed:
 
- nil              - do not highlight the message at all
- 'keyword         - highlight all instances of current nickname in message
- 'nick            - highlight the nick of the user who typed your nickname
- 'nick-or-keyword - highlight the nick of the user who typed your nickname,
-                    or all instances of the current nickname if there was
-                    no sending user
- 'all             - highlight the entire message where current nickname occurs
+ nil               - do not highlight the message at all
+ `keyword'         - highlight all instances of current nickname in message
+ `nick'            - highlight the nick of the user who typed your nickname
+ `nick-or-keyword' - highlight the nick of the user who typed your nickname,
+                     or all instances of the current nickname if there was
+                     no sending user
+ `all'             - highlight the entire message where current nickname occurs
 
 Any other value disables highlighting of current nickname altogether."
   :group 'erc-match
@@ -110,9 +110,9 @@ See `erc-pals'.
 
 The following values are allowed:
 
-    nil   - do not highlight the message at all
-    'nick - highlight pal's nickname only
-    'all  - highlight the entire message from pal
+    nil    - do not highlight the message at all
+    `nick' - highlight pal's nickname only
+    `all'  - highlight the entire message from pal
 
 Any other value disables pal highlighting altogether."
   :group 'erc-match
@@ -126,9 +126,9 @@ See `erc-fools'.
 
 The following values are allowed:
 
-    nil   - do not highlight the message at all
-    'nick - highlight fool's nickname only
-    'all  - highlight the entire message from fool
+    nil    - do not highlight the message at all
+    `nick' - highlight fool's nickname only
+    `all'  - highlight the entire message from fool
 
 Any other value disables fool highlighting altogether."
   :group 'erc-match
@@ -142,8 +142,8 @@ See variable `erc-keywords'.
 
 The following values are allowed:
 
-    'keyword - highlight keyword only
-    'all     - highlight the entire message containing keyword
+    `keyword' - highlight keyword only
+    `all'     - highlight the entire message containing keyword
 
 Any other value disables keyword highlighting altogether."
   :group 'erc-match
@@ -157,8 +157,8 @@ See `erc-dangerous-hosts'.
 
 The following values are allowed:
 
-    'nick - highlight nick from dangerous-host only
-    'all  - highlight the entire message from dangerous-host
+    `nick' - highlight nick from dangerous-host only
+    `all'  - highlight the entire message from dangerous-host
 
 Any other value disables dangerous-host highlighting altogether."
   :group 'erc-match
@@ -191,7 +191,7 @@ use for the logged message."
   "Flag specifying when matched message logging should happen.
 When nil, don't log any matched messages.
 When t, log messages.
-When 'away, log messages only when away."
+When `away', log messages only when away."
   :group 'erc-match
   :type '(choice (const nil)
 		 (const away)
@@ -199,8 +199,8 @@ When 'away, log messages only when away."
 
 (defcustom erc-log-match-format "%t<%n:%c> %m"
   "Format for matched Messages.
-This variable specifies how messages in the corresponding log buffers will
-be formatted. The various format specs are:
+This variable specifies how messages in the corresponding log buffers
+will be formatted.  The various format specs are:
 
 %t Timestamp (uses `erc-timestamp-format' if non-nil or \"[%Y-%m-%d %H:%M] \")
 %n Nickname of sender
@@ -227,7 +227,7 @@ for beeping to work."
   "Hook run when text matches a given match-type.
 Functions in this hook are passed as arguments:
 \(match-type nick!user@host message) where MATCH-TYPE is a symbol of:
-current-nick, keyword, pal, dangerous-host, fool"
+current-nick, keyword, pal, dangerous-host, fool."
   :options '(erc-log-matches erc-hide-fools erc-beep-on-match)
   :group 'erc-match
   :type 'hook)
@@ -486,7 +486,7 @@ Use this defun with `erc-insert-modify-hook'."
 		    nick-end)
 	       (erc-put-text-property
 		nick-beg nick-end
-		'face match-face (current-buffer)))
+		'font-lock-face match-face (current-buffer)))
 	      ;; Highlight the nick of the message, or the current
 	      ;; nick if there's no nick in the message (e.g. /NAMES
 	      ;; output)
@@ -495,17 +495,17 @@ Use this defun with `erc-insert-modify-hook'."
 	       (if nick-end
 		   (erc-put-text-property
 		    nick-beg nick-end
-		    'face match-face (current-buffer))
+		    'font-lock-face match-face (current-buffer))
 		 (goto-char (+ 2 (or nick-end
 				     (point-min))))
 		 (while (re-search-forward match-regex nil t)
 		   (erc-put-text-property (match-beginning 0) (match-end 0)
-					  'face match-face))))
+					  'font-lock-face match-face))))
 	      ;; Highlight the whole message
 	      ((eq match-htype 'all)
 	       (erc-put-text-property
 		(point-min) (point-max)
-		'face match-face (current-buffer)))
+		'font-lock-face match-face (current-buffer)))
 	      ;; Highlight all occurrences of the word to be
 	      ;; highlighted.
 	      ((and (string= match-type "keyword")
@@ -521,7 +521,7 @@ Use this defun with `erc-insert-modify-hook'."
 			 (while (re-search-forward regex nil t)
 			   (erc-put-text-property
 			    (match-beginning 0) (match-end 0)
-			    'face face))))
+			    'font-lock-face face))))
 		     match-regex))
 	      ;; Highlight all occurrences of our nick.
 	      ((and (string= match-type "current-nick")
@@ -530,7 +530,7 @@ Use this defun with `erc-insert-modify-hook'."
 				   (point-min))))
 	       (while (re-search-forward match-regex nil t)
 		 (erc-put-text-property (match-beginning 0) (match-end 0)
-					'face match-face)))
+					'font-lock-face match-face)))
 	      ;; Else twiddle your thumbs.
 	      (t nil))
 	     (run-hook-with-args
@@ -601,7 +601,7 @@ See `erc-log-match-format'."
 						       'timestamp))))
 		  (away-time (erc-emacs-time-to-erc-time (erc-away-time))))
 	     (when (and away-time last-msg-time
-			(erc-time-gt last-msg-time away-time))
+			(time-less-p away-time last-msg-time))
 	       (erc-display-message
 		nil 'notice 'active
 		(format "You have logged messages waiting in \"%s\"."
@@ -648,6 +648,5 @@ This function is meant to be called from `erc-text-matched-hook'."
 ;;; erc-match.el ends here
 ;;
 ;; Local Variables:
-;; indent-tabs-mode: t
-;; tab-width: 8
+;; generated-autoload-file: "erc-loaddefs.el"
 ;; End:

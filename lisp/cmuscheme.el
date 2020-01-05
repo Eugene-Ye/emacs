@@ -1,6 +1,6 @@
 ;;; cmuscheme.el --- Scheme process in a buffer. Adapted from tea.el
 
-;; Copyright (C) 1988, 1994, 1997, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1988, 1994, 1997, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Olin Shivers <olin.shivers@cs.cmu.edu>
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -37,7 +37,7 @@
 ;;
 ;; NOTE: MIT Cscheme, when invoked with the -emacs flag, has a special user
 ;; interface that communicates process state back to the superior emacs by
-;; outputting special control sequences. The gnumacs package, xscheme.el, has
+;; outputting special control sequences. The Emacs package, xscheme.el, has
 ;; lots and lots of special purpose code to read these control sequences, and
 ;; so is very tightly integrated with the cscheme process. The cscheme
 ;; interrupt handler and debugger read single character commands in cbreak
@@ -287,7 +287,7 @@ in this order.  Return nil if no start file found."
 
 (defun scheme-compile-region (start end)
   "Compile the current region in the inferior Scheme process.
-\(A BEGIN is wrapped around the region: (BEGIN <region>))"
+\(A BEGIN is wrapped around the region: (BEGIN <region>).)"
   (interactive "r")
   (comint-send-string (scheme-proc) (format scheme-compile-exp-command
 					    (format "(begin %s)"
@@ -430,7 +430,7 @@ in the next one.")
 				       (file-name-nondirectory file-name)))
   (comint-send-string (scheme-proc) (concat "(load \""
 					    file-name
-					    "\"\)\n")))
+					    "\")\n")))
 
 (defun scheme-compile-file (file-name)
   "Compile a Scheme file FILE-NAME in the inferior Scheme process."
@@ -444,7 +444,7 @@ in the next one.")
 				       (file-name-nondirectory file-name)))
   (comint-send-string (scheme-proc) (concat "(compile-file \""
 					    file-name
-					    "\"\)\n")))
+					    "\")\n")))
 
 
 (defvar scheme-buffer nil "The current scheme process buffer.

@@ -1,6 +1,6 @@
 ;;; cc-styles.el --- support for styles in CC Mode
 
-;; Copyright (C) 1985, 1987, 1992-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2020 Free Software Foundation, Inc.
 
 ;; Authors:    2004- Alan Mackenzie
 ;;             1998- Martin Stjernholm
@@ -26,7 +26,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -47,6 +47,7 @@
 ;; `c-add-style' often contains references to functions defined there.
 
 ;; Silence the compiler.
+(cc-bytecomp-defun c-guess-basic-syntax)
 (cc-bytecomp-defvar adaptive-fill-first-line-regexp) ; Emacs
 
 
@@ -67,6 +68,9 @@
 			 (arglist-close . c-lineup-arglist)
 			 (inline-open . 0)
 			 (brace-list-open . +)
+			 (brace-list-intro . (first
+					      c-lineup-2nd-brace-entry-in-arglist
+					      c-lineup-class-decl-init-+ +))
 			 (topmost-intro-cont
 			  . (first c-lineup-topmost-intro-cont
 				   c-lineup-gnu-DEFUN-intro-cont))))
@@ -93,6 +97,9 @@
 			 (label . 0)
 			 (statement-cont . +)
 			 (inline-open . 0)
+			 (brace-list-intro . (first
+					      c-lineup-2nd-brace-entry-in-arglist
+					      c-lineup-class-decl-init-+ +))
 			 (inexpr-class . 0))))
 
     ("stroustrup"
@@ -102,6 +109,9 @@
 			 (substatement-open . 0)
 			 (substatement-label . 0)
 			 (label . 0)
+			 (brace-list-intro . (first
+					      c-lineup-2nd-brace-entry-in-arglist
+					      c-lineup-class-decl-init-+ +))
 			 (statement-cont . +))))
 
     ("whitesmith"
@@ -165,8 +175,8 @@
      (c-offsets-alist . ((topmost-intro        . 0)
 			 (substatement         . +)
 			 (substatement-open    . 0)
-                         (case-label           . +)
-                         (access-label         . -)
+			 (case-label           . +)
+			 (access-label         . -)
 			 (inclass              . +)
 			 (inline-open          . 0))))
     ("linux"
@@ -192,6 +202,9 @@
      (c-offsets-alist  . ((substatement-open . 0)
 			  (inextern-lang . 0)
 			  (arglist-intro . +)
+			  (brace-list-intro . (first
+					       c-lineup-2nd-brace-entry-in-arglist
+					       c-lineup-class-decl-init-+ +))
 			  (knr-argdecl-intro . +)))
      (c-hanging-braces-alist . ((brace-list-open)
 				(brace-list-intro)
@@ -209,15 +222,18 @@
      (c-offsets-alist . ((inline-open . 0)
 			 (topmost-intro-cont    . +)
 			 (statement-block-intro . +)
- 			 (knr-argdecl-intro     . 5)
+			 (knr-argdecl-intro     . 5)
 			 (substatement-open     . +)
 			 (substatement-label    . +)
- 			 (label                 . +)
- 			 (statement-case-open   . +)
- 			 (statement-cont        . +)
- 			 (arglist-intro  . c-lineup-arglist-intro-after-paren)
- 			 (arglist-close  . c-lineup-arglist)
- 			 (access-label   . 0)
+			 (label                 . +)
+			 (statement-case-open   . +)
+			 (statement-cont        . +)
+			 (arglist-intro  . c-lineup-arglist-intro-after-paren)
+			 (arglist-close  . c-lineup-arglist)
+			 (brace-list-intro . (first
+					      c-lineup-2nd-brace-entry-in-arglist
+					      c-lineup-class-decl-init-+ +))
+			 (access-label   . 0)
 			 (inher-cont     . c-lineup-java-inher)
 			 (func-decl-cont . c-lineup-java-throws))))
 
@@ -663,4 +679,8 @@ DEFAULT-STYLE has the same format as `c-default-style'."
 
 (cc-provide 'cc-styles)
 
+;; Local Variables:
+;; indent-tabs-mode: t
+;; tab-width: 8
+;; End:
 ;;; cc-styles.el ends here

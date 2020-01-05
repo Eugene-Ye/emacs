@@ -1,6 +1,6 @@
 ;;; mh-identity.el --- multiple identify support for MH-E
 
-;; Copyright (C) 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Peter S. Galbraith <psg@debian.org>
 ;; Maintainer: Bill Wohler <wohler@newt.com>
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -132,6 +132,33 @@ valid header field."
       'mh-identity-handler-default))
 
 ;;;###mh-autoload
+(defun mh-select-identity (default)
+  "Prompt for and return an identity.
+If DEFAULT is non-nil, it will be used if the user doesn't enter a
+different identity.
+
+See `mh-identity-list'."
+  (let (identity)
+    (setq identity
+          (completing-read
+           "Identity: "
+           (cons '("None")
+                 (mapcar 'list (mapcar 'car mh-identity-list)))
+           nil t default nil default))
+    (if (eq identity "None")
+        nil
+      identity)))
+
+;;;###mh-autoload
+(defun mh-identity-field (identity field)
+  "Return the specified FIELD of the given IDENTITY.
+
+See `mh-identity-list'."
+  (let* ((pers-list (cadr (assoc identity mh-identity-list)))
+         (value (cdr (assoc field pers-list))))
+    value))
+
+;;;###mh-autoload
 (defun mh-insert-identity (identity &optional maybe-insert)
   "Insert fields specified by given IDENTITY.
 
@@ -178,11 +205,11 @@ See `mh-identity-list'."
       (setq mh-identity-local identity))))
 
 ;;;###mh-autoload
-(defun mh-identity-handler-gpg-identity (field action &optional value)
+(defun mh-identity-handler-gpg-identity (_field action &optional value)
   "Process header FIELD \":pgg-default-user-id\".
-The ACTION is one of 'remove or 'add. If 'add, the VALUE is added.
+The ACTION is one of `remove' or `add'. If `add', the VALUE is added.
 The buffer-local variable `mh-identity-pgg-default-user-id' is set to
-VALUE when action 'add is selected."
+VALUE when action `add' is selected."
   (cond
    ((or (equal action 'remove)
         (not value)
@@ -192,9 +219,9 @@ VALUE when action 'add is selected."
     (setq mh-identity-pgg-default-user-id value))))
 
 ;;;###mh-autoload
-(defun mh-identity-handler-signature (field action &optional value)
+(defun mh-identity-handler-signature (_field action &optional value)
   "Process header FIELD \":signature\".
-The ACTION is one of 'remove or 'add. If 'add, the VALUE is
+The ACTION is one of `remove' or `add'. If `add', the VALUE is
 added."
   (cond
    ((equal action 'remove)
@@ -223,9 +250,9 @@ added."
   "Marker for the end of the attribution verb.")
 
 ;;;###mh-autoload
-(defun mh-identity-handler-attribution-verb (field action &optional value)
+(defun mh-identity-handler-attribution-verb (_field action &optional value)
   "Process header FIELD \":attribution-verb\".
-The ACTION is one of 'remove or 'add. If 'add, the VALUE is
+The ACTION is one of `remove' or `add'.  If `add', the VALUE is
 added."
   (when (and (markerp mh-identity-attribution-verb-start)
              (markerp mh-identity-attribution-verb-end))
@@ -255,9 +282,9 @@ If VALUE is nil, use `mh-extract-from-attribution-verb'."
 
 (defun mh-identity-handler-default (field action top &optional value)
   "Process header FIELD.
-The ACTION is one of 'remove or 'add. If TOP is non-nil, add the
+The ACTION is one of `remove' or `add'. If TOP is non-nil, add the
 field and its VALUE at the top of the header, else add it at the
-bottom of the header. If action is 'add, the VALUE is added."
+bottom of the header. If action is `add', the VALUE is added."
   (let ((field-colon (if (string-match "^.*:$" field)
                          field
                        (concat field ":"))))
@@ -283,7 +310,7 @@ bottom of the header. If action is 'add, the VALUE is added."
 ;;;###mh-autoload
 (defun mh-identity-handler-top (field action &optional value)
   "Process header FIELD.
-The ACTION is one of 'remove or 'add. If 'add, the VALUE is
+The ACTION is one of `remove' or `add'. If `add', the VALUE is
 added. If the field wasn't present, it is added to the top of the
 header."
   (mh-identity-handler-default field action t value))
@@ -291,7 +318,7 @@ header."
 ;;;###mh-autoload
 (defun mh-identity-handler-bottom (field action &optional value)
   "Process header FIELD.
-The ACTION is one of 'remove or 'add. If 'add, the VALUE is
+The ACTION is one of `remove' or `add'. If `add', the VALUE is
 added. If the field wasn't present, it is added to the bottom of
 the header."
   (mh-identity-handler-default field action nil value))

@@ -1,6 +1,6 @@
-;;; macroexp.el --- Additional macro-expansion support -*- lexical-binding: t; coding: utf-8 -*-
+;;; macroexp.el --- Additional macro-expansion support -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Miles Bader <miles@gnu.org>
 ;; Keywords: lisp, compiler, macros
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -33,7 +33,8 @@
 (defvar macroexpand-all-environment nil)
 
 (defun macroexp--cons (car cdr original-cons)
-  "Return (CAR . CDR), using ORIGINAL-CONS if possible."
+  "Return ORIGINAL-CONS if the car/cdr of it is `eq' to CAR and CDR, respectively.
+If not, return (CAR . CDR)."
   (if (and (eq car (car original-cons)) (eq cdr (cdr original-cons)))
       original-cons
     (cons car cdr)))
@@ -94,7 +95,7 @@ each clause."
       clause)))
 
 (defun macroexp--compiler-macro (handler form)
-  (condition-case err
+  (condition-case-unless-debug err
       (apply handler form (cdr form))
     (error
      (message "Compiler-macro error for %S: %S" (car form) err)
@@ -103,7 +104,7 @@ each clause."
 (defun macroexp--funcall-if-compiled (_form)
   "Pseudo function used internally by macroexp to delay warnings.
 The purpose is to delay warnings to bytecomp.el, so they can use things
-like `byte-compile-log-warning' to get better file-and-line-number data
+like `byte-compile-warn' to get better file-and-line-number data
 and also to avoid outputting the warning during normal execution."
   nil)
 (put 'macroexp--funcall-if-compiled 'byte-compile
@@ -119,30 +120,39 @@ and also to avoid outputting the warning during normal execution."
   (member '(declare-function . byte-compile-macroexpand-declare-function)
           macroexpand-all-environment))
 
+(defvar macroexp--warned (make-hash-table :test #'equal :weakness 'key))
 
-(defun macroexp--warn-and-return (msg form)
-  (let ((when-compiled (lambda () (byte-compile-log-warning msg t))))
+(defun macroexp--warn-and-return (msg form &optional compile-only)
+  (let ((when-compiled (lambda () (byte-compile-warn "%s" msg))))
     (cond
      ((null msg) form)
      ((macroexp--compiling-p)
-      `(progn
-         (macroexp--funcall-if-compiled ',when-compiled)
-         ,form))
+      (if (gethash form macroexp--warned)
+          ;; Already wrapped this exp with a warning: avoid inf-looping
+          ;; where we keep adding the same warning onto `form' because
+          ;; macroexpand-all gets right back to macroexpanding `form'.
+          form
+        (puthash form form macroexp--warned)
+        `(progn
+           (macroexp--funcall-if-compiled ',when-compiled)
+           ,form)))
      (t
-      (message "%s%s" (if (stringp load-file-name)
-                          (concat (file-relative-name load-file-name) ": ")
-                        "")
-               msg)
+      (unless compile-only
+        (message "%s%s" (if (stringp load-file-name)
+                            (concat (file-relative-name load-file-name) ": ")
+                          "")
+                 msg))
       form))))
 
 (defun macroexp--obsolete-warning (fun obsolescence-data type)
   (let ((instead (car obsolescence-data))
         (asof (nth 2 obsolescence-data)))
-    (format "`%s' is an obsolete %s%s%s" fun type
-            (if asof (concat " (as of " asof ")") "")
-            (cond ((stringp instead) (concat "; " instead))
-                  (instead (format "; use `%s' instead." instead))
-                  (t ".")))))
+    (format-message
+     "`%s' is an obsolete %s%s%s" fun type
+     (if asof (concat " (as of " asof ")") "")
+     (cond ((stringp instead) (concat "; " (substitute-command-keys instead)))
+           (instead (format-message "; use `%s' instead." instead))
+           (t ".")))))
 
 (defun macroexpand-1 (form &optional environment)
   "Perform (at most) one step of macroexpansion."
@@ -168,6 +178,26 @@ and also to avoid outputting the warning during normal execution."
                 form))))))))
    (t form)))
 
+(defun macroexp-macroexpand (form env)
+  "Like `macroexpand' but checking obsolescence."
+  (let ((new-form
+         (macroexpand form env)))
+    (if (and (not (eq form new-form))   ;It was a macro call.
+             (car-safe form)
+             (symbolp (car form))
+             (get (car form) 'byte-obsolete-info)
+             (or (not (fboundp 'byte-compile-warning-enabled-p))
+                 (byte-compile-warning-enabled-p 'obsolete (car form))))
+        (let* ((fun (car form))
+               (obsolete (get fun 'byte-obsolete-info)))
+          (macroexp--warn-and-return
+           (macroexp--obsolete-warning
+            fun obsolete
+            (if (symbolp (symbol-function fun))
+                "alias" "macro"))
+           new-form))
+      new-form)))
+
 (defun macroexp--expand-all (form)
   "Expand all macros in FORM.
 This is an internal version of `macroexpand-all'.
@@ -180,24 +210,7 @@ Assumes the caller has bound `macroexpand-all-environment'."
       (macroexpand (macroexp--all-forms form 1)
 		   macroexpand-all-environment)
     ;; Normal form; get its expansion, and then expand arguments.
-    (let ((new-form
-           (macroexpand form macroexpand-all-environment)))
-      (setq form
-            (if (and (not (eq form new-form)) ;It was a macro call.
-                     (car-safe form)
-                     (symbolp (car form))
-                     (get (car form) 'byte-obsolete-info)
-                     (or (not (fboundp 'byte-compile-warning-enabled-p))
-                         (byte-compile-warning-enabled-p 'obsolete)))
-                (let* ((fun (car form))
-                       (obsolete (get fun 'byte-obsolete-info)))
-                  (macroexp--warn-and-return
-                   (macroexp--obsolete-warning
-                    fun obsolete
-                    (if (symbolp (symbol-function fun))
-                        "alias" "macro"))
-                   new-form))
-              new-form)))
+    (setq form (macroexp-macroexpand form macroexpand-all-environment))
     (pcase form
       (`(cond . ,clauses)
        (macroexp--cons 'cond (macroexp--all-clauses clauses) form))
@@ -205,30 +218,30 @@ Assumes the caller has bound `macroexpand-all-environment'."
        (macroexp--cons
         'condition-case
         (macroexp--cons err
-                    (macroexp--cons (macroexp--expand-all body)
-                                (macroexp--all-clauses handlers 1)
-                                (cddr form))
-                    (cdr form))
+                        (macroexp--cons (macroexp--expand-all body)
+                                        (macroexp--all-clauses handlers 1)
+                                        (cddr form))
+                        (cdr form))
         form))
-      (`(,(or `defvar `defconst) . ,_) (macroexp--all-forms form 2))
+      (`(,(or 'defvar 'defconst) . ,_) (macroexp--all-forms form 2))
       (`(function ,(and f `(lambda . ,_)))
        (macroexp--cons 'function
-                   (macroexp--cons (macroexp--all-forms f 2)
-                               nil
-                               (cdr form))
-                   form))
-      (`(,(or `function `quote) . ,_) form)
-      (`(,(and fun (or `let `let*)) . ,(or `(,bindings . ,body) dontcare))
+                       (macroexp--cons (macroexp--all-forms f 2)
+                                       nil
+                                       (cdr form))
+                       form))
+      (`(,(or 'function 'quote) . ,_) form)
+      (`(,(and fun (or 'let 'let*)) . ,(or `(,bindings . ,body) dontcare))
        (macroexp--cons fun
-                   (macroexp--cons (macroexp--all-clauses bindings 1)
-                               (macroexp--all-forms body)
-                               (cdr form))
-                   form))
+                       (macroexp--cons (macroexp--all-clauses bindings 1)
+                                       (macroexp--all-forms body)
+                                       (cdr form))
+                       form))
       (`(,(and fun `(lambda . ,_)) . ,args)
        ;; Embedded lambda in function position.
        (macroexp--cons (macroexp--all-forms fun 2)
-                   (macroexp--all-forms args)
-                   form))
+                       (macroexp--all-forms args)
+                       form))
       ;; The following few cases are for normal function calls that
       ;; are known to funcall one of their arguments.  The byte
       ;; compiler has traditionally handled these functions specially
@@ -237,19 +250,19 @@ Assumes the caller has bound `macroexpand-all-environment'."
       ;; here, so that any code that cares about the difference will
       ;; see the same transformation.
       ;; First arg is a function:
-      (`(,(and fun (or `funcall `apply `mapcar `mapatoms `mapconcat `mapc))
+      (`(,(and fun (or 'funcall 'apply 'mapcar 'mapatoms 'mapconcat 'mapc))
          ',(and f `(lambda . ,_)) . ,args)
        (macroexp--warn-and-return
         (format "%s quoted with ' rather than with #'"
                 (list 'lambda (nth 1 f) '...))
         (macroexp--expand-all `(,fun ,f . ,args))))
       ;; Second arg is a function:
-      (`(,(and fun (or `sort)) ,arg1 ',(and f `(lambda . ,_)) . ,args)
+      (`(,(and fun (or 'sort)) ,arg1 ',(and f `(lambda . ,_)) . ,args)
        (macroexp--warn-and-return
         (format "%s quoted with ' rather than with #'"
                 (list 'lambda (nth 1 f) '...))
         (macroexp--expand-all `(,fun ,arg1 ,f . ,args))))
-      (`(funcall (,(or 'quote 'function) ,(and f (pred symbolp)) . ,_) . ,args)
+      (`(funcall #',(and f (pred symbolp)) . ,args)
        ;; Rewrite (funcall #'foo bar) to (foo bar), in case `foo'
        ;; has a compiler-macro.
        (macroexp--expand-all `(,f . ,args)))
@@ -281,7 +294,7 @@ Assumes the caller has bound `macroexpand-all-environment'."
                      (macroexp--expand-all newform)))
                (macroexp--expand-all newform))))))
 
-      (t form))))
+      (_ form))))
 
 ;;;###autoload
 (defun macroexpand-all (form &optional environment)
@@ -294,55 +307,115 @@ definitions to shadow the loaded ones for use in file byte-compilation."
 
 ;;; Handy functions to use in macros.
 
+(defun macroexp-parse-body (body)
+  "Parse a function BODY into (DECLARATIONS . EXPS)."
+  (let ((decls ()))
+    (while (and (cdr body)
+                (let ((e (car body)))
+                  (or (stringp e)
+                      (memq (car-safe e)
+                            '(:documentation declare interactive cl-declare)))))
+      (push (pop body) decls))
+    (cons (nreverse decls) body)))
+
 (defun macroexp-progn (exps)
-  "Return an expression equivalent to `(progn ,@EXPS)."
+  "Return EXPS (a list of expressions) with `progn' prepended.
+If EXPS is a list with a single expression, `progn' is not
+prepended, but that expression is returned instead."
   (if (cdr exps) `(progn ,@exps) (car exps)))
 
 (defun macroexp-unprogn (exp)
-  "Turn EXP into a list of expressions to execute in sequence."
-  (if (eq (car-safe exp) 'progn) (cdr exp) (list exp)))
+  "Turn EXP into a list of expressions to execute in sequence.
+Never returns an empty list."
+  (if (eq (car-safe exp) 'progn) (or (cdr exp) '(nil)) (list exp)))
 
 (defun macroexp-let* (bindings exp)
-  "Return an expression equivalent to `(let* ,bindings ,exp)."
+  "Return an expression equivalent to \\=`(let* ,BINDINGS ,EXP)."
   (cond
    ((null bindings) exp)
    ((eq 'let* (car-safe exp)) `(let* (,@bindings ,@(cadr exp)) ,@(cddr exp)))
    (t `(let* ,bindings ,exp))))
 
 (defun macroexp-if (test then else)
-  "Return an expression equivalent to `(if ,test ,then ,else)."
+  "Return an expression equivalent to \\=`(if ,TEST ,THEN ,ELSE)."
   (cond
    ((eq (car-safe else) 'if)
-    (if (equal test (nth 1 else))
-        ;; Doing a test a second time: get rid of the redundancy.
-        `(if ,test ,then ,@(nthcdr 3 else))
-      `(cond (,test ,then)
-             (,(nth 1 else) ,(nth 2 else))
-             (t ,@(nthcdr 3 else)))))
+    (cond
+     ;; Drop this optimization: It's unsafe (it assumes that `test' is
+     ;; pure, or at least idempotent), and it's not used even a single
+     ;; time while compiling Emacs's sources.
+     ;;((equal test (nth 1 else))
+     ;; ;; Doing a test a second time: get rid of the redundancy.
+     ;; (message "macroexp-if: sharing 'test' %S" test)
+     ;; `(if ,test ,then ,@(nthcdr 3 else)))
+     ((equal then (nth 2 else))
+      ;; (message "macroexp-if: sharing 'then' %S" then)
+      `(if (or ,test ,(nth 1 else)) ,then ,@(nthcdr 3 else)))
+     ((equal (macroexp-unprogn then) (nthcdr 3 else))
+      ;; (message "macroexp-if: sharing 'then' with not %S" then)
+      `(if (or ,test (not ,(nth 1 else)))
+           ,then ,@(macroexp-unprogn (nth 2 else))))
+     (t
+      `(cond (,test ,@(macroexp-unprogn then))
+             (,(nth 1 else) ,@(macroexp-unprogn (nth 2 else)))
+             (t ,@(nthcdr 3 else))))))
    ((eq (car-safe else) 'cond)
-    `(cond (,test ,then)
-           ;; Doing a test a second time: get rid of the redundancy, as above.
-           ,@(remove (assoc test else) (cdr else))))
+    `(cond (,test ,@(macroexp-unprogn then)) ,@(cdr else)))
    ;; Invert the test if that lets us reduce the depth of the tree.
    ((memq (car-safe then) '(if cond)) (macroexp-if `(not ,test) else then))
-   (t `(if ,test ,then ,else))))
+   (t `(if ,test ,then ,@(macroexp-unprogn else)))))
 
-(defmacro macroexp-let2 (test var exp &rest exps)
-  "Bind VAR to a copyable expression that returns the value of EXP.
-This is like `(let ((v ,EXP)) ,EXPS) except that `v' is a new generated
-symbol which EXPS can find in VAR.
-TEST should be the name of a predicate on EXP checking whether the `let' can
-be skipped; if nil, as is usual, `macroexp-const-p' is used."
+(defmacro macroexp-let2 (test sym exp &rest body)
+  "Evaluate BODY with SYM bound to an expression for EXP's value.
+The intended usage is that BODY generates an expression that
+will refer to EXP's value multiple times, but will evaluate
+EXP only once.  As BODY generates that expression, it should
+use SYM to stand for the value of EXP.
+
+If EXP is a simple, safe expression, then SYM's value is EXP itself.
+Otherwise, SYM's value is a symbol which holds the value produced by
+evaluating EXP.  The return value incorporates the value of BODY, plus
+additional code to evaluate EXP once and save the result so SYM can
+refer to it.
+
+If BODY consists of multiple forms, they are all evaluated
+but only the last one's value matters.
+
+TEST is a predicate to determine whether EXP qualifies as simple and
+safe; if TEST is nil, only constant expressions qualify.
+
+Example:
+ (macroexp-let2 nil foo EXP
+   \\=`(* ,foo ,foo))
+generates an expression that evaluates EXP once,
+then returns the square of that value.
+You could do this with
+  (let ((foovar EXP))
+    (* foovar foovar))
+but using `macroexp-let2' produces more efficient code in
+cases where EXP is a constant."
   (declare (indent 3) (debug (sexp sexp form body)))
   (let ((bodysym (make-symbol "body"))
         (expsym (make-symbol "exp")))
     `(let* ((,expsym ,exp)
-            (,var (if (funcall #',(or test #'macroexp-const-p) ,expsym)
-                      ,expsym (make-symbol ,(symbol-name var))))
-            (,bodysym ,(macroexp-progn exps)))
-       (if (eq ,var ,expsym) ,bodysym
-         (macroexp-let* (list (list ,var ,expsym))
+            (,sym (if (funcall #',(or test #'macroexp-const-p) ,expsym)
+                      ,expsym (make-symbol ,(symbol-name sym))))
+            (,bodysym ,(macroexp-progn body)))
+       (if (eq ,sym ,expsym) ,bodysym
+         (macroexp-let* (list (list ,sym ,expsym))
                         ,bodysym)))))
+
+(defmacro macroexp-let2* (test bindings &rest body)
+  "Multiple binding version of `macroexp-let2'.
+
+BINDINGS is a list of elements of the form (SYM EXP).  Each EXP
+can refer to symbols specified earlier in the binding list."
+  (declare (indent 2) (debug (sexp (&rest (sexp form)) body)))
+  (pcase-exhaustive bindings
+    ('nil (macroexp-progn body))
+    (`((,var ,exp) . ,tl)
+     `(macroexp-let2 ,test ,var ,exp
+        (macroexp-let2* ,test ,tl ,@body)))))
 
 (defun macroexp--maxsize (exp size)
   (cond ((< size 0) size)
@@ -442,6 +515,8 @@ itself or not."
 (defvar macroexp--pending-eager-loads nil
   "Stack of files currently undergoing eager macro-expansion.")
 
+(defvar macroexp--debug-eager nil)
+
 (defun internal-macroexpand-for-load (form full-p)
   ;; Called from the eager-macroexpansion in readevalloop.
   (cond
@@ -457,8 +532,10 @@ itself or not."
            (tail (member elem (cdr (member elem bt)))))
       (if tail (setcdr tail (list '…)))
       (if (eq (car-safe (car bt)) 'macroexpand-all) (setq bt (cdr bt)))
-      (message "Warning: Eager macro-expansion skipped due to cycle:\n  %s"
-               (mapconcat #'prin1-to-string (nreverse bt) " => "))
+      (if macroexp--debug-eager
+          (debug 'eager-macroexp-cycle)
+        (message "Warning: Eager macro-expansion skipped due to cycle:\n  %s"
+                 (mapconcat #'prin1-to-string (nreverse bt) " => ")))
       (push 'skip macroexp--pending-eager-loads)
       form))
    (t

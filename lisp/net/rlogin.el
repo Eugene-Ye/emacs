@@ -1,10 +1,9 @@
-;;; rlogin.el --- remote login interface
+;;; rlogin.el --- remote login interface  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992-1995, 1997-1998, 2001-2014 Free Software
+;; Copyright (C) 1992-1995, 1997-1998, 2001-2020 Free Software
 ;; Foundation, Inc.
 
-;; Author: Noah Friedman
-;; Maintainer: Noah Friedman <friedman@splode.com>
+;; Author: Noah Friedman <friedman@splode.com>
 ;; Keywords: unix, comm
 
 ;; This file is part of GNU Emacs.
@@ -20,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -30,15 +29,15 @@
 ;; tracking and the sending of some special characters.
 
 ;; If you wish for rlogin mode to prompt you in the minibuffer for
-;; passwords when a password prompt appears, just enter m-x send-invisible
-;; and type in your line, or add `comint-watch-for-password-prompt' to
-;; `comint-output-filter-functions'.
+;; passwords when a password prompt appears, just enter
+;; M-x comint-send-invisible and type in your line (or tweak
+;; `comint-password-prompt-regexp' to match your password prompt).
 
 ;;; Code:
 
 ;; FIXME?
 ;; Maybe this file should be obsolete.
-;; http://lists.gnu.org/archive/html/emacs-devel/2013-02/msg00517.html
+;; https://lists.gnu.org/r/emacs-devel/2013-02/msg00517.html
 ;; It only adds rlogin-directory-tracking-mode.  Is that useful?
 
 (require 'comint)
@@ -145,7 +144,7 @@ other arguments for `rlogin'.
 Input is sent line-at-a-time to the remote connection.
 
 Communication with the remote host is recorded in a buffer `*rlogin-HOST*'
-\(or `*rlogin-USER@HOST*' if the remote username differs\).
+\(or `*rlogin-USER@HOST*' if the remote username differs).
 If a prefix argument is given and the buffer `*rlogin-HOST*' already exists,
 a new buffer with a different connection will be made.
 
@@ -174,7 +173,7 @@ If you wish to change directory tracking styles during a session, use the
 function `rlogin-directory-tracking-mode' rather than simply setting the
 variable."
   (interactive (list
-		(read-from-minibuffer (format
+		(read-from-minibuffer (format-message
                                        "Arguments for `%s' (hostname first): "
                                        (file-name-nondirectory rlogin-program))
 				      nil nil nil 'rlogin-history)
@@ -219,7 +218,7 @@ variable."
                ;; function, to avoid a gratuitous resync check; the default
                ;; should be the user's home directory, be it local or remote.
                (setq comint-file-name-prefix
-                     (concat "/" rlogin-remote-user "@" rlogin-host ":"))
+                     (concat "/-:" rlogin-remote-user "@" rlogin-host ":"))
                (cd-absolute comint-file-name-prefix))
               ((null rlogin-directory-tracking-mode))
               (t
@@ -235,14 +234,14 @@ variable."
   "Do remote or local directory tracking, or disable entirely.
 
 If called with no prefix argument or a unspecified prefix argument (just
-``\\[universal-argument]'' with no number) do remote directory tracking via
+`\\[universal-argument]' with no number) do remote directory tracking via
 ange-ftp.  If called as a function, give it no argument.
 
 If called with a negative prefix argument, disable directory tracking
 entirely.
 
 If called with a positive, numeric prefix argument, e.g.
-``\\[universal-argument] 1 M-x rlogin-directory-tracking-mode\'',
+`\\[universal-argument] 1 M-x rlogin-directory-tracking-mode',
 then do directory tracking but assume the remote filesystem is the same as
 the local system.  This only works in general if the remote machine and the
 local one share the same directories (e.g. through NFS)."
@@ -253,7 +252,7 @@ local one share the same directories (e.g. through NFS)."
     (setq rlogin-directory-tracking-mode t)
     (setq shell-dirtrackp t)
     (setq comint-file-name-prefix
-          (concat "/" rlogin-remote-user "@" rlogin-host ":")))
+          (concat "/-:" rlogin-remote-user "@" rlogin-host ":")))
    ((< prefix 0)
     (setq rlogin-directory-tracking-mode nil)
     (setq shell-dirtrackp nil))

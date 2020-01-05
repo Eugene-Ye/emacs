@@ -1,8 +1,8 @@
 ;;; pulse.el --- Pulsing Overlays
 
-;;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Version: 1.0
 
 ;; This file is part of GNU Emacs.
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -100,7 +100,7 @@ left.  So, for example, INT=256 and NB-DIGITS=2 returns \"00\", since
 the hex equivalent of 256 decimal is 100, which is more than 2 digits.
 
 This function was blindly copied from hexrgb.el by Drew Adams.
-http://www.emacswiki.org/cgi-bin/wiki/hexrgb.el"
+https://www.emacswiki.org/emacs/hexrgb.el"
   (setq nb-digits (or nb-digits 4))
   (substring (format (concat "%0" (int-to-string nb-digits) "X") int) (- nb-digits)))
 
@@ -110,7 +110,7 @@ Each X in the string is a hexadecimal digit.
 Input VALUES is as for the output of `x-color-values'.
 
 This function was blindly copied from hexrgb.el by Drew Adams.
-http://www.emacswiki.org/cgi-bin/wiki/hexrgb.el"
+https://www.emacswiki.org/emacs/hexrgb.el"
   (concat "#"
           (pulse-int-to-hex (nth 0 values) 4) ; red
           (pulse-int-to-hex (nth 1 values) 4) ; green
@@ -121,7 +121,7 @@ http://www.emacswiki.org/cgi-bin/wiki/hexrgb.el"
   :group 'pulse
   :type 'number)
 (defcustom pulse-delay .03
-  "Delay between face lightening iterations, as used by `sit-for'."
+  "Delay between face lightening iterations."
   :group 'pulse
   :type 'number)
 
@@ -131,58 +131,58 @@ Return t if there is more drift to do, nil if completed."
   (if (>= (get 'pulse-highlight-face :iteration) pulse-iterations)
       nil
     (let* ((frame (color-values (face-background 'default)))
-	   (start (color-values (face-background
-				 (get 'pulse-highlight-face
-				      :startface))))
-	   (frac  (list (/ (- (nth 0 frame) (nth 0 start)) pulse-iterations)
-			(/ (- (nth 1 frame) (nth 1 start)) pulse-iterations)
-			(/ (- (nth 2 frame) (nth 2 start)) pulse-iterations)))
-	   (it (get 'pulse-highlight-face :iteration))
-	   )
-      (set-face-background 'pulse-highlight-face
-			   (pulse-color-values-to-hex
-			    (list
-			     (+ (nth 0 start) (* (nth 0 frac) it))
-			     (+ (nth 1 start) (* (nth 1 frac) it))
-			     (+ (nth 2 start) (* (nth 2 frac) it)))))
-      (put 'pulse-highlight-face :iteration (1+ it))
-      (if (>= (1+ it) pulse-iterations)
-	  nil
-	t))))
+	   (pulse-background (face-background
+			      (get 'pulse-highlight-face
+				   :startface)
+                              nil t)));; can be nil
+      (when pulse-background
+	(let* ((start (color-values pulse-background))
+	       (frac  (list (/ (- (nth 0 frame) (nth 0 start)) pulse-iterations)
+			    (/ (- (nth 1 frame) (nth 1 start)) pulse-iterations)
+			    (/ (- (nth 2 frame) (nth 2 start)) pulse-iterations)))
+	       (it (get 'pulse-highlight-face :iteration))
+	       )
+	  (set-face-background 'pulse-highlight-face
+			       (pulse-color-values-to-hex
+				(list
+				 (+ (nth 0 start) (* (nth 0 frac) it))
+				 (+ (nth 1 start) (* (nth 1 frac) it))
+				 (+ (nth 2 start) (* (nth 2 frac) it)))))
+	  (put 'pulse-highlight-face :iteration (1+ it))
+	  (if (>= (1+ it) pulse-iterations)
+	      nil
+	    t)))
+      )))
 
 (defun pulse-reset-face (&optional face)
   "Reset the pulse highlighting FACE."
   (set-face-background 'pulse-highlight-face
 		       (if face
-			   (face-background face)
+			   (face-background face nil t)
 			 (face-background 'pulse-highlight-start-face)
 			 ))
   (put 'pulse-highlight-face :startface (or face
 					    'pulse-highlight-start-face))
   (put 'pulse-highlight-face :iteration 0))
 
-(defun pulse (&optional face)
-  "Pulse the colors on our highlight face.
-If optional FACE is provided, reset the face to FACE color,
-instead of `pulse-highlight-start-face'.
-Be sure to call `pulse-reset-face' after calling pulse."
-  (unwind-protect
-      (progn
-	(pulse-reset-face face)
-	(while (and (pulse-lighten-highlight)
-		    (sit-for pulse-delay))
-	  nil))))
-
 ;;; Convenience Functions
 ;;
 (defvar pulse-momentary-overlay nil
   "The current pulsing overlay.")
 
+(defvar pulse-momentary-timer nil
+  "The current pulsing timer.")
+
 (defun pulse-momentary-highlight-overlay (o &optional face)
   "Pulse the overlay O, unhighlighting before next command.
 Optional argument FACE specifies the face to do the highlighting."
+  ;; We don't support simultaneous highlightings.
+  (pulse-momentary-unhighlight)
   (overlay-put o 'original-face (overlay-get o 'face))
-  (add-to-list 'pulse-momentary-overlay o)
+  ;; Make this overlay take priority over the `transient-mark-mode'
+  ;; overlay.
+  (overlay-put o 'priority 1)
+  (setq pulse-momentary-overlay o)
   (if (eq pulse-flag 'never)
       nil
     (if (or (not pulse-flag) (not (pulse-available-p)))
@@ -191,50 +191,60 @@ Optional argument FACE specifies the face to do the highlighting."
 	  (overlay-put o 'face (or face 'pulse-highlight-start-face))
 	  (add-hook 'pre-command-hook
 		    'pulse-momentary-unhighlight))
-      ;; pulse it.
-      (unwind-protect
-	  (progn
-	    (overlay-put o 'face 'pulse-highlight-face)
-	    ;; The pulse function puts FACE onto 'pulse-highlight-face.
-	    ;; Thus above we put our face on the overlay, but pulse
-	    ;; with a reference face needed for the color.
-	    (pulse face))
-	(pulse-momentary-unhighlight)))))
+      ;; Pulse it.
+      (overlay-put o 'face 'pulse-highlight-face)
+      ;; The pulse function puts FACE onto 'pulse-highlight-face.
+      ;; Thus above we put our face on the overlay, but pulse
+      ;; with a reference face needed for the color.
+      (pulse-reset-face face)
+      (setq pulse-momentary-timer
+            (run-with-timer 0 pulse-delay #'pulse-tick
+                            (time-add nil
+                                      (* pulse-delay pulse-iterations)))))))
+
+(defun pulse-tick (stop-time)
+  (if (time-less-p nil stop-time)
+      (pulse-lighten-highlight)
+    (pulse-momentary-unhighlight)))
 
 (defun pulse-momentary-unhighlight ()
   "Unhighlight a line recently highlighted."
-  ;; If someone passes in an overlay, then pulse-momentary-overlay
-  ;; will still be nil, and won't need modifying.
   (when pulse-momentary-overlay
     ;; clear the starting face
-    (mapc
-     (lambda (ol)
-       (overlay-put ol 'face (overlay-get ol 'original-face))
-       (overlay-put ol 'original-face nil)
-       ;; Clear the overlay if it needs deleting.
-       (when (overlay-get ol 'pulse-delete) (delete-overlay ol)))
-     pulse-momentary-overlay)
+    (let ((ol pulse-momentary-overlay))
+      (overlay-put ol 'face (overlay-get ol 'original-face))
+      (overlay-put ol 'original-face nil)
+      ;; Clear the overlay if it needs deleting.
+      (when (overlay-get ol 'pulse-delete) (delete-overlay ol)))
 
     ;; Clear the variable.
-    (setq pulse-momentary-overlay nil))
+    (setq pulse-momentary-overlay nil)
 
-  ;; Reset the pulsing face.
-  (pulse-reset-face)
+    ;; Reset the pulsing face.
+    (pulse-reset-face))
+
+  ;; Cancel the timer.
+  (when pulse-momentary-timer
+    (cancel-timer pulse-momentary-timer))
 
   ;; Remove this hook.
   (remove-hook 'pre-command-hook 'pulse-momentary-unhighlight))
 
+;;;###autoload
 (defun pulse-momentary-highlight-one-line (point &optional face)
   "Highlight the line around POINT, unhighlighting before next command.
 Optional argument FACE specifies the face to do the highlighting."
-  (let ((start (point-at-bol))
-	(end (save-excursion
-	       (end-of-line)
-	       (when (not (eobp))
-		 (forward-char 1))
-	       (point))))
-    (pulse-momentary-highlight-region start end face)))
+  (save-excursion
+    (goto-char point)
+    (let ((start (point-at-bol))
+          (end (save-excursion
+                 (end-of-line)
+                 (when (not (eobp))
+                   (forward-char 1))
+                 (point))))
+      (pulse-momentary-highlight-region start end face))))
 
+;;;###autoload
 (defun pulse-momentary-highlight-region (start end &optional face)
   "Highlight between START and END, unhighlighting before next command.
 Optional argument FACE specifies the face to do the highlighting."

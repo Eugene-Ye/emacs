@@ -1,6 +1,6 @@
 ;;; semantic/analyze/debug.el --- Debug the analyzer
 
-;;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -28,6 +28,7 @@
 (require 'semantic/analyze)
 (require 'semantic/analyze/complete)
 (require 'semantic/db-typecache)
+(require 'pulse)
 
 ;; For semantic-find-tags-by-class:
 (eval-when-compile (require 'semantic/find))
@@ -405,18 +406,19 @@ or implementing a version specific to ")
 
     (princ "\n\nInclude Path Summary:")
     (when edeobj
-	(princ "\n\nThis file's project include search is handled by the EDE object:\n")
+	(princ (substitute-command-keys
+		"\n\nThis file's project include search is handled by the EDE object:\n"))
 	(princ "  Buffer Target:  ")
-	(princ (object-print edeobj))
+	(princ (cl-prin1-to-string edeobj))
 	(princ "\n")
 	(when (not (eq edeobj edeproj))
 	  (princ "  Buffer Project: ")
-	  (princ (object-print edeproj))
+	  (princ (cl-prin1-to-string edeproj))
 	  (princ "\n"))
 	(when edeproj
 	  (let ((loc (ede-get-locator-object edeproj)))
 	    (princ "  Backup Locator: ")
-	    (princ (object-print loc))
+	    (princ (cl-prin1-to-string loc))
 	    (princ "\n")))
 	)
 
@@ -463,12 +465,12 @@ or implementing a version specific to ")
 
 	  (princ "\nYou can fix the include path for ")
 	  (princ (symbol-name (oref table major-mode)))
-	  (princ " by using this function:
+	  (princ (substitute-command-keys " by using this function:
 
-M-x semantic-customize-system-include-path RET
+\\[semantic-customize-system-include-path]
 
 which customizes the mode specific variable for the mode-local
-variable `semantic-dependency-system-include-path'.")
+variable `semantic-dependency-system-include-path'."))
 	  )
 
       (princ "\n No unknown includes.\n"))
@@ -477,7 +479,7 @@ variable `semantic-dependency-system-include-path'.")
 (defun semantic-analyzer-debug-describe-scope (ctxt &optional classconstraint)
   "Describe the scope in CTXT for finding a global symbol.
 Optional argument CLASSCONSTRAINT says to output to tags of that class."
-  (let* ((scope (oref ctxt :scope))
+  (let* ((scope (oref ctxt scope))
 	 (parents (oref scope parents))
 	 (cc (or classconstraint (oref ctxt prefixclass)))
 	 )
@@ -512,7 +514,7 @@ Optional argument CLASSCONSTRAINT says to output to tags of that class."
   )
 
 (defun semantic-analyzer-debug-global-miss-text (name-in)
-  "Use 'princ' to show text describing not finding symbol NAME-IN.
+  "Use `princ' to show text describing not finding symbol NAME-IN.
 NAME is the name of the unfound symbol."
   (let ((name (cond ((stringp name-in)
 		     name-in)
@@ -557,19 +559,19 @@ PARENT is a possible parent (by nesting) tag."
 			 'mouse-face 'custom-button-pressed-face
 			 'tag tag
 			 'action
-			 `(lambda (button)
-			    (let ((buff nil)
-				  (pnt nil))
-			      (save-excursion
-				(semantic-go-to-tag
-				 (button-get button 'tag))
-				(setq buff (current-buffer))
-				(setq pnt (point)))
-			      (if (get-buffer-window buff)
-				  (select-window (get-buffer-window buff))
-				(pop-to-buffer buff t))
-			      (goto-char pnt)
-			      (pulse-line-hook-function)))
+			 (lambda (button)
+			   (let ((buff nil)
+				 (pnt nil))
+			     (save-excursion
+			       (semantic-go-to-tag
+				(button-get button 'tag))
+			       (setq buff (current-buffer))
+			       (setq pnt (point)))
+			     (if (get-buffer-window buff)
+				 (select-window (get-buffer-window buff))
+			       (pop-to-buffer buff t))
+			     (goto-char pnt)
+			     (pulse-line-hook-function)))
 			 ))
       (princ "\"")
       (princ str)

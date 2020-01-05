@@ -1,9 +1,8 @@
 ;; allout-widgets.el --- Visually highlight allout outline structure.
 
-;; Copyright (C) 2005-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: Ken Manheimer <ken dot manheimer at gmail...>
-;; Maintainer: Ken Manheimer <ken dot manheimer at gmail...>
 ;; Version: 1.0
 ;; Created: Dec 2005
 ;; Keywords: outlines
@@ -22,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -70,12 +69,7 @@
 (require 'allout)
 (require 'widget)
 (require 'wid-edit)
-
-(eval-when-compile
-  (progn
-    (require 'overlay)
-    (require 'cl)
-    ))
+(eval-when-compile (require 'cl-lib))
 
 ;;;_ : internal variables needed before user-customization variables
 ;;; In order to enable activation of allout-widgets-mode via customization,
@@ -138,7 +132,7 @@ Also enable `allout-auto-activation' for this to take effect upon
 visiting an outline.
 
 When this is set you can disable allout widgets in select files
-by setting `allout-widgets-mode-inhibit'
+by setting `allout-widgets-mode-inhibit'.
 
 Instead of setting `allout-widgets-auto-activation' you can
 explicitly invoke `allout-widgets-mode' in allout buffers where
@@ -348,7 +342,7 @@ to `allout-body-modification-handler', and is always reset by
 images with lists containing the name of the icon directory (as
 found on the `load-path') and the icon name.
 
-Set this variable to `nil' to empty the cache, and have it replenish from the
+Set this variable to nil to empty the cache, and have it replenish from the
 filesystem.")
 ;;;_    = allout-widgets-unset-inhibit-read-only
 (defvar allout-widgets-unset-inhibit-read-only nil
@@ -384,9 +378,9 @@ The structure includes the guides lines, bullet, and bullet cue.")
 
 Entries on the list are lists whose first element is a symbol indicating
 the change type and subsequent elements are data specific to that change
-type.  Specifically:
+type.  For example:
 
- 'exposure `allout-exposure-from' `allout-exposure-to' `allout-exposure-flag'
+  (exposure ALLOUT-EXPOSURE-FROM ALLOUT-EXPOSURE-TO ALLOUT-EXPOSURE-FLAG)
 
 The changes are recorded in reverse order, with new values pushed
 onto the front.")
@@ -481,9 +475,9 @@ text in allout item bodies.")
 
 \(That space is used to convey selected cues indicating body qualities,
 including things like:
- - encryption '~'
- - numbering '#'
- - indirect reference '@'
+ - encryption `~'
+ - numbering `#'
+ - indirect reference `@'
  - distinctive bullets - see `allout-distinctive-bullets-string'.)")
 ;;;_    = allout-span-to-category
 (defvar allout-span-to-category
@@ -513,9 +507,6 @@ happens in the buffer.")
 ;;;###autoload
 (define-minor-mode allout-widgets-mode
   "Toggle Allout Widgets mode.
-With a prefix argument ARG, enable Allout Widgets mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 Allout Widgets mode is an extension of Allout mode that provides
 graphical decoration of outline structure.  It is meant to
@@ -768,8 +759,7 @@ Optional RECURSING is for internal use, to limit recursion."
 
             (if allout-widgets-time-decoration-activity
                 (setq allout-widgets-last-decoration-timing
-                      (list (allout-elapsed-time-seconds (current-time)
-                                                         start-time)
+                      (list (allout-elapsed-time-seconds nil start-time)
                             allout-widgets-changes-record)))
 
             (setq allout-widgets-changes-record nil)
@@ -869,7 +859,7 @@ Optional RECURSING is for internal use, to limit recursion."
     ;; tell the allout-widgets-post-command-business to reestablish the hook:
     (setq allout-widgets-reenable-before-change-handler t)
     ;; and raise an error to prevent the edit (and disable the hook):
-    (error
+    (error "%s"
      (substitute-command-keys allout-structure-unruly-deletion-message)))))
 ;;;_    > allout-widgets-after-change-handler
 (defun allout-widgets-after-change-handler (_beg _end _prelength)
@@ -877,7 +867,7 @@ Optional RECURSING is for internal use, to limit recursion."
   )
 ;;;_   > allout-current-decorated-p ()
 (defun allout-current-decorated-p ()
-  "True if the current item is not decorated"
+  "True if the current item is not decorated."
   (save-excursion
     (if (allout-back-to-current-heading)
         (if (> allout-recent-depth 0)
@@ -964,7 +954,7 @@ posting threshold criteria."
         (when changes-pending
           (while changes-record
             (setq entry (pop changes-record))
-            (case (car entry)
+            (pcase (car entry)
               (:exposed (push entry exposures))
               (:added (push entry additions))
               (:deleted (push entry deletions))
@@ -1382,34 +1372,34 @@ FROM and TO must be in increasing order, as must be the pairs in RANGES."
 
     ;; fresh:
     (setq ranges nil)
-    (assert (equal (funcall try 3 5) '(nil ((3 5)))))
+    (cl-assert (equal (funcall try 3 5) '(nil ((3 5)))))
     ;; add range at end:
-    (assert (equal (funcall try 10 12) '(nil ((3 5) (10 12)))))
+    (cl-assert (equal (funcall try 10 12) '(nil ((3 5) (10 12)))))
     ;; add range at beginning:
-    (assert (equal (funcall try 1 2) '(nil ((1 2) (3 5) (10 12)))))
+    (cl-assert (equal (funcall try 1 2) '(nil ((1 2) (3 5) (10 12)))))
     ;; insert range somewhere in the middle:
-    (assert (equal (funcall try 7 9) '(nil ((1 2) (3 5) (7 9) (10 12)))))
+    (cl-assert (equal (funcall try 7 9) '(nil ((1 2) (3 5) (7 9) (10 12)))))
     ;; consolidate some:
-    (assert (equal (funcall try 5 8) '(t ((1 2) (3 9) (10 12)))))
+    (cl-assert (equal (funcall try 5 8) '(t ((1 2) (3 9) (10 12)))))
     ;; add more:
-    (assert (equal (funcall try 15 17) '(nil ((1 2) (3 9) (10 12) (15 17)))))
+    (cl-assert (equal (funcall try 15 17) '(nil ((1 2) (3 9) (10 12) (15 17)))))
     ;; add more:
-    (assert (equal (funcall try 20 22)
+    (cl-assert (equal (funcall try 20 22)
                    '(nil ((1 2) (3 9) (10 12) (15 17) (20 22)))))
     ;; encompass more:
-    (assert (equal (funcall try 4 11) '(t ((1 2) (3 12) (15 17) (20 22)))))
+    (cl-assert (equal (funcall try 4 11) '(t ((1 2) (3 12) (15 17) (20 22)))))
     ;; encompass all:
-    (assert (equal (funcall try 2 25) '(t ((1 25)))))
+    (cl-assert (equal (funcall try 2 25) '(t ((1 25)))))
 
     ;; fresh slate:
     (setq ranges nil)
-    (assert (equal (funcall try 20 25) '(nil ((20 25)))))
-    (assert (equal (funcall try 30 35) '(nil ((20 25) (30 35)))))
-    (assert (equal (funcall try 26 28) '(nil ((20 25) (26 28) (30 35)))))
-    (assert (equal (funcall try 15 20) '(t ((15 25) (26 28) (30 35)))))
-    (assert (equal (funcall try 10 30) '(t ((10 35)))))
-    (assert (equal (funcall try 5 6) '(nil ((5 6) (10 35)))))
-    (assert (equal (funcall try 2 100) '(t ((2 100)))))
+    (cl-assert (equal (funcall try 20 25) '(nil ((20 25)))))
+    (cl-assert (equal (funcall try 30 35) '(nil ((20 25) (30 35)))))
+    (cl-assert (equal (funcall try 26 28) '(nil ((20 25) (26 28) (30 35)))))
+    (cl-assert (equal (funcall try 15 20) '(t ((15 25) (26 28) (30 35)))))
+    (cl-assert (equal (funcall try 10 30) '(t ((10 35)))))
+    (cl-assert (equal (funcall try 5 6) '(nil ((5 6) (10 35)))))
+    (cl-assert (equal (funcall try 2 100) '(t ((2 100)))))
 
     (setq ranges nil)
     ))
@@ -1976,7 +1966,7 @@ reapplying this method will rectify the glyphs."
                ;; XXX we strip the prior properties without even checking if
                ;;     the prior bullet was distinctive, because the widget
                ;;     provisions to convey that info is disappearing, sigh.
-               (remove-text-properties icon-end (1+ icon-end) '(display))
+               (remove-text-properties icon-end (1+ icon-end) '(display nil))
                (setq distinctive-start icon-end distinctive-end icon-end)
                (widget-put item-widget :distinctive-start distinctive-start)
                (widget-put item-widget :distinctive-end distinctive-end))
@@ -2287,7 +2277,7 @@ Deletes allowed only when `inhibit-read-only' is t."
    ((yes-or-no-p "Unruly edit of outline structure - allow? ")
     (setq allout-widgets-unset-inhibit-read-only (not inhibit-read-only)
           inhibit-read-only t))
-   (t (error
+   (t (error "%s"
        (substitute-command-keys allout-structure-unruly-deletion-message)))))
 ;;;_   > allout-item-icon-key-handler ()
 (defun allout-item-icon-key-handler ()
@@ -2372,7 +2362,7 @@ The elements of LIST are not copied, just the list structure itself."
     (car list)))
 ;;;_  . allout-widgets-count-buttons-in-region (start end)
 (defun allout-widgets-count-buttons-in-region (start end)
-  "Debugging/diagnostic tool - count overlays with 'button' property in region."
+  "Debugging/diagnostic tool - count overlays with `button' property in region."
   (interactive "r")
   (setq start (or start (point-min))
         end (or end (point-max)))

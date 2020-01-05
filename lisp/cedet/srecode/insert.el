@@ -1,6 +1,6 @@
-;;; srecode/insert.el --- Insert srecode templates to an output stream.
+;;; srecode/insert.el --- Insert srecode templates to an output stream  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2005, 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -26,16 +26,12 @@
 ;; Manage the insertion process for a template.
 ;;
 
-(eval-when-compile
-  (require 'cl)) ;; for `lexical-let'
-
 (require 'srecode/compile)
 (require 'srecode/find)
 (require 'srecode/dictionary)
 (require 'srecode/args)
 (require 'srecode/filters)
 
-(defvar srecode-template-inserter-point)
 (declare-function srecode-overlaid-activate "srecode/fields")
 (declare-function srecode-template-inserted-region "srecode/fields")
 
@@ -46,11 +42,9 @@
 Only the ASK style inserter will query the user for a value.
 Dictionary value references that ask begin with the ? character.
 Possible values are:
-  'ask   - Prompt in the minibuffer as the value is inserted.
-  'field - Use the dictionary macro name as the inserted value,
-           and place a field there.  Matched fields change together.
-
-NOTE: The field feature does not yet work with XEmacs."
+  `ask'   - Prompt in the minibuffer as the value is inserted.
+  `field' - Use the dictionary macro name as the inserted value,
+            and place a field there.  Matched fields change together."
   :group 'srecode
   :type '(choice (const :tag "Ask" ask)
 		 (const :tag "Field" field)))
@@ -145,7 +139,7 @@ has set everything up already."
 	       )
       (set-buffer standard-output)
       (setq end-mark (point-marker))
-      (goto-char  (oref srecode-template-inserter-point point)))
+      (goto-char  (oref-default 'srecode-template-inserter-point point)))
     (oset-default 'srecode-template-inserter-point point eieio-unbound)
 
     ;; Return the end-mark.
@@ -187,17 +181,17 @@ Buffer based features related to change hooks is handled one level up."
 	       )
       (let ((reg
 	     ;; Create the field-driven editable area.
-	     (srecode-template-inserted-region
-	      "TEMPLATE" :start start :end (point))))
+	     (srecode-template-inserted-region :start start :end (point))))
 	(srecode-overlaid-activate reg))
       )
     ;; We return with 'point being the end of the template insertion
     ;; area.  Return value is not important.
     ))
 
-(declare-function data-debug-new-buffer "data-debug")
-(declare-function data-debug-insert-stuff-list "data-debug")
-(declare-function data-debug-insert-thing dictionary "data-debug")
+(declare-function data-debug-new-buffer "data-debug" (name))
+(declare-function data-debug-insert-stuff-list "data-debug" (stufflist prefix))
+(declare-function data-debug-insert-thing "data-debug"
+                  (thing prefix prebuttontext &optional parent))
 
 (defun srecode-insert-show-error-report (dictionary format &rest args)
   "Display an error report based on DICTIONARY, FORMAT and ARGS.
@@ -211,13 +205,13 @@ insertions."
 	    (propertize " (most recent at bottom)" 'face '(:slant italic))
 	    ":\n")
     (data-debug-insert-stuff-list
-     (reverse (oref srecode-template active)) "> ")
+     (reverse (oref-default 'srecode-template active)) "> ")
     ;; Show the current dictionary.
     (insert (propertize "Dictionary" 'face '(:weight bold)) "\n")
     (data-debug-insert-thing dictionary "" "> ")
     ;; Show the error message.
     (insert (propertize "Error" 'face '(:weight bold)) "\n")
-    (insert (apply #'format format args))
+    (insert (apply #'format-message format args))
     (pop-to-buffer (current-buffer))))
 
 (defun srecode-insert-report-error (dictionary format &rest args)
@@ -260,20 +254,19 @@ Optional argument TEMP is the template that is getting its arguments resolved."
 ;; Code managing the top-level insert method and the current
 ;; insertion stack.
 ;;
-(defmethod srecode-push ((st srecode-template))
+(cl-defmethod srecode-push ((st srecode-template))
   "Push the srecoder template ST onto the active stack."
   (oset st active (cons st (oref st active))))
 
-(defmethod srecode-pop :STATIC ((st srecode-template))
-  "Pop the srecoder template ST onto the active stack.
-ST can be a class, or an object."
+(cl-defmethod srecode-pop ((st srecode-template))
+  "Pop the srecoder template ST onto the active stack."
   (oset st active (cdr (oref st active))))
 
-(defmethod srecode-peek :STATIC ((st srecode-template))
-  "Fetch the topmost active template record.  ST can be a class."
+(cl-defmethod srecode-peek ((st srecode-template))
+  "Fetch the topmost active template record."
   (car (oref st active)))
 
-(defmethod srecode-insert-method ((st srecode-template) dictionary)
+(cl-defmethod srecode-insert-method ((st srecode-template) dictionary)
   "Insert the srecoder template ST."
   ;; Merge any template entries into the input dictionary.
   ;; This may happen twice since some templates arguments need
@@ -324,7 +317,7 @@ by themselves.")
 Specify the :indent argument to enable automatic indentation when newlines
 occur in your template.")
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-newline)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-newline)
 				  dictionary)
   "Insert the STI inserter."
   ;; To be safe, indent the previous line since the template will
@@ -363,9 +356,9 @@ occur in your template.")
 	    ((stringp i)
 	     (princ i))))))
 
-(defmethod srecode-dump ((ins srecode-template-inserter-newline) indent)
+(cl-defmethod srecode-dump ((ins srecode-template-inserter-newline) _indent)
   "Dump the state of the SRecode template inserter INS."
-  (call-next-method)
+  (cl-call-next-method)
   (when (oref ins hard)
     (princ " : hard")
     ))
@@ -379,16 +372,16 @@ Can't be blank, or it might be used by regular variable insertion.")
     (where :initform 'begin
 	   :initarg :where
 	   :documentation
-	   "This should be 'begin or 'end, indicating where to insert a CR.
-When set to 'begin, it will insert a CR if we are not at 'bol'.
-When set to 'end it will insert a CR if we are not at 'eol'.")
+	   "This should be `begin' or `end', indicating where to insert a CR.
+When `begin', insert a CR if not at `bol'.
+When `end', insert a CR if not at `eol'.")
     ;; @TODO - Add slot and control for the number of blank
     ;;         lines before and after point.
    )
    "Insert a newline before and after a template, and possibly do indenting.
 Specify the :blank argument to enable this inserter.")
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-blank)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-blank)
 				  dictionary)
   "Make sure there is no text before or after point."
   (let ((i (srecode-dictionary-lookup-name dictionary "INDENT"))
@@ -396,7 +389,7 @@ Specify the :blank argument to enable this inserter.")
 	(pm (point-marker)))
     (when (and inbuff
 	       ;; Don't do this if we are not the active template.
-	       (= (length (oref srecode-template active)) 1))
+	       (= (length (oref-default 'srecode-template active)) 1))
 
       (when (and (eq i t) inbuff (not (eq (oref sti where) 'begin)))
 	(indent-according-to-mode)
@@ -425,8 +418,8 @@ Specify the :blank argument to enable this inserter.")
    )
   "Allow comments within template coding.  This inserts nothing.")
 
-(defmethod srecode-inserter-prin-example :STATIC ((ins srecode-template-inserter-comment)
-						  escape-start escape-end)
+(cl-defmethod srecode-inserter-prin-example ((_ins (subclass srecode-template-inserter-comment))
+                                             escape-start escape-end)
   "Insert an example using inserter INS.
 Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (princ "   ")
@@ -436,8 +429,8 @@ Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (terpri)
   )
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-comment)
-				  dictionary)
+(cl-defmethod srecode-insert-method ((_sti srecode-template-inserter-comment)
+                                     _dictionary)
   "Don't insert anything for comment macros in STI."
   nil)
 
@@ -453,7 +446,7 @@ If there is no entry, insert nothing.")
 (defvar srecode-inserter-variable-current-dictionary nil
   "The active dictionary when calling a variable filter.")
 
-(defmethod srecode-insert-variable-secondname-handler
+(cl-defmethod srecode-insert-variable-secondname-handler
   ((sti srecode-template-inserter-variable) dictionary value secondname)
   "For VALUE handle SECONDNAME behaviors for this variable inserter.
 Return the result as a string.
@@ -468,19 +461,18 @@ If SECONDNAME is nil, return VALUE."
 	  (srecode-insert-report-error
 	   dictionary
 	   "Variable inserter %s: second argument `%s' is not a function"
-	   (object-print sti) secondname)))
+	   (cl-prin1-to-string sti) secondname)))
     value))
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-variable)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-variable)
 				  dictionary)
   "Insert the STI inserter."
   ;; Convert the name into a name/fcn pair
-  (let* ((name (oref sti :object-name))
-	 (fcnpart (oref sti :secondname))
+  (let* ((name (oref sti object-name))
+	 (fcnpart (oref sti secondname))
 	 (val (srecode-dictionary-lookup-name
 	       dictionary name))
-	 (do-princ t)
-	 )
+	 (do-princ t))
     ;; Alert if a macro wasn't found.
     (when (not val)
       (message "Warning: macro %S was not found in the dictionary." name)
@@ -491,7 +483,7 @@ If SECONDNAME is nil, return VALUE."
 	(setq val (srecode-insert-variable-secondname-handler
 		   sti dictionary val fcnpart)))
        ;; Compound data value
-       ((srecode-dictionary-compound-value-child-p val)
+       ((cl-typep val 'srecode-dictionary-compound-value)
 	;; Force FCN to be a symbol
 	(when fcnpart (setq fcnpart (read fcnpart)))
 	;; Convert compound value to a string with the fcn.
@@ -502,7 +494,7 @@ If SECONDNAME is nil, return VALUE."
 	  (setq do-princ nil)))
 
        ;; Dictionaries... not allowed in this style
-       ((srecode-dictionary-child-p val)
+       ((cl-typep val 'srecode-dictionary)
 	(srecode-insert-report-error
 	 dictionary
 	 "Macro %s cannot insert a dictionary - use section macros instead"
@@ -541,7 +533,7 @@ If there is no entry, prompt the user for the value to use.
 The prompt text used is derived from the previous PROMPT command in the
 template file.")
 
-(defmethod srecode-inserter-apply-state
+(cl-defmethod srecode-inserter-apply-state
   ((ins srecode-template-inserter-ask) STATE)
   "For the template inserter INS, apply information from STATE.
 Loop over the prompts to see if we have a match."
@@ -549,26 +541,26 @@ Loop over the prompts to see if we have a match."
 	)
     (while prompts
       (when (string= (semantic-tag-name (car prompts))
-		     (oref ins :object-name))
-	(oset ins :prompt
+		     (oref ins object-name))
+	(oset ins prompt
 	      (semantic-tag-get-attribute (car prompts) :text))
-	(oset ins :defaultfcn
+	(oset ins defaultfcn
 	      (semantic-tag-get-attribute (car prompts) :default))
-	(oset ins :read-fcn
+	(oset ins read-fcn
 	      (or (semantic-tag-get-attribute (car prompts) :read)
 		  'read-string))
 	)
       (setq prompts (cdr prompts)))
     ))
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-ask)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-ask)
 				  dictionary)
   "Insert the STI inserter."
   (let ((val (srecode-dictionary-lookup-name
-	      dictionary (oref sti :object-name))))
+	      dictionary (oref sti object-name))))
     (if val
 	;; Does some extra work.  Oh well.
-	(call-next-method)
+	(cl-call-next-method)
 
       ;; How is our -ask value determined?
       (if srecode-insert-with-fields-in-progress
@@ -581,17 +573,17 @@ Loop over the prompts to see if we have a match."
       ;; the user can use the same name again later.
       (srecode-dictionary-set-value
        (srecode-root-dictionary dictionary)
-       (oref sti :object-name) val)
+       (oref sti object-name) val)
 
       ;; Now that this value is safely stowed in the dictionary,
       ;; we can do what regular inserters do.
-      (call-next-method))))
+      (cl-call-next-method))))
 
-(defmethod srecode-insert-ask-default ((sti srecode-template-inserter-ask)
+(cl-defmethod srecode-insert-ask-default ((sti srecode-template-inserter-ask)
 				       dictionary)
   "Derive the default value for an askable inserter STI.
 DICTIONARY is used to derive some values."
-  (let ((defaultfcn (oref sti :defaultfcn)))
+  (let ((defaultfcn (oref sti defaultfcn)))
     (cond
      ((stringp defaultfcn)
       defaultfcn)
@@ -612,19 +604,19 @@ DICTIONARY is used to derive some values."
        dictionary
        "Unknown default for prompt: %S" defaultfcn)))))
 
-(defmethod srecode-insert-method-ask ((sti srecode-template-inserter-ask)
+(cl-defmethod srecode-insert-method-ask ((sti srecode-template-inserter-ask)
 				      dictionary)
   "Do the \"asking\" for the template inserter STI.
 Use DICTIONARY to resolve values."
   (let* ((prompt (oref sti prompt))
 	 (default (srecode-insert-ask-default sti dictionary))
-	 (reader (oref sti :read-fcn))
+	 (reader (oref sti read-fcn))
 	 (val nil)
 	 )
     (cond ((eq reader 'y-or-n-p)
 	   (if (y-or-n-p (or prompt
 			     (format "%s? "
-				     (oref sti :object-name))))
+				     (oref sti object-name))))
 	       (setq val default)
 	     (setq val "")))
 	  ((eq reader 'read-char)
@@ -632,27 +624,27 @@ Use DICTIONARY to resolve values."
 		      "%c"
 		      (read-char (or prompt
 				     (format "Char for %s: "
-					     (oref sti :object-name))))))
+					     (oref sti object-name))))))
 	   )
 	  (t
 	   (save-excursion
 	     (setq val (funcall reader
 				(or prompt
 				    (format "Specify %s: "
-					    (oref sti :object-name)))
+					    (oref sti object-name)))
 				default
 				)))))
     ;; Return our derived value.
     val)
   )
 
-(defmethod srecode-insert-method-field ((sti srecode-template-inserter-ask)
+(cl-defmethod srecode-insert-method-field ((sti srecode-template-inserter-ask)
 					dictionary)
   "Create an editable field for the template inserter STI.
 Use DICTIONARY to resolve values."
   (let* ((default (srecode-insert-ask-default sti dictionary))
 	 (compound-value
-	  (srecode-field-value (oref sti :object-name)
+	  (srecode-field-value (oref sti object-name)
 			       :firstinserter sti
 			       :defaultvalue default))
 	 )
@@ -661,9 +653,9 @@ Use DICTIONARY to resolve values."
     ;; across multiple locations.
     compound-value))
 
-(defmethod srecode-dump ((ins srecode-template-inserter-ask) indent)
+(cl-defmethod srecode-dump ((ins srecode-template-inserter-ask) _indent)
   "Dump the state of the SRecode template inserter INS."
-  (call-next-method)
+  (cl-call-next-method)
   (princ " : \"")
   (princ (oref ins prompt))
   (princ "\"")
@@ -681,8 +673,8 @@ Thus a specification of `10:left' will insert the value of A
 to 10 characters, with spaces added to the left.  Use `right' for adding
 spaces to the right.")
 
-(defmethod srecode-insert-variable-secondname-handler
-  ((sti srecode-template-inserter-width) dictionary value width)
+(cl-defmethod srecode-insert-variable-secondname-handler
+  ((_sti srecode-template-inserter-width) dictionary value width)
   "For VALUE handle WIDTH behaviors for this variable inserter.
 Return the result as a string.
 By default, treat as a function name."
@@ -714,8 +706,8 @@ By default, treat as a function name."
 	    (concat padchars value)
 	  (concat value padchars))))))
 
-(defmethod srecode-inserter-prin-example :STATIC ((ins srecode-template-inserter-width)
-						  escape-start escape-end)
+(cl-defmethod srecode-inserter-prin-example ((_ins (subclass srecode-template-inserter-width))
+                                             escape-start escape-end)
   "Insert an example using inserter INS.
 Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (princ "   ")
@@ -750,8 +742,8 @@ The cursor is placed at the ^ macro after insertion.
 Some inserter macros, such as `srecode-template-inserter-include-wrap'
 will place text at the ^ macro from the included macro.")
 
-(defmethod srecode-inserter-prin-example :STATIC ((ins srecode-template-inserter-point)
-						  escape-start escape-end)
+(cl-defmethod srecode-inserter-prin-example ((_ins (subclass srecode-template-inserter-point))
+                                             escape-start escape-end)
   "Insert an example using inserter INS.
 Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (princ "   ")
@@ -761,10 +753,10 @@ Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (terpri)
   )
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-point)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-point)
 				  dictionary)
   "Insert the STI inserter.
-Save point in the class allocated 'point' slot.
+Save point in the class allocated `point' slot.
 If `srecode-template-inserter-point-override' non-nil then this
 generalized marker will do something else.  See
 `srecode-template-inserter-include-wrap' as an example."
@@ -773,7 +765,7 @@ generalized marker will do something else.  See
   ;; valid. Compare this to the actual template nesting depth and
   ;; maybe use the override function which is stored in the cdr.
   (if (and srecode-template-inserter-point-override
-	   (<= (length (oref srecode-template active))
+	   (<= (length (oref-default 'srecode-template active))
 	       (car srecode-template-inserter-point-override)))
       ;; Disable the old override while we do this.
       (let ((over (cdr srecode-template-inserter-point-override))
@@ -787,11 +779,11 @@ generalized marker will do something else.  See
   "Wrap a section of a template under the control of a macro."
   :abstract t)
 
-(defmethod srecode-inserter-prin-example :STATIC ((ins srecode-template-inserter-subtemplate)
-						  escape-start escape-end)
+(cl-defmethod srecode-inserter-prin-example ((_ins (subclass srecode-template-inserter-subtemplate))
+                                             escape-start escape-end)
   "Insert an example using inserter INS.
 Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
-  (call-next-method)
+  (cl-call-next-method)
   (princ "     Template Text to control")
   (terpri)
   (princ "   ")
@@ -801,11 +793,11 @@ Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (terpri)
   )
 
-(defmethod srecode-insert-subtemplate ((sti srecode-template-inserter-subtemplate)
+(cl-defmethod srecode-insert-subtemplate ((sti srecode-template-inserter-subtemplate)
 				       dict slot)
   "Insert a subtemplate for the inserter STI with dictionary DICT."
   ;; Make sure that only dictionaries are used.
-  (unless (srecode-dictionary-child-p dict)
+  (unless (cl-typep dict 'srecode-dictionary)
     (srecode-insert-report-error
      dict
      "Only section dictionaries allowed for `%s'"
@@ -814,18 +806,18 @@ Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   ;; Output the code from the sub-template.
   (srecode-insert-method (slot-value sti slot) dict))
 
-(defmethod srecode-insert-method-helper ((sti srecode-template-inserter-subtemplate)
+(cl-defmethod srecode-insert-method-helper ((sti srecode-template-inserter-subtemplate)
 					 dictionary slot)
   "Do the work for inserting the STI inserter.
 Loops over the embedded CODE which was saved here during compilation.
 The template to insert is stored in SLOT."
   (let ((dicts (srecode-dictionary-lookup-name
-		dictionary (oref sti :object-name))))
+		dictionary (oref sti object-name))))
     (when (not (listp dicts))
       (srecode-insert-report-error
        dictionary
        "Cannot insert section %S from non-section variable."
-       (oref sti :object-name)))
+       (oref sti object-name)))
     ;; If there is no section dictionary, then don't output anything
     ;; from this section.
     (while dicts
@@ -833,11 +825,11 @@ The template to insert is stored in SLOT."
 	(srecode-insert-report-error
 	 dictionary
 	 "Cannot insert section %S from non-section variable."
-	 (oref sti :object-name)))
+	 (oref sti object-name)))
       (srecode-insert-subtemplate sti (car dicts) slot)
       (setq dicts (cdr dicts)))))
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-subtemplate)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-subtemplate)
 				  dictionary)
   "Insert the STI inserter.
 Calls back to `srecode-insert-method-helper' for this class."
@@ -858,13 +850,13 @@ The dictionary saved at the named dictionary entry will be
 applied to the text between the section start and the
 `srecode-template-inserter-section-end' macro.")
 
-(defmethod srecode-parse-input ((ins srecode-template-inserter-section-start)
+(cl-defmethod srecode-parse-input ((ins srecode-template-inserter-section-start)
 				tag input STATE)
   "For the section inserter INS, parse INPUT.
 Shorten input until the END token is found.
 Return the remains of INPUT."
   (let* ((out (srecode-compile-split-code tag input STATE
-					  (oref ins :object-name))))
+					  (oref ins object-name))))
     (oset ins template (srecode-template
 			(eieio-object-name-string ins)
 			:context nil
@@ -872,9 +864,9 @@ Return the remains of INPUT."
 			:code (cdr out)))
     (car out)))
 
-(defmethod srecode-dump ((ins srecode-template-inserter-section-start) indent)
+(cl-defmethod srecode-dump ((ins srecode-template-inserter-section-start) indent)
   "Dump the state of the SRecode template inserter INS."
-  (call-next-method)
+  (cl-call-next-method)
   (princ "\n")
   (srecode-dump-code-list (oref (oref ins template) code)
 			  (concat indent "    "))
@@ -889,15 +881,15 @@ Return the remains of INPUT."
   "All template segments between the section-start and section-end
 are treated specially.")
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-section-end)
-				  dictionary)
+(cl-defmethod srecode-insert-method ((_sti srecode-template-inserter-section-end)
+				  _dictionary)
   "Insert the STI inserter."
   )
 
-(defmethod srecode-match-end ((ins srecode-template-inserter-section-end) name)
+(cl-defmethod srecode-match-end ((ins srecode-template-inserter-section-end) name)
 
   "For the template inserter INS, do I end a section called NAME?"
-  (string= name (oref ins :object-name)))
+  (string= name (oref ins object-name)))
 
 (defclass srecode-template-inserter-include (srecode-template-inserter-subtemplate)
   ((key :initform ?>
@@ -912,7 +904,7 @@ are treated specially.")
 The included template will have additional dictionary entries from the subdictionary
 stored specified by this macro.")
 
-(defmethod srecode-inserter-prin-example :STATIC ((ins srecode-template-inserter-include)
+(cl-defmethod srecode-inserter-prin-example ((_ins (subclass srecode-template-inserter-include))
 						  escape-start escape-end)
   "Insert an example using inserter INS.
 Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
@@ -923,18 +915,18 @@ Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (terpri)
   )
 
-(defmethod srecode-insert-include-lookup ((sti srecode-template-inserter-include)
+(cl-defmethod srecode-insert-include-lookup ((sti srecode-template-inserter-include)
 					  dictionary)
   "For the template inserter STI, lookup the template to include.
 Finds the template with this macro function part and stores it in
 this template instance."
-  (let ((templatenamepart (oref sti :secondname)))
+  (let ((templatenamepart (oref sti secondname)))
     ;; If there was no template name, throw an error.
     (unless templatenamepart
       (srecode-insert-report-error
        dictionary
        "Include macro `%s' needs a template name"
-       (oref sti :object-name)))
+       (oref sti object-name)))
 
     ;; NOTE: We used to cache the template and not look it up a second time,
     ;; but changes in the template tables can change which template is
@@ -943,7 +935,7 @@ this template instance."
     ;; Calculate and store the discovered template
     (let ((tmpl (srecode-template-get-table (srecode-table)
 					    templatenamepart))
-	  (active (oref srecode-template active))
+	  (active (oref-default 'srecode-template active))
 	  ctxt)
       (when (not tmpl)
 	;; If it isn't just available, scan back through
@@ -972,16 +964,16 @@ this template instance."
 	)
 
       ;; Store the found template into this object for later use.
-      (oset sti :includedtemplate tmpl))
+      (oset sti includedtemplate tmpl))
 
     (unless (oref sti includedtemplate)
       ;; @todo - Call into a debugger to help find the template in question.
       (srecode-insert-report-error
        dictionary
        "No template \"%s\" found for include macro `%s'"
-       templatenamepart (oref sti :object-name)))))
+       templatenamepart (oref sti object-name)))))
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-include)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-include)
 				  dictionary)
   "Insert the STI inserter.
 Finds the template with this macro function part, and inserts it
@@ -989,7 +981,7 @@ with the dictionaries found in the dictionary."
   (srecode-insert-include-lookup sti dictionary)
   ;; Insert the template.
   ;; Our baseclass has a simple way to do this.
-  (if (srecode-dictionary-lookup-name dictionary (oref sti :object-name))
+  (if (srecode-dictionary-lookup-name dictionary (oref sti object-name))
       ;; If we have a value, then call the next method
       (srecode-insert-method-helper sti dictionary 'includedtemplate)
     ;; If we don't have a special dictionary, then just insert with the
@@ -1017,7 +1009,7 @@ stored specified by this macro.  If the included macro includes a ^ macro,
 then the text between this macro and the end macro will be inserted at
 the ^ macro.")
 
-(defmethod srecode-inserter-prin-example :STATIC ((ins srecode-template-inserter-include-wrap)
+(cl-defmethod srecode-inserter-prin-example ((_ins (subclass srecode-template-inserter-include-wrap))
 						  escape-start escape-end)
   "Insert an example using inserter INS.
 Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
@@ -1035,7 +1027,7 @@ Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
   (terpri)
   )
 
-(defmethod srecode-insert-method ((sti srecode-template-inserter-include-wrap)
+(cl-defmethod srecode-insert-method ((sti srecode-template-inserter-include-wrap)
 				  dictionary)
   "Insert the template STI.
 This will first insert the include part via inheritance, then
@@ -1050,24 +1042,36 @@ template where a ^ inserter occurs."
   ;; which implements the wrap insertion behavior in FUNCTION. The
   ;; maximum valid nesting depth is just the current depth + 1.
   (let ((srecode-template-inserter-point-override
-	 (lexical-let ((inserter1 sti))
-	   (cons
-	    ;; DEPTH
-	    (+ (length (oref srecode-template active)) 1)
-	    ;; FUNCTION
-	    (lambda (dict)
-	      (let ((srecode-template-inserter-point-override nil))
-		(if (srecode-dictionary-lookup-name
-		     dict (oref inserter1 :object-name))
-		    ;; Insert our sectional part with looping.
-		    (srecode-insert-method-helper
-		     inserter1 dict 'template)
-		  ;; Insert our sectional part just once.
-		  (srecode-insert-subtemplate
-		   inserter1 dict 'template))))))))
+	 (cons
+	  ;; DEPTH
+	  (+ (length (oref-default 'srecode-template active)) 1)
+	  ;; FUNCTION
+	  (lambda (dict)
+	    (let ((srecode-template-inserter-point-override nil))
+	      (if (srecode-dictionary-lookup-name
+		   dict (oref sti object-name))
+		  ;; Insert our sectional part with looping.
+		  (srecode-insert-method-helper
+		   sti dict 'template)
+		;; Insert our sectional part just once.
+		(srecode-insert-subtemplate
+		 sti dict 'template)))))))
     ;; Do a regular insertion for an include, but with our override in
     ;; place.
-    (call-next-method)))
+    (cl-call-next-method)))
+
+(cl-defmethod srecode-inserter-prin-example ((ins (subclass srecode-template-inserter))
+						  escape-start escape-end)
+  "Insert an example using inserter INS.
+Arguments ESCAPE-START and ESCAPE-END are the current escape sequences in use."
+  (princ "   ")
+  (princ escape-start)
+  (when (and (slot-exists-p ins 'key) (oref ins key))
+    (princ (format "%c" (oref ins key))))
+  (princ "VARNAME")
+  (princ escape-end)
+  (terpri)
+  )
 
 (provide 'srecode/insert)
 

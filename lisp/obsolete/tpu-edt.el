@@ -1,9 +1,8 @@
 ;;; tpu-edt.el --- Emacs emulating TPU emulating EDT
 
-;; Copyright (C) 1993-1995, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1995, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Rob Riepel <riepel@networking.stanford.edu>
-;; Maintainer: Rob Riepel <riepel@networking.stanford.edu>
 ;; Version: 4.5
 ;; Keywords: emulations
 ;; Obsolete-since: 24.5
@@ -21,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; TPU-edt is based on tpu.el by Jeff Kowalski and Bob Covey.
 
@@ -648,7 +647,7 @@ GOLD is the ASCII 7-bit escape sequence <ESC>OP.")
 (make-variable-buffer-local 'tpu-mark-flag)
 
 (defun tpu-set-mode-line (for-tpu)
-  "Set ``minor-mode-alist'' for TPU-edt, or reset it to default Emacs."
+  "Set `minor-mode-alist' for TPU-edt, or reset it to default Emacs."
   (let ((entries '((tpu-newline-and-indent-p tpu-newline-and-indent-string)
                    (tpu-rectangular-p tpu-rectangle-string)
                    (tpu-direction-string tpu-direction-string)
@@ -873,7 +872,7 @@ With argument, fill and justify."
   (set-frame-width (selected-frame) width))
 
 (defun tpu-toggle-newline-and-indent nil
-  "Toggle between 'newline and indent' and 'simple newline'."
+  "Toggle between `newline-and-indent' and simple `newline'."
   (interactive)
   (cond (tpu-newline-and-indent-p
          (setq tpu-newline-and-indent-string "")
@@ -980,10 +979,7 @@ and the total number of lines in the buffer."
 ;;;
 ;;;###autoload
 (define-minor-mode tpu-edt-mode
-  "Toggle TPU/edt emulation on or off.
-With a prefix argument ARG, enable the mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable the mode
-if ARG is omitted or nil."
+  "Toggle TPU/edt emulation on or off."
   :global t :group 'tpu
   (if tpu-edt-mode (tpu-edt-on) (tpu-edt-off)))
 
@@ -1124,7 +1120,7 @@ if ARG is omitted or nil."
 
     M-x help-for-help <CR> p <CR>
 
-  Where `M-x' might be any of `Gold-KP7', 'Do', or 'ESC-x'.
+  Where `M-x' might be any of `Gold-KP7', `Do', or `ESC-x'.
 
   When you successfully invoke this part of the Emacs help facility, you
   will see a buffer named `*Finder*' listing a number of topics.  Look for
@@ -1313,7 +1309,7 @@ kill modified buffers without asking."
 		(if tpu-regexp-p "en" "dis"))))
 
 (defun tpu-regexp-prompt (prompt)
-  "Read a string, adding 'RE' to the prompt if tpu-regexp-p is set."
+  "Read a string, adding `RE ' to the prompt if tpu-regexp-p is set."
   (let ((re-prompt (concat (if tpu-regexp-p "RE ") prompt)))
     (read-from-minibuffer re-prompt nil nil nil 'tpu-regexp-prompt-hist)))
 

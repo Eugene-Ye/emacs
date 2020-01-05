@@ -1,11 +1,11 @@
-;;; solar.el --- calendar functions for solar events
+;;; solar.el --- calendar functions for solar events  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992-1993, 1995, 1997, 2001-2014 Free Software
+;; Copyright (C) 1992-1993, 1995, 1997, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Edward M. Reingold <reingold@cs.uiuc.edu>
 ;;         Denis B. Roegel <Denis.Roegel@loria.fr>
-;; Maintainer: Glenn Morris <rgm@gnu.org>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: calendar
 ;; Human-Keywords: sunrise, sunset, equinox, solstice, calendar, diary, holidays
 ;; Package: calendar
@@ -23,7 +23,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -65,11 +65,12 @@ and `am-pm' and `time-zone', both alphabetic strings.
 
 For example, the form
 
-  '(24-hours \":\" minutes
+   (24-hours \":\" minutes
     (if time-zone \" (\") time-zone (if time-zone \")\"))
 
-would give military-style times like `21:07 (UTC)'."
+would give military-style times like \"21:07 (UTC)\"."
   :type 'sexp
+  :risky t
   :group 'calendar)
 
 (defcustom calendar-latitude nil
@@ -131,6 +132,7 @@ variable `calendar-latitude' paired with the variable `calendar-longitude'.
 
 This variable should be set in `site-start'.el."
   :type 'sexp
+  :risky t
   :group 'calendar)
 
 (defcustom solar-error 0.5
@@ -171,7 +173,7 @@ delta.  At present, delta = 0.01 degrees, so the value of the variable
 ;;; End of user options.
 
 (defvar solar-sidereal-time-greenwich-midnight nil
-  "Sidereal time at Greenwich at midnight (universal time).")
+  "Sidereal time at Greenwich at midnight (Universal Time).")
 
 (defvar solar-northern-spring-or-summer-season nil
   "Non-nil if northern spring or summer and nil otherwise.
@@ -346,7 +348,7 @@ If SUNRISE-FLAG is non-nil, only calculate longitude and inclination."
                                    (solar-cosine-degrees (* 2 l)))
                                 (* -0.5 y y  (solar-sin-degrees (* 4 l)))
                                 (* -1.25 ecc ecc (solar-sin-degrees (* 2 m)))))
-                       3.1415926535))))
+                       float-pi))))
     (list app i time-eq nut)))
 
 (defun solar-ephemeris-correction (year)
@@ -411,8 +413,8 @@ Result is in days.  For the years 1800-1987, the maximum error is
 (defun solar-ephemeris-time (time)
   "Ephemeris Time at moment TIME.
 TIME is a pair with the first component being the number of Julian centuries
-elapsed at 0 Universal Time, and the second component being the universal
-time.  For instance, the pair corresponding to November 28, 1995 at 16 UT is
+elapsed at 0 Universal Time, and the second component counting Universal Time
+hours.  For instance, the pair corresponding to November 28, 1995 at 16 UT is
 \(-0.040945 16), -0.040945 being the number of Julian centuries elapsed between
 Jan 1, 2000 at 12 UT and November 28, 1995 at 0 UT.
 
@@ -428,7 +430,7 @@ Result is in Julian centuries of ephemeris time."
   "Right ascension (in hours) and declination (in degrees) of the sun at TIME.
 TIME is a pair with the first component being the number of
 Julian centuries elapsed at 0 Universal Time, and the second
-component being the universal time.  For instance, the pair
+component counting Universal Time hours.  For instance, the pair
 corresponding to November 28, 1995 at 16 UT is (-0.040945 16),
 -0.040945 being the number of Julian centuries elapsed between
 Jan 1, 2000 at 12 UT and November 28, 1995 at 0 UT.  SUNRISE-FLAG is passed
@@ -442,7 +444,7 @@ to `solar-ecliptic-coordinates'."
   "Azimuth and height of the sun at TIME, LATITUDE, and LONGITUDE.
 TIME is a pair with the first component being the number of
 Julian centuries elapsed at 0 Universal Time, and the second
-component being the universal time.  For instance, the pair
+component counting Universal Time hours.  For instance, the pair
 corresponding to November 28, 1995 at 16 UT is (-0.040945 16),
 -0.040945 being the number of Julian centuries elapsed between
 Jan 1, 2000 at 12 UT and November 28, 1995 at 0 UT.  SUNRISE-FLAG
@@ -474,8 +476,8 @@ Sunrise if DIRECTION =-1 or sunset if =1 at LATITUDE, LONGITUDE, with midday
 being TIME.
 
 TIME is a pair with the first component being the number of Julian centuries
-elapsed at 0 Universal Time, and the second component being the universal
-time.  For instance, the pair corresponding to November 28, 1995 at 16 UT is
+elapsed at 0 Universal Time, and the second component counting Universal Time
+hours.  For instance, the pair corresponding to November 28, 1995 at 16 UT is
 \(-0.040945 16), -0.040945 being the number of Julian centuries elapsed between
 Jan 1, 2000 at 12 UT and November 28, 1995 at 0 UT.
 
@@ -520,8 +522,8 @@ Uses binary search."
 Parameters are the midday TIME and the LATITUDE, LONGITUDE of the location.
 
 TIME is a pair with the first component being the number of Julian centuries
-elapsed at 0 Universal Time, and the second component being the universal
-time.  For instance, the pair corresponding to November 28, 1995 at 16 UT is
+elapsed at 0 Universal Time, and the second component counting Universal Time
+hours.  For instance, the pair corresponding to November 28, 1995 at 16 UT is
 \(-0.040945 16), -0.040945 being the number of Julian centuries elapsed between
 Jan 1, 2000 at 12 UT and November 28, 1995 at 0 UT.
 
@@ -550,12 +552,14 @@ degrees to find out if polar regions have 24 hours of sun or only night."
   "Printable form for decimal fraction TIME in TIME-ZONE.
 Format used is given by `calendar-time-display-form'."
   (let* ((time (round (* 60 time)))
-         (24-hours (/ time 60))
+         (24-hours (/ time 60)))
+    (calendar-dlet*
+        ((time-zone time-zone)
          (minutes (format "%02d" (% time 60)))
          (12-hours (format "%d" (1+ (% (+ 24-hours 11) 12))))
          (am-pm (if (>= 24-hours 12) "pm" "am"))
          (24-hours (format "%02d" 24-hours)))
-    (mapconcat 'eval calendar-time-display-form "")))
+      (mapconcat #'eval calendar-time-display-form ""))))
 
 (defun solar-daylight (time)
   "Printable form for TIME expressed in hours."
@@ -657,12 +661,12 @@ Corresponding value is nil if there is no sunrise/sunset."
 Optional NOLOCATION non-nil means do not print the location."
   (let ((l (solar-sunrise-sunset date)))
     (format
-     "%s, %s%s (%s hours daylight)"
+     "%s, %s%s (%s hrs daylight)"
      (if (car l)
-         (concat "Sunrise " (apply 'solar-time-string (car l)))
+         (concat "Sunrise " (apply #'solar-time-string (car l)))
        "No sunrise")
      (if (cadr l)
-         (concat "sunset " (apply 'solar-time-string (cadr l)))
+         (concat "sunset " (apply #'solar-time-string (cadr l)))
        "no sunset")
      (if nolocation ""
        (format " at %s" (eval calendar-location-name)))
@@ -747,7 +751,7 @@ The values of `calendar-daylight-savings-starts',
           (+ 4.9353929
              (* 62833.1961680 U)
              (* 0.0000001
-                (apply '+
+                (apply #'+
                        (mapcar (lambda (x)
                                  (* (car x)
                                     (sin (mod
@@ -847,20 +851,12 @@ This function is suitable for execution in an init file."
          (date (if (< arg 4) (calendar-current-date) (calendar-read-date)))
          (date-string (calendar-date-string date t))
          (time-string (solar-sunrise-sunset-string date))
-         (msg (format "%s: %s" date-string time-string))
-         (one-window (one-window-p t)))
-    (if (<= (length msg) (frame-width))
-        (message "%s" msg)
-      (with-output-to-temp-buffer "*temp*"
-        (princ (concat date-string "\n" time-string)))
-      (message "%s"
-               (substitute-command-keys
-                (if one-window
-                    (if pop-up-windows
-                        "Type \\[delete-other-windows] to remove temp window."
-                      "Type \\[switch-to-buffer] RET to remove temp window.")
-                  "Type \\[switch-to-buffer-other-window] RET to restore old \
-contents of temp window."))))))
+         (msg (format "%s%s"
+                      (if (< arg 4) ""  ; don't print date if it's today's
+                        (format "%s: " date-string))
+                      time-string)))
+    (message "%s" msg)
+    msg))
 
 ;;;###cal-autoload
 (defun calendar-sunrise-sunset (&optional event)
@@ -895,13 +891,12 @@ Accurate to a few seconds."
         (insert (format "%s %2d: " (calendar-month-name month t) (1+ i))
                 (solar-sunrise-sunset-string date t) "\n")))))
 
-(defvar date)
-
-;; To be called from diary-list-sexp-entries, where DATE is bound.
 ;;;###diary-autoload
 (defun diary-sunrise-sunset ()
   "Local time of sunrise and sunset as a diary entry.
 Accurate to a few seconds."
+  ;; To be called from diary-list-sexp-entries, where DATE is bound.
+  (with-no-warnings (defvar date))
   (or (and calendar-latitude calendar-longitude calendar-time-zone)
       (solar-setup))
   (solar-sunrise-sunset-string date))
@@ -944,7 +939,7 @@ Accurate to within a minute between 1951 and 2050."
          (W (- (* 35999.373 T) 2.47))
          (Delta-lambda (+ 1 (* 0.0334 (solar-cosine-degrees W))
                           (* 0.0007 (solar-cosine-degrees (* 2 W)))))
-         (S (apply '+ (mapcar (lambda(x)
+         (S (apply #'+ (mapcar (lambda(x)
                                 (* (car x) (solar-cosine-degrees
                                             (+ (* (nth 2 x) T) (cadr x)))))
                               solar-seasons-data)))

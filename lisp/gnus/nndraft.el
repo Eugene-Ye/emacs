@@ -1,6 +1,6 @@
 ;;; nndraft.el --- draft article access for Gnus
 
-;; Copyright (C) 1995-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -31,7 +31,6 @@
 (require 'nnmh)
 (require 'nnoo)
 (require 'mm-util)
-(eval-when-compile (require 'cl))
 
 ;; The nnoo-import at the end, I think.
 (declare-function nndraft-request-list "nndraft" (&rest args) t)
@@ -43,10 +42,12 @@
   "Where nndraft will store its files."
   nnmh-directory)
 
-(defvar nndraft-required-headers '(Date)
-  "*Headers to be generated when saving a draft message.
+(defcustom nndraft-required-headers '(Date)
+  "Headers to be generated when saving a draft message.
 The headers in this variable and the ones in `message-required-headers'
-are generated if and only if they are also in `message-draft-headers'.")
+are generated if and only if they are also in `message-draft-headers'."
+  :type '(repeat sexp)
+  :group 'message-headers)		; FIXME wrong group
 
 
 
@@ -146,10 +147,10 @@ are generated if and only if they are also in `message-draft-headers'.")
 
 (deffoo nndraft-request-update-info (group info &optional server)
   (nndraft-possibly-change-group group)
-  (gnus-info-set-read
-   info
-   (gnus-update-read-articles (gnus-group-prefixed-name group '(nndraft ""))
-			      (nndraft-articles) t))
+  (setf (gnus-info-read info)
+	(gnus-update-read-articles
+	 (gnus-group-prefixed-name group '(nndraft ""))
+	 (nndraft-articles) t))
   (let ((marks (nth 3 info)))
     (when marks
       ;; Nix out all marks except the `unsend'-able article marks.
@@ -203,12 +204,7 @@ are generated if and only if they are also in `message-draft-headers'.")
     (setq buffer-file-name (expand-file-name file)
 	  buffer-auto-save-file-name (make-auto-save-file-name))
     (clear-visited-file-modtime)
-    (let ((hook (if (boundp 'write-contents-functions)
-		    'write-contents-functions
-		  'write-contents-hooks)))
-      (gnus-make-local-hook hook)
-      (add-hook hook 'nndraft-generate-headers nil t))
-    (gnus-make-local-hook 'after-save-hook)
+    (add-hook 'write-contents-functions 'nndraft-generate-headers nil t)
     (add-hook 'after-save-hook 'nndraft-update-unread-articles nil t)
     (message-add-action '(nndraft-update-unread-articles)
 			'exit 'postpone 'kill)

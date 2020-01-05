@@ -1,8 +1,8 @@
 ;;; srecode/el.el --- Emacs Lisp specific arguments
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,14 +17,14 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
 ;; Emacs Lisp specific handlers.  To use these handlers in your
 ;; template, add the :name part to your template argument list.
 ;;
-;; Error if not in a Emacs Lisp mode
+;; Error if not in an Emacs Lisp mode
 
 ;;; Code:
 
@@ -50,7 +50,7 @@ Adds the following:
 (defun srecode-semantic-handle-:el-custom (dict)
   "Add macros into the dictionary DICT based on the current Emacs Lisp file.
 Adds the following:
-  GROUP - The 'defgroup' name we guess you want for variables.
+  GROUP - The `defgroup' name we guess you want for variables.
   FACEGROUP - The `defgroup' name you might want for faces."
   (require 'semantic/db-find)
   (let ((groups (semanticdb-strip-find-results
@@ -86,7 +86,7 @@ Calls `srecode-semantic-apply-tag-to-dict-default' first."
   (srecode-semantic-apply-tag-to-dict-default tagobj dict)
 
   ;; Pull out the tag for the individual pieces.
-  (let* ((tag (oref tagobj :prime))
+  (let* ((tag (oref tagobj prime))
 	 (doc (semantic-tag-docstring tag)))
 
     ;; It is much more common to have doc on ELisp.

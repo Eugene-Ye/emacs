@@ -1,6 +1,6 @@
-;;; mule-util.el --- utility functions for multilingual environment (mule)
+;;; mule-util.el --- utility functions for multilingual environment (mule)  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997-1998, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2000-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,24 +24,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-;;; String manipulations while paying attention to multibyte
-;;; characters.
-
-;;;###autoload
-(defsubst string-to-list (string)
-  "Return a list of characters in STRING."
-  (append string nil))
-
-;;;###autoload
-(defsubst string-to-vector (string)
-  "Return a vector of characters in STRING."
-  (vconcat string))
+;;; String manipulations while paying attention to multibyte characters.
 
 ;;;###autoload
 (defun store-substring (string idx obj)
@@ -49,7 +38,6 @@
   (if (integerp obj)
       (aset string idx obj)
     (let ((len1 (length obj))
-	  (len2 (length string))
 	  (i 0))
       (while (< i len1)
 	(aset string (+ idx i) (aref obj i))
@@ -57,11 +45,13 @@
   string)
 
 (defvar truncate-string-ellipsis "..."  ;"…"
-  "String to use to indicate truncation.")
+  "String to use to indicate truncation.
+Serves as default value of ELLIPSIS argument to `truncate-string-to-width'.")
 
 ;;;###autoload
 (defun truncate-string-to-width (str end-column
-				     &optional start-column padding ellipsis)
+				     &optional start-column padding ellipsis
+                                     ellipsis-text-property)
   "Truncate string STR to end at column END-COLUMN.
 The optional 3rd arg START-COLUMN, if non-nil, specifies the starting
 column; that means to return the characters occupying columns
@@ -83,14 +73,17 @@ If ELLIPSIS is non-nil, it should be a string which will replace the
 end of STR (including any padding) if it extends beyond END-COLUMN,
 unless the display width of STR is equal to or less than the display
 width of ELLIPSIS.  If it is non-nil and not a string, then ELLIPSIS
-defaults to `truncate-string-ellipsis'."
+defaults to `truncate-string-ellipsis'.
+
+If ELLIPSIS-TEXT-PROPERTY in non-nil, a too-long string will not
+be truncated, but instead the elided parts will be covered by a
+`display' text property showing the ellipsis."
   (or start-column
       (setq start-column 0))
   (when (and ellipsis (not (stringp ellipsis)))
     (setq ellipsis truncate-string-ellipsis))
   (let ((str-len (length str))
 	(str-width (string-width str))
-	(ellipsis-len (if ellipsis (length ellipsis) 0))
 	(ellipsis-width (if ellipsis (string-width ellipsis) 0))
 	(idx 0)
 	(column 0)
@@ -125,12 +118,20 @@ defaults to `truncate-string-ellipsis'."
 		idx last-idx))
 	(when (and padding (< column end-column))
 	  (setq tail-padding (make-string (- end-column column) padding))))
-      (concat head-padding (substring str from-idx idx)
-	      tail-padding ellipsis))))
+      (if (and ellipsis-text-property
+               (not (equal ellipsis ""))
+               idx)
+          ;; Use text properties for the ellipsis.
+          (concat head-padding
+                  (substring str from-idx idx)
+	          (propertize (substring str idx) 'display (or ellipsis "")))
+        ;; (Possibly) chop off bits of the string.
+        (concat head-padding (substring str from-idx idx)
+	        tail-padding ellipsis)))))
 
 
-;;; Nested alist handler.  Nested alist is alist whose elements are
-;;; also nested alist.
+;;; Nested alist handler.
+;; Nested alist is alist whose elements are also nested alist.
 
 ;;;###autoload
 (defsubst nested-alist-p (obj)
@@ -155,20 +156,43 @@ longer than KEYSEQ.
 See the documentation of `nested-alist-p' for more detail."
   (or (nested-alist-p alist)
       (error "Invalid argument %s" alist))
-  (let ((islist (listp keyseq))
-	(len (or len (length keyseq)))
-	(i 0)
-	key-elt slot)
-    (while (< i len)
-      (if (null (nested-alist-p alist))
-	  (error "Keyseq %s is too long for this nested alist" keyseq))
-      (setq key-elt (if islist (nth i keyseq) (aref keyseq i)))
-      (setq slot (assoc key-elt (cdr alist)))
-      (unless slot
-	(setq slot (cons key-elt (list t)))
-	(setcdr alist (cons slot (cdr alist))))
-      (setq alist (cdr slot))
-      (setq i (1+ i)))
+  (let ((len (or len (length keyseq)))
+	(i 0))
+    (cond
+     ((stringp keyseq)             ; We can use `assq' for characters.
+      (while (< i len)
+        (if (null (nested-alist-p alist))
+            (error "Keyseq %s is too long for this nested alist" keyseq))
+        (let* ((key-elt (aref keyseq i))
+               (slot (assq key-elt (cdr alist))))
+          (unless slot
+            (setq slot (list key-elt t))
+            (push slot (cdr alist)))
+          (setq alist (cdr slot)))
+        (setq i (1+ i))))
+     ((arrayp keyseq)
+      (while (< i len)
+        (if (null (nested-alist-p alist))
+            (error "Keyseq %s is too long for this nested alist" keyseq))
+        (let* ((key-elt (aref keyseq i))
+               (slot (assoc key-elt (cdr alist))))
+          (unless slot
+            (setq slot (list key-elt t))
+            (push slot (cdr alist)))
+          (setq alist (cdr slot)))
+        (setq i (1+ i))))
+     ((listp keyseq)
+      (while (< i len)
+        (if (null (nested-alist-p alist))
+            (error "Keyseq %s is too long for this nested alist" keyseq))
+        (let* ((key-elt (pop keyseq))
+               (slot (assoc key-elt (cdr alist))))
+          (unless slot
+            (setq slot (list key-elt t))
+            (push slot (cdr alist)))
+          (setq alist (cdr slot)))
+        (setq i (1+ i))))
+     (t (signal 'wrong-type-argument (list keyseq))))
     (setcar alist entry)
     (if branches
 	(setcdr (last alist) branches))))
@@ -191,15 +215,23 @@ Optional 5th argument NIL-FOR-TOO-LONG non-nil means return nil
       (setq len (length keyseq)))
   (let ((i (or start 0)))
     (if (catch 'lookup-nested-alist-tag
-	  (if (listp keyseq)
-	      (while (< i len)
-		(if (setq alist (cdr (assoc (nth i keyseq) (cdr alist))))
-		    (setq i (1+ i))
-		  (throw 'lookup-nested-alist-tag t))))
-	  (while (< i len)
-	    (if (setq alist (cdr (assoc (aref keyseq i) (cdr alist))))
-		(setq i (1+ i))
-	      (throw 'lookup-nested-alist-tag t))))
+          (cond ((stringp keyseq)  ; We can use `assq' for characters.
+                 (while (< i len)
+                   (if (setq alist (cdr (assq (aref keyseq i) (cdr alist))))
+                       (setq i (1+ i))
+                     (throw 'lookup-nested-alist-tag t))))
+                ((arrayp keyseq)
+                 (while (< i len)
+                   (if (setq alist (cdr (assoc (aref keyseq i) (cdr alist))))
+                       (setq i (1+ i))
+                     (throw 'lookup-nested-alist-tag t))))
+                ((listp keyseq)
+                 (setq keyseq (nthcdr i keyseq))
+                 (while (< i len)
+                   (if (setq alist (cdr (assoc (pop keyseq) (cdr alist))))
+                       (setq i (1+ i))
+                     (throw 'lookup-nested-alist-tag t))))
+                (t (signal 'wrong-type-argument (list keyseq)))))
 	;; KEYSEQ is too long.
 	(if nil-for-too-long nil i)
       alist)))
@@ -261,58 +293,180 @@ language environment LANG-ENV."
 	(with-coding-priority coding-priority
           (detect-coding-region from to)))))
 
-(declare-function internal-char-font "fontset.c" (position &optional ch))
+(declare-function internal-char-font "font.c" (position &optional ch))
+
+(defun filepos-to-bufferpos--dos (byte f)
+  (let ((eol-offset 0)
+        ;; Make sure we terminate, even if BYTE falls right in the middle
+        ;; of a CRLF or some other weird corner case.
+        (omin 0) omax
+        pos lines)
+    (while
+        (progn
+          (setq pos (funcall f (- byte eol-offset)))
+          ;; Protect against accidental values of BYTE outside of the
+          ;; valid region.
+          (when (null pos)
+            (if (<= byte eol-offset)
+                (setq pos (point-min))
+              (setq pos (point-max))))
+          ;; Adjust POS for DOS EOL format.
+          (setq lines (1- (line-number-at-pos pos)))
+          (and (not (= lines eol-offset)) (or (not omax) (> omax omin))))
+      (if (> lines eol-offset)
+          (setq omax (if omax (min (1- omax) lines) lines)
+                eol-offset omax)
+        (setq omin (max (1+ omin) lines)
+              eol-offset omin)))
+    pos))
 
 ;;;###autoload
-(defun char-displayable-p (char)
-  "Return non-nil if we should be able to display CHAR.
-On a multi-font display, the test is only whether there is an
-appropriate font from the selected frame's fontset to display
-CHAR's charset in general.  Since fonts may be specified on a
-per-character basis, this may not be accurate."
-  (cond ((< char 128)
-	 ;; ASCII characters are always displayable.
-	 t)
-	((not enable-multibyte-characters)
-	 ;; Maybe there's a font for it, but we can't put it in the buffer.
-	 nil)
-	((display-multi-font-p)
-	 ;; On a window system, a character is displayable if we have
-	 ;; a font for that character in the default face of the
-	 ;; currently selected frame.
-	 (car (internal-char-font nil char)))
-	(t
-	 ;; On a terminal, a character is displayable if the coding
-	 ;; system for the terminal can encode it.
-	 (let ((coding (terminal-coding-system)))
-	   (when coding
-	     (let ((cs-list (coding-system-get coding :charset-list)))
-	       (cond
-		 ((listp cs-list)
-		  (catch 'tag
-		    (mapc #'(lambda (charset)
-			      (if (encode-char char charset)
-				  (throw 'tag charset)))
-			  cs-list)
-		    nil))
-		 ((eq cs-list 'iso-2022)
-		  (catch 'tag2
-		    (mapc #'(lambda (charset)
-			      (if (and (plist-get (charset-plist charset)
-						  :iso-final-char)
-				       (encode-char char charset))
-				  (throw 'tag2 charset)))
-			  charset-list)
-		    nil))
-		 ((eq cs-list 'emacs-mule)
-		  (catch 'tag3
-		    (mapc #'(lambda (charset)
-			      (if (and (plist-get (charset-plist charset)
-						  :emacs-mule-id)
-				       (encode-char char charset))
-				  (throw 'tag3 charset)))
-			  charset-list)
-		    nil)))))))))
+(defun filepos-to-bufferpos (byte &optional quality coding-system)
+  "Try to return the buffer position corresponding to a particular file position.
+The file position is given as a (0-based) BYTE count.
+The function presumes the file is encoded with CODING-SYSTEM, which defaults
+to `buffer-file-coding-system'.
+QUALITY can be:
+  `approximate', in which case we may cut some corners to avoid
+    excessive work.
+  `exact', in which case we may end up re-(en/de)coding a large
+    part of the file/buffer, this can be expensive and slow.
+  nil, in which case we may return nil rather than an approximation."
+  (unless coding-system (setq coding-system buffer-file-coding-system))
+  (let ((eol (coding-system-eol-type coding-system))
+        (type (coding-system-type coding-system))
+        (base (coding-system-base coding-system))
+        (pm (save-restriction (widen) (point-min))))
+    (and (eq type 'utf-8)
+         ;; Any post-read/pre-write conversions mean it's not really UTF-8.
+         (not (null (coding-system-get coding-system :post-read-conversion)))
+         (setq type 'not-utf-8))
+    (and (memq type '(charset raw-text undecided))
+         ;; The following are all of type 'charset', but they are
+         ;; actually variable-width encodings.
+         (not (memq base '(chinese-gbk chinese-gb18030 euc-tw euc-jis-2004
+                                       korean-iso-8bit chinese-iso-8bit
+                                       japanese-iso-8bit chinese-big5-hkscs
+                                       japanese-cp932 korean-cp949)))
+         (setq type 'single-byte))
+    (pcase type
+      ('utf-8
+       (when (coding-system-get coding-system :bom)
+         (setq byte (max 0 (- byte 3))))
+       (if (= eol 1)
+           (filepos-to-bufferpos--dos (+ pm byte) #'byte-to-position)
+         (byte-to-position (+ pm byte))))
+      ('single-byte
+       (if (= eol 1)
+           (filepos-to-bufferpos--dos (+ pm byte) #'identity)
+         (+ pm byte)))
+      ((and 'utf-16
+            ;; FIXME: For utf-16, we could use the same approach as used for
+            ;; dos EOLs (counting the number of non-BMP chars instead of the
+            ;; number of lines).
+            (guard (not (eq quality 'exact))))
+       ;; Account for BOM, which is always 2 bytes in UTF-16.
+       (when (coding-system-get coding-system :bom)
+         (setq byte (max 0 (- byte 2))))
+       ;; In approximate mode, assume all characters are within the
+       ;; BMP, i.e. take up 2 bytes.
+       (setq byte (/ byte 2))
+       (if (= eol 1)
+           (filepos-to-bufferpos--dos (+ pm byte) #'identity)
+         (+ pm byte)))
+      (_
+       (pcase quality
+         ('approximate (byte-to-position (+ pm byte)))
+         ('exact
+          ;; Rather than assume that the file exists and still holds the right
+          ;; data, we reconstruct it based on the buffer's content.
+          (let ((buf (current-buffer)))
+            (with-temp-buffer
+              (set-buffer-multibyte nil)
+              (let ((tmp-buf (current-buffer)))
+                (with-current-buffer buf
+                  (save-restriction
+                    (widen)
+                    ;; Since encoding should always return more bytes than
+                    ;; there were chars, encoding all chars up to (+ byte pm)
+                    ;; guarantees the encoded result has at least `byte' bytes.
+                    (encode-coding-region pm (min (point-max) (+ pm byte))
+                                          coding-system tmp-buf)))
+                (+ pm (length
+                       (decode-coding-region (point-min)
+                                             (min (point-max) (+ pm byte))
+                                             coding-system t))))))))))))
+;;;###autoload
+(defun bufferpos-to-filepos (position &optional quality coding-system)
+  "Try to return the file byte corresponding to a particular buffer POSITION.
+Value is the file position given as a (0-based) byte count.
+The function presumes the file is encoded with CODING-SYSTEM, which defaults
+to `buffer-file-coding-system'.
+QUALITY can be:
+  `approximate', in which case we may cut some corners to avoid
+    excessive work.
+  `exact', in which case we may end up re-(en/de)coding a large
+    part of the file/buffer, this can be expensive and slow.
+  nil, in which case we may return nil rather than an approximation."
+  (unless coding-system (setq coding-system buffer-file-coding-system))
+  (let* ((eol (coding-system-eol-type coding-system))
+         (lineno (if (= eol 1) (1- (line-number-at-pos position)) 0))
+         (type (coding-system-type coding-system))
+         (base (coding-system-base coding-system))
+         (point-min 1))                 ;Clarify what the `1' means.
+    (and (eq type 'utf-8)
+         ;; Any post-read/pre-write conversions mean it's not really UTF-8.
+         (not (null (coding-system-get coding-system :post-read-conversion)))
+         (setq type 'not-utf-8))
+    (and (memq type '(charset raw-text undecided))
+         ;; The following are all of type 'charset', but they are
+         ;; actually variable-width encodings.
+         (not (memq base '(chinese-gbk chinese-gb18030 euc-tw euc-jis-2004
+                                       korean-iso-8bit chinese-iso-8bit
+                                       japanese-iso-8bit chinese-big5-hkscs
+                                       japanese-cp932 korean-cp949)))
+         (setq type 'single-byte))
+    (pcase type
+      ('utf-8
+       (+ (or (position-bytes position)
+              (if (<= position 0)
+                  point-min
+                (position-bytes (point-max))))
+          ;; Account for BOM, if any.
+          (if (coding-system-get coding-system :bom) 3 0)
+          ;; Account for CR in CRLF pairs.
+          lineno
+          (- point-min)))
+      ('single-byte
+       (+ position (- point-min) lineno))
+      ((and 'utf-16
+            ;; FIXME: For utf-16, we could use the same approach as used for
+            ;; dos EOLs (counting the number of non-BMP chars instead of the
+            ;; number of lines).
+            (guard (not (eq quality 'exact))))
+       ;; In approximate mode, assume all characters are within the
+       ;; BMP, i.e. each one takes up 2 bytes.
+       (+ (* (- position point-min) 2)
+          ;; Account for BOM, if any.
+          (if (coding-system-get coding-system :bom) 2 0)
+          ;; Account for CR in CRLF pairs.
+          lineno))
+      (_
+       (pcase quality
+         ('approximate (+ (position-bytes position) (- point-min) lineno))
+         ('exact
+          ;; Rather than assume that the file exists and still holds the right
+          ;; data, we reconstruct its relevant portion.
+          (let ((buf (current-buffer)))
+            (with-temp-buffer
+              (set-buffer-multibyte nil)
+              (let ((tmp-buf (current-buffer)))
+                (with-current-buffer buf
+                  (save-restriction
+                    (widen)
+                    (encode-coding-region (point-min) (min (point-max) position)
+                                          coding-system tmp-buf)))
+                (buffer-size))))))))))
 
 (provide 'mule-util)
 

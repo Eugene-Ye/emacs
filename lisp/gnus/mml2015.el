@@ -1,6 +1,6 @@
 ;;; mml2015.el --- MIME Security with Pretty Good Privacy (PGP)
 
-;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Shenghuo Zhu <zsh@cs.rochester.edu>
 ;; Keywords: PGP MIME MML
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -27,16 +27,12 @@
 
 ;;; Code:
 
-(eval-and-compile
-  (if (locate-library "password-cache")
-      (require 'password-cache)
-    (require 'password)))
-
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 (require 'mm-decode)
 (require 'mm-util)
 (require 'mml)
 (require 'mml-sec)
+(require 'epg-config)
 
 (defvar mc-pgp-always-sign)
 
@@ -47,27 +43,7 @@
 ;; Maybe this should be in eg mml-sec.el (and have a different name).
 ;; Then mml1991 would not need to require mml2015, and mml1991-use
 ;; could be removed.
-(defvar mml2015-use (or
-		     (progn
-		       (ignore-errors (require 'epg-config))
-		       (and (fboundp 'epg-check-configuration)
-			   'epg))
-		     (progn
-		       (let ((abs-file (locate-library "pgg")))
-			 ;; Don't load PGG if it is marked as obsolete
-			 ;; (Emacs 24).
-			 (when (and abs-file
-				    (not (string-match "/obsolete/[^/]*\\'"
-						       abs-file)))
-			   (ignore-errors (require 'pgg))
-			   (and (fboundp 'pgg-sign-region)
-				'pgg))))
-		     (progn (ignore-errors
-			      (load "mc-toplev"))
-			    (and (fboundp 'mc-encrypt-generic)
-				 (fboundp 'mc-sign-generic)
-				 (fboundp 'mc-cleanup-recipient-headers)
-				 'mailcrypt)))
+(defvar mml2015-use 'epg
   "The package used for PGP/MIME.
 Valid packages include `epg', `pgg' and `mailcrypt'.")
 
@@ -111,6 +87,9 @@ Valid packages include `epg', `pgg' and `mailcrypt'.")
   "If t, cache passphrase."
   :group 'mime-security
   :type 'boolean)
+(make-obsolete-variable 'mml2015-cache-passphrase
+			'mml-secure-cache-passphrase
+			"25.1")
 
 (defcustom mml2015-passphrase-cache-expiry mml-secure-passphrase-cache-expiry
   "How many seconds the passphrase is cached.
@@ -118,6 +97,9 @@ Whether the passphrase is cached at all is controlled by
 `mml2015-cache-passphrase'."
   :group 'mime-security
   :type 'integer)
+(make-obsolete-variable 'mml2015-passphrase-cache-expiry
+			'mml-secure-passphrase-cache-expiry
+			"25.1")
 
 (defcustom mml2015-signers nil
   "A list of your own key ID(s) which will be used to sign a message.
@@ -209,8 +191,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
       (unless (setq child (mm-find-part-by-type
 			   (cdr handle)
 			   "application/octet-stream" nil t))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "Corrupted")
+	(mm-sec-error 'gnus-info "Corrupted")
 	(throw 'error handle))
       (with-temp-buffer
 	(mm-insert-part child)
@@ -218,21 +199,18 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	      (condition-case err
 		  (funcall mml2015-decrypt-function)
 		(error
-		 (mm-set-handle-multipart-parameter
-		  mm-security-handle 'gnus-details (mml2015-format-error err))
+		 (mm-sec-error 'gnus-details (mml2015-format-error err))
 		 nil)
 		(quit
-		 (mm-set-handle-multipart-parameter
-		  mm-security-handle 'gnus-details "Quit.")
+		 (mm-sec-error 'gnus-details "Quit.")
 		 nil)))
 	(unless (car result)
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "Failed")
+	  (mm-sec-error 'gnus-info "Failed")
 	  (throw 'error handle))
 	(setq handles (mm-dissect-buffer t)))
       (mm-destroy-parts handle)
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info
+      (mm-sec-status
+       'gnus-info
        (concat "OK"
 	       (let ((sig (with-current-buffer mml2015-result-buffer
 			    (mml2015-gpg-extract-signature-details))))
@@ -255,7 +233,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
       (setq result
 	    (concat
 	     result
-	     (case n-slice
+	     (cl-case n-slice
 	       (1  slice)
 	       (otherwise (concat " " slice))))))
     result))
@@ -299,18 +277,14 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	  (condition-case err
 	      (funcall mml2015-decrypt-function)
 	    (error
-	     (mm-set-handle-multipart-parameter
-	      mm-security-handle 'gnus-details (mml2015-format-error err))
+	     (mm-sec-error 'gnus-details (mml2015-format-error err))
 	     nil)
 	    (quit
-	     (mm-set-handle-multipart-parameter
-	      mm-security-handle 'gnus-details "Quit.")
+	     (mm-sec-error 'gnus-details "Quit.")
 	     nil)))
     (if (car result)
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "OK")
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info "Failed"))))
+	(mm-sec-status 'gnus-info "OK")
+      (mm-sec-error 'gnus-info "Failed"))))
 
 (defun mml2015-fix-micalg (alg)
   (and alg
@@ -327,8 +301,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 				   ctl 'protocol)
 				  "application/pgp-signature")
 			  t))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "Corrupted")
+	(mm-sec-error 'gnus-info "Corrupted")
 	(throw 'error handle))
       (with-temp-buffer
 	(insert "-----BEGIN PGP SIGNED MESSAGE-----\n")
@@ -347,8 +320,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	    (forward-line)))
 	(unless (setq part (mm-find-part-by-type
 			    (cdr handle) "application/pgp-signature" nil t))
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "Corrupted")
+	  (mm-sec-error 'gnus-info "Corrupted")
 	  (throw 'error handle))
 	(save-restriction
 	  (narrow-to-region (point) (point))
@@ -363,8 +335,8 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 		      (prog1
 			  (funcall mml2015-verify-function)
 			(if (get-buffer " *mailcrypt stderr temp")
-			    (mm-set-handle-multipart-parameter
-			     mm-security-handle 'gnus-details
+			    (mm-sec-error
+			     'gnus-details
 			     (with-current-buffer " *mailcrypt stderr temp"
 			       (buffer-string))))
 			(if (get-buffer " *mailcrypt stdout temp")
@@ -376,18 +348,14 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 			(if (get-buffer mc-gpg-debug-buffer)
 			    (kill-buffer mc-gpg-debug-buffer)))
 		    (error
-		     (mm-set-handle-multipart-parameter
-		      mm-security-handle 'gnus-details (mml2015-format-error err))
+		     (mm-sec-error 'gnus-details (mml2015-format-error err))
 		     nil)
 		    (quit
-		     (mm-set-handle-multipart-parameter
-		      mm-security-handle 'gnus-details "Quit.")
+		     (mm-sec-error 'gnus-details "Quit.")
 		     nil))
-	    (mm-set-handle-multipart-parameter
-	     mm-security-handle 'gnus-info "Failed")
+	    (mm-sec-error 'gnus-info "Failed")
 	    (throw 'error handle))))
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info "OK")
+      (mm-sec-status 'gnus-info "OK")
       handle)))
 
 (defun mml2015-mailcrypt-clear-verify ()
@@ -396,8 +364,8 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	    (prog1
 		(funcall mml2015-verify-function)
 	      (if (get-buffer " *mailcrypt stderr temp")
-		  (mm-set-handle-multipart-parameter
-		   mm-security-handle 'gnus-details
+		  (mm-sec-error
+		   'gnus-details
 		   (with-current-buffer " *mailcrypt stderr temp"
 		     (buffer-string))))
 	      (if (get-buffer " *mailcrypt stdout temp")
@@ -409,17 +377,13 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	      (if (get-buffer mc-gpg-debug-buffer)
 		  (kill-buffer mc-gpg-debug-buffer)))
 	  (error
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details (mml2015-format-error err))
+	   (mm-sec-error 'gnus-details (mml2015-format-error err))
 	   nil)
 	  (quit
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details "Quit.")
+	   (mm-sec-error 'gnus-details "Quit.")
 	   nil))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "OK")
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info "Failed")))
+	(mm-sec-status 'gnus-info "OK")
+      (mm-sec-error 'gnus-info "Failed")))
   (mml2015-extract-cleartext-signature))
 
 (defun mml2015-mailcrypt-sign (cont)
@@ -481,14 +445,17 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 			(or (y-or-n-p "Sign the message? ")
 			    'not))))
 	     'never)))
-    (mm-with-unibyte-current-buffer
-      (mc-encrypt-generic
-       (or (message-options-get 'message-recipients)
-	   (message-options-set 'message-recipients
-			      (mc-cleanup-recipient-headers
-			       (read-string "Recipients: "))))
-       nil nil nil
-       (message-options-get 'message-sender))))
+    (insert
+     (with-temp-buffer
+       (set-buffer-multibyte nil)
+       (mc-encrypt-generic
+	(or (message-options-get 'message-recipients)
+	    (message-options-set 'message-recipients
+				 (mc-cleanup-recipient-headers
+				  (read-string "Recipients: "))))
+	nil nil nil
+	(message-options-get 'message-sender))
+       (buffer-string))))
   (goto-char (point-min))
   (unless (looking-at "-----BEGIN PGP MESSAGE-----")
     (error "Fail to encrypt the message"))
@@ -524,8 +491,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
       (unless (setq child (mm-find-part-by-type
 			   (cdr handle)
 			   "application/octet-stream" nil t))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "Corrupted")
+	(mm-sec-error 'gnus-info "Corrupted")
 	(throw 'error handle))
       (with-temp-buffer
 	(mm-insert-part child)
@@ -535,16 +501,12 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 		  (setq decrypt-status
 			(with-current-buffer mml2015-result-buffer
 			  (buffer-string)))
-		  (mm-set-handle-multipart-parameter
-		   mm-security-handle 'gnus-details
-		   decrypt-status))
+		  (mm-sec-status 'gnus-details decrypt-status))
 	      (error
-	       (mm-set-handle-multipart-parameter
-		mm-security-handle 'gnus-details (mml2015-format-error err))
+	       (mm-sec-error 'gnus-details (mml2015-format-error err))
 	       nil)
 	      (quit
-	       (mm-set-handle-multipart-parameter
-		mm-security-handle 'gnus-details "Quit.")
+	       (mm-sec-error 'gnus-details "Quit.")
 	       nil))
 	    (with-current-buffer pgg-output-buffer
 	      (goto-char (point-min))
@@ -552,27 +514,24 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 		(replace-match "\n" t t))
 	      (setq handles (mm-dissect-buffer t))
 	      (mm-destroy-parts handle)
-	      (mm-set-handle-multipart-parameter
-	       mm-security-handle 'gnus-info "OK")
-	      (mm-set-handle-multipart-parameter
-	       mm-security-handle 'gnus-details
-	       (concat decrypt-status
-		       (when (stringp (car handles))
-			 "\n" (mm-handle-multipart-ctl-parameter
-			       handles 'gnus-details))))
+	      (mm-sec-status 'gnus-info "OK"
+			     'gnus-details
+			     (concat decrypt-status
+				     (when (stringp (car handles))
+				       "\n" (mm-handle-multipart-ctl-parameter
+					     handles 'gnus-details))))
 	      (if (listp (car handles))
 		  handles
 		(list handles)))
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "Failed")
+	  (mm-sec-error 'gnus-info "Failed")
 	  (throw 'error handle))))))
 
 (defun mml2015-pgg-clear-decrypt ()
   (let ((pgg-errors-buffer mml2015-result-buffer))
     (if (prog1
 	    (pgg-decrypt-region (point-min) (point-max))
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-details
+	  (mm-sec-status
+	   'gnus-details
 	   (with-current-buffer mml2015-result-buffer
 	     (buffer-string))))
 	(progn
@@ -583,10 +542,8 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	  (goto-char (point-min))
 	  (while (search-forward "\r\n" nil t)
 	    (replace-match "\n" t t))
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "OK"))
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info "Failed"))))
+	  (mm-sec-status 'gnus-info "OK"))
+      (mm-sec-error 'gnus-info "Failed"))))
 
 (defun mml2015-pgg-verify (handle ctl)
   (let ((pgg-errors-buffer mml2015-result-buffer)
@@ -596,11 +553,11 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 				       ctl 'protocol)
 				      "application/pgp-signature")
 			      t)))
-	    (null (setq signature (mm-find-part-by-type
-				   (cdr handle) "application/pgp-signature" nil t))))
+	    (null (setq signature
+			(mm-find-part-by-type
+			 (cdr handle) "application/pgp-signature" nil t))))
 	(progn
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "Corrupted")
+	  (mm-sec-error 'gnus-info "Corrupted")
 	  handle)
       (with-temp-buffer
 	(insert part)
@@ -613,7 +570,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	    (insert "\r"))
 	  (forward-line)
 	  (end-of-line))
-	(with-temp-file (setq signature-file (mm-make-temp-file "pgg"))
+	(with-temp-file (setq signature-file (make-temp-file "pgg"))
 	  (mm-insert-part signature))
 	(if (condition-case err
 		(prog1
@@ -622,29 +579,26 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 		  (goto-char (point-min))
 		  (while (search-forward "\r\n" nil t)
 		    (replace-match "\n" t t))
-		  (mm-set-handle-multipart-parameter
-		   mm-security-handle 'gnus-details
+		  (mm-sec-status
+		   'gnus-details
 		   (concat (with-current-buffer pgg-output-buffer
 			     (buffer-string))
 			   (with-current-buffer pgg-errors-buffer
 			     (buffer-string)))))
 	      (error
-	       (mm-set-handle-multipart-parameter
-		mm-security-handle 'gnus-details (mml2015-format-error err))
+	       (mm-sec-error 'gnus-details (mml2015-format-error err))
 	       nil)
 	      (quit
-	       (mm-set-handle-multipart-parameter
-		mm-security-handle 'gnus-details "Quit.")
+	       (mm-sec-error 'gnus-details "Quit.")
 	       nil))
 	    (progn
 	      (delete-file signature-file)
-	      (mm-set-handle-multipart-parameter
-	       mm-security-handle 'gnus-info
+	      (mm-sec-error
+	       'gnus-info
 	       (with-current-buffer pgg-errors-buffer
 		 (mml2015-gpg-extract-signature-details))))
 	  (delete-file signature-file)
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "Failed")))))
+	  (mm-sec-error 'gnus-info "Failed")))))
   handle)
 
 (defun mml2015-pgg-clear-verify ()
@@ -654,31 +608,28 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
     (if (condition-case err
 	    (prog1
 		(mm-with-unibyte-buffer
-		  (insert (mm-encode-coding-string text coding-system))
+		  (insert (encode-coding-string text coding-system))
 		  (pgg-verify-region (point-min) (point-max) nil t))
 	      (goto-char (point-min))
 	      (while (search-forward "\r\n" nil t)
 		(replace-match "\n" t t))
-	      (mm-set-handle-multipart-parameter
-	       mm-security-handle 'gnus-details
+	      (mm-sec-status
+	       'gnus-details
 	       (concat (with-current-buffer pgg-output-buffer
 			 (buffer-string))
 		       (with-current-buffer pgg-errors-buffer
 			 (buffer-string)))))
 	  (error
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details (mml2015-format-error err))
+	   (mm-sec-error 'gnus-details (mml2015-format-error err))
 	   nil)
 	  (quit
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details "Quit.")
+	   (mm-sec-error 'gnus-details "Quit.")
 	   nil))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info
+	(mm-sec-status
+	 'gnus-info
 	 (with-current-buffer pgg-errors-buffer
 	   (mml2015-gpg-extract-signature-details)))
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info "Failed")))
+      (mm-sec-error 'gnus-info "Failed")))
   (mml2015-extract-cleartext-signature))
 
 (defun mml2015-pgg-sign (cont)
@@ -774,105 +725,10 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 (autoload 'epg-expand-group "epg-config")
 (autoload 'epa-select-keys "epa")
 
-(defvar mml2015-epg-secret-key-id-list nil)
-
-(defun mml2015-epg-passphrase-callback (context key-id ignore)
-  (if (eq key-id 'SYM)
-      (epg-passphrase-callback-function context key-id nil)
-    (let* ((password-cache-key-id
-	    (if (eq key-id 'PIN)
-		"PIN"
-	       key-id))
-	   entry
-	   (passphrase
-	    (password-read
-	     (if (eq key-id 'PIN)
-		 "Passphrase for PIN: "
-	       (if (setq entry (assoc key-id epg-user-id-alist))
-		   (format "Passphrase for %s %s: " key-id (cdr entry))
-		 (format "Passphrase for %s: " key-id)))
-	     password-cache-key-id)))
-      (when passphrase
-	(let ((password-cache-expiry mml2015-passphrase-cache-expiry))
-	  (password-cache-add password-cache-key-id passphrase))
-	(setq mml2015-epg-secret-key-id-list
-	      (cons password-cache-key-id mml2015-epg-secret-key-id-list))
-	(copy-sequence passphrase)))))
-
-(defun mml2015-epg-check-user-id (key recipient)
-  (let ((pointer (epg-key-user-id-list key))
-	result)
-    (while pointer
-      (if (and (equal (car (mail-header-parse-address
-			    (epg-user-id-string (car pointer))))
-		      (car (mail-header-parse-address
-			    recipient)))
-	       (not (memq (epg-user-id-validity (car pointer))
-			  '(revoked expired))))
-	  (setq result t
-		pointer nil)
-	(setq pointer (cdr pointer))))
-    result))
-
-(defun mml2015-epg-check-sub-key (key usage)
-  (let ((pointer (epg-key-sub-key-list key))
-	result)
-    ;; The primary key will be marked as disabled, when the entire
-    ;; key is disabled (see 12 Field, Format of colon listings, in
-    ;; gnupg/doc/DETAILS)
-    (unless (memq 'disabled (epg-sub-key-capability (car pointer)))
-      (while pointer
-	(if (and (memq usage (epg-sub-key-capability (car pointer)))
-		 (not (memq (epg-sub-key-validity (car pointer))
-			    '(revoked expired))))
-	    (setq result t
-		  pointer nil)
-	  (setq pointer (cdr pointer)))))
-    result))
-
-(defun mml2015-epg-find-usable-key (context name usage
-					    &optional name-is-key-id)
-  (let ((keys (epg-list-keys context name))
-	key)
-    (while keys
-      (if (and (or name-is-key-id
-		   ;; Non email user-id can be supplied through
-		   ;; mml2015-signers if mml2015-encrypt-to-self is set.
-		   ;; Treat it as valid, as it is user's intention.
-		   (not (string-match "\\`<" name))
-		   (mml2015-epg-check-user-id (car keys) name))
-	       (mml2015-epg-check-sub-key (car keys) usage))
-	  (setq key (car keys)
-		keys nil)
-	(setq keys (cdr keys))))
-    key))
-
-;; XXX: since gpg --list-secret-keys does not return validity of each
-;; key, `mml2015-epg-find-usable-key' defined above is not enough for
-;; secret keys.  The function `mml2015-epg-find-usable-secret-key'
-;; below looks at appropriate public keys to check usability.
-(defun mml2015-epg-find-usable-secret-key (context name usage)
-  (let ((secret-keys (epg-list-keys context name t))
-	secret-key)
-    (while (and (not secret-key) secret-keys)
-      (if (mml2015-epg-find-usable-key
-	   context
-	   (epg-sub-key-fingerprint
-	    (car (epg-key-sub-key-list
-		  (car secret-keys))))
-	   usage
-	   t)
-	  (setq secret-key (car secret-keys)
-		secret-keys nil)
-	(setq secret-keys (cdr secret-keys))))
-    secret-key))
-
-(autoload 'gnus-create-image "gnus-ems")
-
 (defun mml2015-epg-key-image (key-id)
-  "Return the image of a key, if any"
+  "Return the image of a key, if any."
   (with-temp-buffer
-    (mm-set-buffer-multibyte nil)
+    (set-buffer-multibyte nil)
     (let* ((coding-system-for-write 'binary)
            (coding-system-for-read 'binary)
            (data (shell-command-to-string
@@ -887,7 +743,7 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 (autoload 'gnus-rescale-image "gnus-util")
 
 (defun mml2015-epg-key-image-to-string (key-id)
-  "Return a string with the image of a key, if any"
+  "Return a string with the image of a key, if any."
   (let ((key-image (mml2015-epg-key-image key-id)))
     (if (not key-image)
 	""
@@ -917,29 +773,22 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
       (unless (setq child (mm-find-part-by-type
 			   (cdr handle)
 			   "application/octet-stream" nil t))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "Corrupted")
+	(mm-sec-error 'gnus-info "Corrupted")
 	(throw 'error handle))
       (setq context (epg-make-context))
-      (if mml2015-cache-passphrase
+      (if (or mml2015-cache-passphrase mml-secure-cache-passphrase)
 	  (epg-context-set-passphrase-callback
 	   context
-	   #'mml2015-epg-passphrase-callback))
+	   (cons 'mml-secure-passphrase-callback 'OpenPGP)))
       (condition-case error
 	  (setq plain (epg-decrypt-string context (mm-get-part child))
-		mml2015-epg-secret-key-id-list nil)
+		mml-secure-secret-key-id-list nil)
 	(error
-	 (while mml2015-epg-secret-key-id-list
-	   (password-cache-remove (car mml2015-epg-secret-key-id-list))
-	   (setq mml2015-epg-secret-key-id-list
-		 (cdr mml2015-epg-secret-key-id-list)))
-	 (mm-set-handle-multipart-parameter
-	  mm-security-handle 'gnus-info "Failed")
+	 (mml-secure-clear-secret-key-id-list)
+	 (mm-sec-error 'gnus-info "Failed")
 	 (if (eq (car error) 'quit)
-	     (mm-set-handle-multipart-parameter
-	      mm-security-handle 'gnus-details "Quit.")
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details (mml2015-format-error error)))
+	     (mm-sec-status 'gnus-details "Quit.")
+	   (mm-sec-status 'gnus-details (mml2015-format-error error)))
 	 (throw 'error handle)))
       (with-temp-buffer
 	(insert plain)
@@ -949,16 +798,15 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 	(setq handles (mm-dissect-buffer t))
 	(mm-destroy-parts handle)
 	(if (epg-context-result-for context 'verify)
-	    (mm-set-handle-multipart-parameter
-	     mm-security-handle 'gnus-info
+	    (mm-sec-status
+	     'gnus-info
 	     (concat "OK\n"
 		     (mml2015-epg-verify-result-to-string
 		      (epg-context-result-for context 'verify))))
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info "OK"))
+	  (mm-sec-status 'gnus-info "OK"))
 	(if (stringp (car handles))
-	    (mm-set-handle-multipart-parameter
-	     mm-security-handle 'gnus-details
+	    (mm-sec-status
+	     'gnus-details
 	     (mm-handle-multipart-ctl-parameter handles 'gnus-details))))
 	(if (listp (car handles))
 	    handles
@@ -968,25 +816,19 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
   (let ((inhibit-redisplay t)
 	(context (epg-make-context))
 	plain)
-    (if mml2015-cache-passphrase
+    (if (or mml2015-cache-passphrase mml-secure-cache-passphrase)
 	(epg-context-set-passphrase-callback
 	 context
-	 #'mml2015-epg-passphrase-callback))
+	 (cons 'mml-secure-passphrase-callback 'OpenPGP)))
     (condition-case error
 	(setq plain (epg-decrypt-string context (buffer-string))
-	      mml2015-epg-secret-key-id-list nil)
+	      mml-secure-secret-key-id-list nil)
       (error
-       (while mml2015-epg-secret-key-id-list
-	 (password-cache-remove (car mml2015-epg-secret-key-id-list))
-	 (setq mml2015-epg-secret-key-id-list
-	       (cdr mml2015-epg-secret-key-id-list)))
-       (mm-set-handle-multipart-parameter
-	mm-security-handle 'gnus-info "Failed")
+       (mml-secure-clear-secret-key-id-list)
+       (mm-sec-error 'gnus-info "Failed")
        (if (eq (car error) 'quit)
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details "Quit.")
-	 (mm-set-handle-multipart-parameter
-	  mm-security-handle 'gnus-details (mml2015-format-error error)))))
+	   (mm-sec-status 'gnus-details "Quit.")
+	 (mm-sec-status 'gnus-details (mml2015-format-error error)))))
     (when plain
       (erase-buffer)
       ;; Treat data which epg returns as a unibyte string.
@@ -995,11 +837,10 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
       (goto-char (point-min))
       (while (search-forward "\r\n" nil t)
 	(replace-match "\n" t t))
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info "OK")
+      (mm-sec-status 'gnus-info "OK")
       (if (epg-context-result-for context 'verify)
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-details
+	  (mm-sec-status
+	   'gnus-details
 	   (mml2015-epg-verify-result-to-string
 	    (epg-context-result-for context 'verify)))))))
 
@@ -1015,25 +856,20 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 		(null (setq signature (mm-find-part-by-type
 				       (cdr handle) "application/pgp-signature"
 				       nil t))))
-	(mm-set-handle-multipart-parameter
-	 mm-security-handle 'gnus-info "Corrupted")
+	(mm-sec-error 'gnus-info "Corrupted")
 	(throw 'error handle))
-      (setq part (mm-replace-in-string part "\n" "\r\n")
+      (setq part (replace-regexp-in-string "\n" "\r\n" part)
 	    signature (mm-get-part signature)
 	    context (epg-make-context))
       (condition-case error
 	  (setq plain (epg-verify-string context signature part))
 	(error
-	 (mm-set-handle-multipart-parameter
-	  mm-security-handle 'gnus-info "Failed")
+	 (mm-sec-error 'gnus-info "Failed")
 	 (if (eq (car error) 'quit)
-	     (mm-set-handle-multipart-parameter
-	      mm-security-handle 'gnus-details "Quit.")
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details (mml2015-format-error error)))
+	     (mm-sec-status 'gnus-details "Quit.")
+	   (mm-sec-status 'gnus-details (mml2015-format-error error)))
 	 (throw 'error handle)))
-      (mm-set-handle-multipart-parameter
-       mm-security-handle 'gnus-info
+      (mm-sec-status 'gnus-info
        (mml2015-epg-verify-result-to-string
 	(epg-context-result-for context 'verify)))
       handle)))
@@ -1041,200 +877,60 @@ If set, it overrides the setting of `mml2015-sign-with-sender'."
 (defun mml2015-epg-clear-verify ()
   (let ((inhibit-redisplay t)
 	(context (epg-make-context))
-	(signature (mm-encode-coding-string (buffer-string)
-					    coding-system-for-write))
+	(signature (encode-coding-string (buffer-string)
+					 coding-system-for-write))
 	plain)
     (condition-case error
 	(setq plain (epg-verify-string context signature))
       (error
-       (mm-set-handle-multipart-parameter
-	mm-security-handle 'gnus-info "Failed")
+       (mm-sec-error 'gnus-info "Failed")
        (if (eq (car error) 'quit)
-	   (mm-set-handle-multipart-parameter
-	    mm-security-handle 'gnus-details "Quit.")
-	 (mm-set-handle-multipart-parameter
-	  mm-security-handle 'gnus-details (mml2015-format-error error)))))
+	   (mm-sec-status 'gnus-details "Quit.")
+	 (mm-sec-status 'gnus-details (mml2015-format-error error)))))
     (if plain
 	(progn
-	  (mm-set-handle-multipart-parameter
-	   mm-security-handle 'gnus-info
+	  (mm-sec-status
+	   'gnus-info
 	   (mml2015-epg-verify-result-to-string
 	    (epg-context-result-for context 'verify)))
 	  (delete-region (point-min) (point-max))
-	  (insert (mm-decode-coding-string plain coding-system-for-read)))
+	  (insert (decode-coding-string plain coding-system-for-read)))
       (mml2015-extract-cleartext-signature))))
 
 (defun mml2015-epg-sign (cont)
-  (let* ((inhibit-redisplay t)
-	 (context (epg-make-context))
-	 (boundary (mml-compute-boundary cont))
-	 (sender (message-options-get 'message-sender))
-	 (signer-names (or mml2015-signers
-			   (if (and mml2015-sign-with-sender sender)
-			       (list (concat "<" sender ">")))))
-	 signer-key
-	 (signers
-	  (or (message-options-get 'mml2015-epg-signers)
-	      (message-options-set
-	       'mml2015-epg-signers
-	       (if (eq mm-sign-option 'guided)
-		   (epa-select-keys context "\
-Select keys for signing.
-If no one is selected, default secret key is used.  "
-				    signer-names
-				    t)
-		 (if (or sender mml2015-signers)
-		     (delq nil
-			   (mapcar
-			    (lambda (signer)
-			      (setq signer-key
-				    (mml2015-epg-find-usable-secret-key
-				     context signer 'sign))
-			      (unless (or signer-key
-					  (y-or-n-p
-					   (format
-					    "No secret key for %s; skip it? "
-					    signer)))
-				(error "No secret key for %s" signer))
-			      signer-key)
-			    signer-names)))))))
-	 signature micalg)
-    (epg-context-set-armor context t)
-    (epg-context-set-textmode context t)
-    (epg-context-set-signers context signers)
-    (if mml2015-cache-passphrase
-	(epg-context-set-passphrase-callback
-	 context
-	 #'mml2015-epg-passphrase-callback))
+  (let ((inhibit-redisplay t)
+	(boundary (mml-compute-boundary cont)))
     ;; Signed data must end with a newline (RFC 3156, 5).
     (goto-char (point-max))
     (unless (bolp)
       (insert "\n"))
-    (condition-case error
-	(setq signature (epg-sign-string context (buffer-string) t)
-	      mml2015-epg-secret-key-id-list nil)
-      (error
-       (while mml2015-epg-secret-key-id-list
-	 (password-cache-remove (car mml2015-epg-secret-key-id-list))
-	 (setq mml2015-epg-secret-key-id-list
-	       (cdr mml2015-epg-secret-key-id-list)))
-       (signal (car error) (cdr error))))
-    (if (epg-context-result-for context 'sign)
-	(setq micalg (epg-new-signature-digest-algorithm
-		      (car (epg-context-result-for context 'sign)))))
-    (goto-char (point-min))
-    (insert (format "Content-Type: multipart/signed; boundary=\"%s\";\n"
-		    boundary))
-    (if micalg
-	(insert (format "\tmicalg=pgp-%s; "
-			(downcase
-			 (cdr (assq micalg
-				    epg-digest-algorithm-alist))))))
-    (insert "protocol=\"application/pgp-signature\"\n")
-    (insert (format "\n--%s\n" boundary))
-    (goto-char (point-max))
-    (insert (format "\n--%s\n" boundary))
-    (insert "Content-Type: application/pgp-signature; name=\"signature.asc\"\n\n")
-    (insert signature)
-    (goto-char (point-max))
-    (insert (format "--%s--\n" boundary))
-    (goto-char (point-max))))
+    (let* ((pair (mml-secure-epg-sign 'OpenPGP t))
+	   (signature (car pair))
+	   (micalg (cdr pair)))
+      (unless (stringp signature)
+        (error "Signature failed"))
+      (goto-char (point-min))
+      (insert (format "Content-Type: multipart/signed; boundary=\"%s\";\n"
+		      boundary))
+      (if micalg
+	  (insert (format "\tmicalg=pgp-%s; "
+			  (downcase
+			   (cdr (assq micalg
+				      epg-digest-algorithm-alist))))))
+      (insert "protocol=\"application/pgp-signature\"\n")
+      (insert (format "\n--%s\n" boundary))
+      (goto-char (point-max))
+      (insert (format "\n--%s\n" boundary))
+      (insert "Content-Type: application/pgp-signature; name=\"signature.asc\"\n\n")
+      (insert signature)
+      (goto-char (point-max))
+      (insert (format "--%s--\n" boundary))
+      (goto-char (point-max)))))
 
 (defun mml2015-epg-encrypt (cont &optional sign)
   (let* ((inhibit-redisplay t)
-	 (context (epg-make-context))
 	 (boundary (mml-compute-boundary cont))
-	 (config (epg-configuration))
-	 (recipients (message-options-get 'mml2015-epg-recipients))
-	 cipher
-	 (sender (message-options-get 'message-sender))
-	 (signer-names (or mml2015-signers
-			   (if (and mml2015-sign-with-sender sender)
-			       (list (concat "<" sender ">")))))
-	 signers
-	 recipient-key signer-key)
-    (unless recipients
-      (setq recipients
-	    (apply #'nconc
-		   (mapcar
-		    (lambda (recipient)
-		      (or (epg-expand-group config recipient)
-			  (list (concat "<" recipient ">"))))
-		    (split-string
-		     (or (message-options-get 'message-recipients)
-			 (message-options-set 'message-recipients
-					      (read-string "Recipients: ")))
-		     "[ \f\t\n\r\v,]+"))))
-      (when mml2015-encrypt-to-self
-	(unless signer-names
-	  (error "Neither message sender nor mml2015-signers are set"))
-	(setq recipients (nconc recipients signer-names)))
-      (if (eq mm-encrypt-option 'guided)
-	  (setq recipients
-		(epa-select-keys context "\
-Select recipients for encryption.
-If no one is selected, symmetric encryption will be performed.  "
-				 recipients))
-	(setq recipients
-	      (delq nil
-		    (mapcar
-		     (lambda (recipient)
-		       (setq recipient-key (mml2015-epg-find-usable-key
-					    context recipient 'encrypt))
-		       (unless (or recipient-key
-				   (y-or-n-p
-				    (format "No public key for %s; skip it? "
-					    recipient)))
-			 (error "No public key for %s" recipient))
-		       recipient-key)
-		     recipients)))
-	(unless recipients
-	  (error "No recipient specified")))
-      (message-options-set 'mml2015-epg-recipients recipients))
-    (when sign
-      (setq signers
-	    (or (message-options-get 'mml2015-epg-signers)
-		(message-options-set
-		 'mml2015-epg-signers
-		 (if (eq mm-sign-option 'guided)
-		     (epa-select-keys context "\
-Select keys for signing.
-If no one is selected, default secret key is used.  "
-				      signer-names
-				      t)
-		   (if (or sender mml2015-signers)
-		       (delq nil
-			     (mapcar
-			      (lambda (signer)
-				(setq signer-key
-				      (mml2015-epg-find-usable-secret-key
-				       context signer 'sign))
-				(unless (or signer-key
-					    (y-or-n-p
-					     (format
-					      "No secret key for %s; skip it? "
-					      signer)))
-				  (error "No secret key for %s" signer))
-				signer-key)
-			      signer-names)))))))
-      (epg-context-set-signers context signers))
-    (epg-context-set-armor context t)
-    (epg-context-set-textmode context t)
-    (if mml2015-cache-passphrase
-	(epg-context-set-passphrase-callback
-	 context
-	 #'mml2015-epg-passphrase-callback))
-    (condition-case error
-	(setq cipher
-	      (epg-encrypt-string context (buffer-string) recipients sign
-				  mml2015-always-trust)
-	      mml2015-epg-secret-key-id-list nil)
-      (error
-       (while mml2015-epg-secret-key-id-list
-	 (password-cache-remove (car mml2015-epg-secret-key-id-list))
-	 (setq mml2015-epg-secret-key-id-list
-	       (cdr mml2015-epg-secret-key-id-list)))
-       (signal (car error) (cdr error))))
+	 (cipher (mml-secure-epg-encrypt 'OpenPGP cont sign)))
     (delete-region (point-min) (point-max))
     (goto-char (point-min))
     (insert (format "Content-Type: multipart/encrypted; boundary=\"%s\";\n"

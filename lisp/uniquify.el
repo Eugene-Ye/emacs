@@ -1,6 +1,6 @@
 ;;; uniquify.el --- unique buffer names dependent on file name -*- lexical-binding: t -*-
 
-;; Copyright (C) 1989, 1995-1997, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1989, 1995-1997, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Dick King <king@reasoning.com>
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -40,13 +40,10 @@
 
 ;; For other options, see "User-visible variables", below.
 
-;; A version of uniquify.el that works under Emacs 18, Emacs 19, XEmacs,
-;; and InfoDock is available from the maintainer.
-
 ;;; Change Log:
 
 ;; Originally by Dick King <king@reasoning.com> 15 May 86
-;; Converted for Emacs 18 by Stephen Gildea <gildea@stop.mail-abuse.org>
+;; Converted for Emacs 18 by Stephen Gildea <stepheng+emacs@gildea.com>
 ;; Make uniquify-min-dir-content 0 truly non-invasive.  gildea 23 May 89
 ;; Some cleanup.  uniquify-min-dir-content default 0.  gildea 01 Jun 89
 ;; Don't rename to "".  Michael Ernst <mernst@theory.lcs.mit.edu> 15 Jun 94
@@ -116,20 +113,11 @@ you can set, browse the `uniquify' custom group."
 		(const post-forward-angle-brackets)
 		(const :tag "numeric suffixes" nil))
   :version "24.4"
-  :require 'uniquify
-  :group 'uniquify)
+  :require 'uniquify)
 
 (defcustom uniquify-after-kill-buffer-p t
   "If non-nil, rerationalize buffer names after a buffer has been killed."
-  :type 'boolean
-  :group 'uniquify)
-
-(defcustom uniquify-ask-about-buffer-names-p nil
-  "If non-nil, permit user to choose names for buffers with same base file.
-If the user chooses to name a buffer, uniquification is preempted and no
-other buffer names are changed."
-  :type 'boolean
-  :group 'uniquify)
+  :type 'boolean)
 
 ;; The default value matches certain Gnus buffers.
 (defcustom uniquify-ignore-buffers-re nil
@@ -137,13 +125,11 @@ other buffer names are changed."
 For instance, set this to \"^draft-[0-9]+$\" to avoid having uniquify rename
 draft buffers even if `uniquify-after-kill-buffer-p' is non-nil and the
 visited file name isn't the same as that of the buffer."
-  :type '(choice (const :tag "Uniquify all buffers" nil) regexp)
-  :group 'uniquify)
+  :type '(choice (const :tag "Uniquify all buffers" nil) regexp))
 
 (defcustom uniquify-min-dir-content 0
   "Minimum number of directory name components included in buffer name."
-  :type 'integer
-  :group 'uniquify)
+  :type 'integer)
 
 (defcustom uniquify-separator nil
   "String separator for buffer name components.
@@ -151,16 +137,14 @@ When `uniquify-buffer-name-style' is `post-forward', separates
 base file name from directory part in buffer names (default \"|\").
 When `uniquify-buffer-name-style' is `reverse', separates all
 file name components (default \"\\\")."
-  :type '(choice (const nil) string)
-  :group 'uniquify)
+  :type '(choice (const nil) string))
 
 (defcustom uniquify-trailing-separator-p nil
   "If non-nil, add a file name separator to dired buffer names.
 If `uniquify-buffer-name-style' is `forward', add the separator at the end;
 if it is `reverse', add the separator at the beginning; otherwise, this
 variable is ignored."
-  :type 'boolean
-  :group 'uniquify)
+  :type 'boolean)
 
 (defcustom uniquify-strip-common-suffix
   ;; Using it when uniquify-min-dir-content>0 doesn't make much sense.
@@ -169,8 +153,7 @@ variable is ignored."
 E.g. if you open /a1/b/c/d and /a2/b/c/d, the buffer names will say
 \"d|a1\" and \"d|a2\" instead of \"d|a1/b/c\" and \"d|a2/b/c\".
 This can be handy when you have deep parallel hierarchies."
-  :type 'boolean
-  :group 'uniquify)
+  :type 'boolean)
 
 (defvar uniquify-list-buffers-directory-modes '(dired-mode cvs-mode vc-dir-mode)
   "List of modes for which uniquify should obey `list-buffers-directory'.

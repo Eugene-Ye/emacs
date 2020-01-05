@@ -1,9 +1,9 @@
 ;;; texinfmt.el --- format Texinfo files into Info files
 
-;; Copyright (C) 1985-1986, 1988, 1990-1998, 2000-2014 Free Software
+;; Copyright (C) 1985-1986, 1988, 1990-1998, 2000-2020 Free Software
 ;; Foundation, Inc.
 
-;; Maintainer: Robert J. Chassell <bug-texinfo@gnu.org>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: maint, tex, docs
 
 ;; This file is part of GNU Emacs.
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -34,7 +34,7 @@
 If optional argument HERE is non-nil, insert info at point."
   (interactive "P")
   (let ((version-string
-         (format "Version of \`texinfmt.el\': %s" texinfmt-version)))
+         (format-message "Version of `texinfmt.el': %s" texinfmt-version)))
     (if here
         (insert version-string)
       (if (called-interactively-p 'interactive)
@@ -330,25 +330,24 @@ converted to Info is stored in a temporary buffer."
           (let ((arg (texinfo-parse-arg-discard)))
             (insert " "
               texinfo-region-buffer-name
-              " buffer for:  `")
+              (format-message " buffer for:  `"))
             (insert (file-name-nondirectory (expand-file-name arg)))
-            (insert "',        -*-Text-*-\n")))
+            (insert (format-message "',        -*-Text-*-\n"))))
       ;; Else no `@setfilename' line
       (insert " "
               texinfo-region-buffer-name
               " buffer                       -*-Text-*-\n"))
-    (insert "produced by `texinfo-format-region'\n"
+    (insert (format-message "produced by `texinfo-format-region'\n")
             "from a region in: "
             (if (buffer-file-name input-buffer)
-                  (concat "`"
-                          (file-name-sans-versions
-                           (file-name-nondirectory
-                            (buffer-file-name input-buffer)))
-                          "'")
-                (concat "buffer `" (buffer-name input-buffer) "'"))
-              "\nusing `texinfmt.el' version "
-              texinfmt-version
-              ".\n\n")
+		(format-message "`%s'"
+			(file-name-sans-versions
+			 (file-name-nondirectory
+			  (buffer-file-name input-buffer))))
+	      (format-message "buffer `%s'" (buffer-name input-buffer)))
+            (format-message "\nusing `texinfmt.el' version ")
+            texinfmt-version
+            ".\n\n")
 
     ;; Now convert for real.
     (goto-char (point-min))
@@ -479,19 +478,18 @@ if large.  You can use `Info-split' to do this manually."
     ;; Insert info about how this file was made.
     (insert "Info file: "
             texinfo-format-filename ",    -*-Text-*-\n"
-            "produced by `texinfo-format-buffer'\n"
+            (format-message "produced by `texinfo-format-buffer'\n")
             ;; Date string removed so that regression testing is easier.
             ;; "on "
             ;; (insert (format-time-string "%e %b %Y")) " "
             "from file"
             (if (buffer-file-name input-buffer)
-                (concat " `"
+                (format-message " `%s'"
                         (file-name-sans-versions
                          (file-name-nondirectory
-                          (buffer-file-name input-buffer)))
-                        "'")
-              (concat "buffer `" (buffer-name input-buffer) "'"))
-            "\nusing `texinfmt.el' version "
+                          (buffer-file-name input-buffer))))
+              (format-message "buffer `%s'" (buffer-name input-buffer)))
+            (format-message "\nusing `texinfmt.el' version ")
             texinfmt-version
             ".\n\n")
     ;; Return data for indices.
@@ -554,13 +552,7 @@ if large.  You can use `Info-split' to do this manually."
 
 (defvar texinfo-accent-commands
   (concat
-   "@^\\|"
-   "@`\\|"
-   "@'\\|"
-   "@\"\\|"
-   "@,\\|"
-   "@=\\|"
-   "@~\\|"
+   "@[\"',=^`~]\\|"
    "@OE{\\|"
    "@oe{\\|"
    "@AA{\\|"
@@ -893,7 +885,7 @@ commands."
       ;; @ is followed by a command-word; find the end of the word.
       (setq texinfo-command-start (1- (point)))
       (if (= (char-syntax (following-char)) ?w)
-          (forward-word 1)
+          (forward-word-strictly 1)
         (forward-char 1))
       (setq texinfo-command-end (point))
       ;; Detect the case of two @-commands in a row;
@@ -1045,7 +1037,7 @@ Leave point after argument."
            (setq texinfo-command-end (point)))
           (t
            (error
-            "Invalid `texinfo-optional-braces-discard' format \(need braces?\)")))
+            "Invalid `texinfo-optional-braces-discard' format (need braces?)")))
     (delete-region texinfo-command-start texinfo-command-end)))
 
 (defun texinfo-format-parse-line-args ()
@@ -1192,7 +1184,7 @@ Leave point after argument."
     (forward-paragraph)
     (let ((end (point)))
       (if (save-excursion
-            (backward-word 1)
+            (backward-word-strictly 1)
             (search-forward "@refill" end t))
           (setq anchor-string "@anchor-yes-refill")
         (setq anchor-string "@anchor-no-refill")))
@@ -1287,15 +1279,14 @@ Leave point after argument."
 (put 'uref 'texinfo-format 'texinfo-format-uref)
 (defun texinfo-format-uref ()
   "Format URL and optional URL-TITLE.
-Insert ` ... ' around URL if no URL-TITLE argument;
+Insert \\=` ... \\=' around URL if no URL-TITLE argument;
 otherwise, insert URL-TITLE followed by URL in parentheses."
   (let ((args (texinfo-format-parse-args)))
     (texinfo-discard-command)
     ;; if url-title
     (if (nth 1 args)
         (insert  (nth 1 args) " (" (nth 0 args) ")")
-      (insert "`" (nth 0 args) "'"))
-    (goto-char texinfo-command-start)))
+      (insert "`" (nth 0 args) "'"))))
 
 
 ;;; Section headings
@@ -2005,7 +1996,7 @@ commands that are defined in texinfo.tex for printed output.
       (error "In @multitable, @columnfractions misspelled"))
      ;; Case 1: @columnfractions .25 .3 .45
      ((looking-at "@columnfractions")
-      (forward-word 1)
+      (forward-word-strictly 1)
       (while (not (eolp))
         (push (truncate
                (1-
@@ -2024,7 +2015,7 @@ commands that are defined in texinfo.tex for printed output.
             (push (- end-of-template start-of-template)
                   texinfo-multitable-width-list)
             ;; Remove carriage return from within a template, if any.
-            ;; This helps those those who want to use more than
+            ;; This helps those who want to use more than
             ;; one line's worth of words in @multitable line.
             (narrow-to-region start-of-template end-of-template)
             (goto-char (point-min))
@@ -2120,7 +2111,7 @@ This command is executed when texinfmt sees @item inside @multitable."
                       ;; Delete the @tab command, including the @-sign
                       (delete-region
                        (point)
-                       (progn (forward-word -1) (1- (point)))))
+                       (progn (forward-word-strictly -1) (1- (point)))))
                   (point)))
       ;; Set fill-column *wider* than needed to produce inter-column space
       (setq fill-column (+ 1
@@ -2338,7 +2329,7 @@ Use only the FILENAME arg; for Info, ignore the other arguments to @image."
 ;; Write a `@definfoenclose' command on a line and follow it with three
 ;; arguments separated by commas (commas are used as separators in an
 ;; `@node' line in the same way).  The first argument to
-;; `@definfoenclose' is the @-command name \(without the `@'\); the
+;; `@definfoenclose' is the @-command name (without the `@'); the
 ;; second argument is the Info start delimiter string; and the third
 ;; argument is the Info end delimiter string.  The latter two arguments
 ;; enclose the highlighted text in the Info file.  A delimiter string
@@ -2447,9 +2438,9 @@ Use only the FILENAME arg; for Info, ignore the other arguments to @image."
 ;; not lead to inserted ` ... ' in a table, but does elsewhere.
 (put 'option 'texinfo-format 'texinfo-format-option)
 (defun texinfo-format-option ()
-  "Insert ` ... ' around arg unless inside a table; in that case, no quotes."
+  "Insert \\=` ... \\=' around arg unless inside a table; in that case, no quotes."
   ;; `looking-at-backward' not available in v. 18.57, 20.2
-  (if (not (search-backward ""    ; searched-for character is a control-H
+  (if (not (search-backward "\^H"
                     (line-beginning-position)
                     t))
       (insert "`" (texinfo-parse-arg-discard) "'")
@@ -2493,8 +2484,8 @@ surrounded by in angle brackets."
 Enclose the verbatim text, including the delimiters, in braces.  Print
 text exactly as written (but not the delimiters) in a fixed-width.
 
-For example, @verb\{|@|\} results in @ and
-@verb\{+@'e?`!`+} results in @'e?`!`."
+For example, @verb{|@|} results in @ and
+@verb{+@\\='e?\\=`!\\=`+} results in @\\='e?\\=`!\\=`."
 
   (let ((delimiter (buffer-substring-no-properties
 		    (1+ texinfo-command-end) (+ 2 texinfo-command-end))))
@@ -3127,7 +3118,7 @@ Default is to leave paragraph indentation as is."
 ;; (put '\` 'texinfo-format 'texinfo-format-grave-accent)
 ;; (defun texinfo-format-grave-accent ()
 ;;   (texinfo-discard-command)
-;;   (insert "\`"))
+;;   (insert "`"))
 ;;
 ;; @'              ==>    '         acute accent
 ;; (put '\' 'texinfo-format 'texinfo-format-acute-accent)

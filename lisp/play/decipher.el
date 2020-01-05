@@ -1,6 +1,6 @@
 ;;; decipher.el --- cryptanalyze monoalphabetic substitution ciphers
 ;;
-;; Copyright (C) 1995-1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995-1996, 2001-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Christopher J. Madsen <chris_madsen@geocities.com>
 ;; Keywords: games
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -307,12 +307,6 @@ The most useful commands are:
 ;; Normal key handling:
 ;;--------------------------------------------------------------------
 
-(defmacro decipher-last-command-char ()
-  ;; Return the char which ran this command (for compatibility with XEmacs)
-  (if (fboundp 'event-to-character)
-      '(event-to-character last-command-event)
-    'last-command-event))
-
 (defun decipher-keypress ()
   "Enter a plaintext or ciphertext character."
   (interactive)
@@ -338,7 +332,7 @@ The most useful commands are:
           (let (goal-column)
             (forward-line -1)))
       (let ((char-a (following-char))
-            (char-b (decipher-last-command-char)))
+            (char-b last-command-event))
         (or (and (not (= ?w (char-syntax char-a)))
                  (= char-b ?\s)) ;Spacebar just advances on non-letters
             (funcall decipher-function char-a char-b)))))
@@ -793,7 +787,7 @@ TOTAL is the total number of letters in the ciphertext."
         (insert (caar temp-list)
                 (format "%4d%3d%%  "
                         (cl-cadar temp-list)
-                        (/ (* 100 (cl-cadar temp-list)) total)))
+                        (floor (* 100.0 (cl-cadar temp-list)) total)))
         (setq temp-list (nthcdr 4 temp-list)))
       (insert ?\n)
       (setq freq-list (cdr freq-list)
@@ -957,7 +951,7 @@ Creates the statistics buffer if it doesn't exist."
                     ": A B C D E F G H I J K L M N O P Q R S T U V W X Y Z *"
                     (format "%4d %4d %3d%%\n  "
                             (cl-third entry) (cl-second entry)
-                            (/ (* 100 (cl-second entry)) total-chars))
+                            (floor (* 100.0 (cl-second entry)) total-chars))
                     (decipher--digram-counts (aref decipher--after  i)) ?\n))))
       (setq buffer-read-only t)
       (set-buffer-modified-p nil)

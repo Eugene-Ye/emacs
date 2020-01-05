@@ -1,5 +1,5 @@
 @c This is part of the Emacs manual.  -*- coding: utf-8 -*-
-@c Copyright (C) 1985-1987, 1993-1995, 1997, 2000-2014 Free Software
+@c Copyright (C) 1985--1987, 1993--1995, 1997, 2000--2020 Free Software
 @c Foundation, Inc.
 @c See file emacs.texi for copying conditions.
 @node Calendar/Diary
@@ -12,15 +12,15 @@ planned or past events.  It also has facilities for managing your
 appointments, and keeping track of how much time you spend working on
 certain projects.
 
-  To enter the calendar, type @kbd{M-x calendar}; this displays a
+  To enter the calendar, type @kbd{M-x calendar}.  This displays a
 three-month calendar centered on the current month, with point on the
 current date.  With a numeric argument, as in @kbd{C-u M-x calendar}, it
 prompts you for the month and year to be the center of the three-month
 calendar.  The calendar uses its own buffer, whose major mode is
 Calendar mode.
 
-  @kbd{Mouse-3} in the calendar brings up a menu of operations on a
-particular date; @kbd{Mouse-2} brings up a menu of commonly used
+  @kbd{mouse-3} in the calendar brings up a menu of operations on a
+particular date; @kbd{mouse-2} brings up a menu of commonly used
 calendar features that are independent of any particular date.  To exit
 the calendar, type @kbd{q}.
 
@@ -41,8 +41,6 @@ For more advanced topics,
 * Lunar Phases::        Displaying phases of the moon.
 * Other Calendars::     Converting dates to other calendar systems.
 * Diary::               Displaying events from your diary.
-* Appointments::        Reminders when it's time to do something.
-* Importing Diary::     Converting diary events to/from other formats.
 * Daylight Saving::     How to specify when daylight saving time is active.
 * Time Intervals::      Keeping track of time intervals.
 @ifnottex
@@ -57,7 +55,7 @@ For more advanced topics,
   Calendar mode provides commands to move through the calendar in
 logical units of time such as days, weeks, months, and years.  If you
 move outside the three months originally displayed, the calendar
-display ``scrolls'' automatically through time to make the selected
+display scrolls automatically through time to make the selected
 date visible.  Moving to a date lets you view its holidays or diary
 entries, or convert it to other calendars; moving by long time periods
 is also useful simply to scroll the calendar.
@@ -119,7 +117,7 @@ moves to the same day in the previous week.
 @kindex C-x ] @r{(Calendar mode)}
 @findex calendar-forward-year
 @kindex C-x [ @r{(Calendar mode)}
-@findex calendar-forward-year
+@findex calendar-backward-year
   The commands for motion by months and years work like those for
 weeks, but move a larger distance.  The month commands @kbd{M-@}} and
 @kbd{M-@{} move forward or backward by an entire month.  The year
@@ -128,10 +126,11 @@ whole year.
 
   The easiest way to remember these commands is to consider months and
 years analogous to paragraphs and pages of text, respectively.  But
-the commands themselves are not quite analogous.  The ordinary Emacs
-paragraph commands move to the beginning or end of a paragraph,
-whereas these month and year commands move by an entire month or an
-entire year, keeping the same date within the month or year.
+the calendar movement commands themselves do not quite parallel those
+for movement through text: the ordinary Emacs paragraph commands move
+to the beginning or end of a paragraph, whereas these month and year
+commands move by an entire month or an entire year, keeping the same
+date within the month or year.
 
   All these commands accept a numeric argument as a repeat count.
 For convenience, the digit keys and the minus sign specify numeric
@@ -177,10 +176,13 @@ repeat count indicating how many weeks, months, or years to move
 backward or forward.
 
 @vindex calendar-week-start-day
+@vindex calendar-weekend-days
 @cindex weeks, which day they start on
 @cindex calendar, first day of week
   By default, weeks begin on Sunday.  To make them begin on Monday
-instead, set the variable @code{calendar-week-start-day} to 1.
+instead, set the variable @code{calendar-week-start-day} to 1.  To
+change which day headers are highlighted as weekend days, set the
+variable @code{calendar-weekend-days}.
 
 @node Specified Dates
 @subsection Specified Dates
@@ -206,7 +208,7 @@ Move point to today's date (@code{calendar-goto-today}).
   @kbd{g d} (@code{calendar-goto-date}) prompts for a year, a month, and a day
 of the month, and then moves to that date.  Because the calendar includes all
 dates from the beginning of the current era, you must type the year in its
-entirety; that is, type @samp{1990}, not @samp{90}.
+entirety; that is, type @samp{2010}, not @samp{10}.
 
 @kindex g D @r{(Calendar mode)}
 @findex calendar-goto-day-of-year
@@ -244,9 +246,11 @@ Scroll calendar one month forward (@code{calendar-scroll-left}).
 @item <
 Scroll calendar one month backward (@code{calendar-scroll-right}).
 @item C-v
+@itemx @key{PageDown}
 @itemx @key{next}
 Scroll forward by three months (@code{calendar-scroll-left-three-months}).
 @item M-v
+@itemx @key{PageUp}
 @itemx @key{prior}
 Scroll backward by three months (@code{calendar-scroll-right-three-months}).
 @end table
@@ -262,19 +266,24 @@ calendar contents one month forward in time.  @kbd{<} scrolls the
 contents one month backwards in time.
 
 @kindex C-v @r{(Calendar mode)}
+@kindex PageDown @r{(Calendar mode)}
+@kindex next @r{(Calendar mode)}
 @findex calendar-scroll-left-three-months
 @kindex M-v @r{(Calendar mode)}
+@kindex PageUp @r{(Calendar mode)}
+@kindex prior @r{(Calendar mode)}
 @findex calendar-scroll-right-three-months
   The commands @kbd{C-v} and @kbd{M-v} scroll the calendar by an entire
-``screenful''---three months---in analogy with the usual meaning of
+screenful---three months---in analogy with the usual meaning of
 these commands.  @kbd{C-v} makes later dates visible and @kbd{M-v} makes
 earlier dates visible.  These commands take a numeric argument as a
 repeat count; in particular, since @kbd{C-u} multiplies the next command
 by four, typing @kbd{C-u C-v} scrolls the calendar forward by a year and
 typing @kbd{C-u M-v} scrolls the calendar backward by a year.
 
-  The function keys @key{next} and @key{prior} are equivalent to
-@kbd{C-v} and @kbd{M-v}, just as they are in other modes.
+  The function keys @key{PageDown} (or @key{next}) and @key{PageUp}
+(or @key{prior}) are equivalent to @kbd{C-v} and @kbd{M-v}, just as
+they are in other modes.
 
 @node Counting Days
 @section Counting Days
@@ -366,7 +375,7 @@ various page elements, header styles) via a stylesheet @file{cal.css} in
 the directory containing the HTML files (see the value of the variable
 @code{cal-html-css-default} for relevant style settings).
 
-@kindex t @r{(Calendar mode)}
+@kindex H @r{(Calendar mode)}
 @table @kbd
 @item H m
 Generate a one-month calendar (@code{cal-html-cursor-month}).
@@ -379,7 +388,7 @@ between years will not work.
 
   If the variable @code{cal-html-print-day-number-flag} is
 non-@code{nil}, then the monthly calendars show the day-of-the-year
-number. The variable @code{cal-html-year-index-cols} specifies the
+number.  The variable @code{cal-html-year-index-cols} specifies the
 number of columns in the yearly index page.
 
 @cindex calendar and @LaTeX{}
@@ -429,8 +438,8 @@ Generate a Filofax-style calendar for one year
 (@code{cal-tex-cursor-filofax-year}).
 @end table
 
-  Some of these commands print the calendar sideways (in ``landscape
-mode''), so it can be wider than it is long.  Some of them use Filofax
+  Some of these commands print the calendar sideways (in landscape
+mode), so it can be wider than it is long.  Some of them use Filofax
 paper size (3.75in x 6.75in).  All of these commands accept a prefix
 argument, which specifies how many days, weeks, months or years to print
 (starting always with the selected one).
@@ -438,7 +447,7 @@ argument, which specifies how many days, weeks, months or years to print
   If the variable @code{cal-tex-holidays} is non-@code{nil} (the default),
 then the printed calendars show the holidays in @code{calendar-holidays}.
 If the variable @code{cal-tex-diary} is non-@code{nil} (the default is
-@code{nil}), diary entries are included also (in monthly, filofax, and
+@code{nil}), diary entries are included also (in monthly, Filofax, and
 iso-week calendars only).  If the variable @code{cal-tex-rules} is
 non-@code{nil} (the default is @code{nil}), the calendar displays ruled
 pages in styles that have sufficient room.  Consult the documentation of
@@ -457,7 +466,7 @@ to.
 and can display them.  You can add your own holidays to the default list.
 
 @table @kbd
-@item Mouse-3 Holidays
+@item mouse-3 Holidays
 @itemx h
 Display holidays for the selected date
 (@code{calendar-cursor-holidays}).
@@ -480,7 +489,7 @@ List holidays in another window for a specified range of years.
 @vindex calendar-view-holidays-initially-flag
   To see if any holidays fall on a given date, position point on that
 date in the calendar window and use the @kbd{h} command.  Alternatively,
-click on that date with @kbd{Mouse-3} and then choose @kbd{Holidays}
+click on that date with @kbd{mouse-3} and then choose @kbd{Holidays}
 from the menu that appears.  Either way, this displays the holidays for
 that date, in the echo area if they fit there, otherwise in a separate
 window.
@@ -545,7 +554,7 @@ practice}, not historical fact.  For example Veteran's Day began in
 times of sunrise and sunset for any date.
 
 @table @kbd
-@item Mouse-3 Sunrise/sunset
+@item mouse-3 Sunrise/sunset
 @itemx S
 Display times of sunrise and sunset for the selected date
 (@code{calendar-sunrise-sunset}).
@@ -562,7 +571,7 @@ Display times of sunrise and sunset for the selected month.
 @findex sunrise-sunset
   Within the calendar, to display the @emph{local times} of sunrise and
 sunset in the echo area, move point to the date you want, and type
-@kbd{S}.  Alternatively, click @kbd{Mouse-3} on the date, then choose
+@kbd{S}.  Alternatively, click @kbd{mouse-3} on the date, then choose
 @samp{Sunrise/sunset} from the menu that appears.  The command @kbd{M-x
 sunrise-sunset} is available outside the calendar to display this
 information for today's date or a specified date.  To specify a date
@@ -628,8 +637,8 @@ for all users in a @file{default.el} file.  @xref{Init File}.
 
   These calendar commands display the dates and times of the phases of
 the moon (new moon, first quarter, full moon, last quarter).  This
-feature is useful for debugging problems that ``depend on the phase of
-the moon''.
+feature is useful for debugging problems that depend on the phase of
+the moon.
 
 @table @kbd
 @item M
@@ -662,7 +671,7 @@ See the discussion in the previous section.  @xref{Sunrise/Sunset}.
 
 @cindex Gregorian calendar
   The Emacs calendar displayed is @emph{always} the Gregorian calendar,
-sometimes called the ``new style'' calendar, which is used in most of
+sometimes called the New Style calendar, which is used in most of
 the world today.  However, this calendar did not exist before the
 sixteenth century and was not widely used before the eighteenth century;
 it did not fully displace the Julian calendar and gain universal
@@ -697,7 +706,7 @@ century.
 @cindex Julian day numbers
 @cindex astronomical day numbers
   Astronomers use a simple counting of days elapsed since noon, Monday,
-January 1, 4713 B.C. on the Julian calendar.  The number of days elapsed
+January 1, 4713 BC on the Julian calendar.  The number of days elapsed
 is called the @dfn{Julian day number} or the @dfn{Astronomical day number}.
 
 @cindex Hebrew calendar
@@ -722,7 +731,7 @@ cycle, and to install a 10-day week in a rationalization measure similar to
 the metric system.  The French government officially abandoned this
 calendar at the end of 1805.
 
-@cindex Mayan calendar
+@cindex Mayan calendars
   The Maya of Central America used three separate, overlapping calendar
 systems, the @emph{long count}, the @emph{tzolkin}, and the @emph{haab}.
 Emacs knows about all three of these calendars.  Experts dispute the
@@ -756,13 +765,13 @@ official calendar of Iran will be at that time.
 into solar years.  The years go in cycles of sixty, each year containing
 either twelve months in an ordinary year or thirteen months in a leap
 year; each month has either 29 or 30 days.  Years, ordinary months, and
-days are named by combining one of ten ``celestial stems'' with one of
-twelve ``terrestrial branches'' for a total of sixty names that are
+days are named by combining one of ten @dfn{celestial stems} with one of
+twelve @dfn{terrestrial branches} for a total of sixty names that are
 repeated in a cycle of sixty.
 
 @cindex Bahá'í calendar
   The Bahá'í calendar system is based on a solar cycle of 19 months with
-19 days each.  The four remaining ``intercalary'' days are placed
+19 days each.  The four remaining intercalary days are placed
 between the 18th and 19th months.
 
 @node To Other Calendar
@@ -774,7 +783,7 @@ in various other calendar systems:
 @table @kbd
 @kindex p @r{(Calendar mode)}
 @findex calendar-print-other-dates
-@item Mouse-3  Other calendars
+@item mouse-3  Other calendars
 @itemx p o
 Display the selected date in various other calendars.
 (@code{calendar-print-other-dates}).
@@ -827,8 +836,8 @@ Display Mayan date for selected day (@code{calendar-mayan-print-date}).
   Otherwise, move point to the date you want to convert, then type the
 appropriate command starting with @kbd{p} from the table above.  The
 prefix @kbd{p} is a mnemonic for ``print'', since Emacs ``prints'' the
-equivalent date in the echo area. @kbd{p o} displays the
-date in all forms known to Emacs.  You can also use @kbd{Mouse-3} and
+equivalent date in the echo area.  @kbd{p o} displays the
+date in all forms known to Emacs.  You can also use @kbd{mouse-3} and
 then choose @kbd{Other calendars} from the menu that appears.  This
 displays the equivalent forms of the date in all the calendars Emacs
 understands, in the form of a menu.  (Choosing an alternative from
@@ -844,7 +853,6 @@ other than Mayan; for the Mayan calendar, see the following section.
 
 @kindex g @var{char} @r{(Calendar mode)}
 @findex calendar-iso-goto-date
-@findex calendar-iso-goto-week
 @findex calendar-julian-goto-date
 @findex calendar-astro-goto-day-number
 @findex calendar-bahai-goto-date
@@ -905,7 +913,7 @@ Islamic, or French names.
 @findex calendar-hebrew-list-yahrzeits
 @cindex yahrzeits
   One common issue concerning the Hebrew calendar is the computation
-of the anniversary of a date of death, called a ``yahrzeit''.  The Emacs
+of the anniversary of a date of death, called a @dfn{yahrzeit}.  The Emacs
 calendar includes a facility for such calculations.  If you are in the
 calendar, the command @kbd{M-x calendar-hebrew-list-yahrzeits} asks you for
 a range of years and then displays a list of the yahrzeit dates for those
@@ -919,147 +927,24 @@ years, and then displays the list of yahrzeit dates.
 
   The Emacs diary keeps track of appointments or other events on a daily
 basis, in conjunction with the calendar.  To use the diary feature, you
-must first create a @dfn{diary file} containing a list of events and
+must first create a diary file containing a list of events and
 their dates.  Then Emacs can automatically pick out and display the
 events for today, for the immediate future, or for any specified
 date.
-
-  The name of the diary file is specified by the variable
-@code{diary-file}; @file{~/diary} is the default.  Here's an example
-showing what that file looks like:
-
-@example
-12/22/2012  Twentieth wedding anniversary!!
-&1/1.       Happy New Year!
-10/22       Ruth's birthday.
-* 21, *:    Payday
-Tuesday--weekly meeting with grad students at 10am
-         Supowit, Shen, Bitner, and Kapoor to attend.
-1/13/89     Friday the thirteenth!!
-&thu 4pm    squash game with Lloyd.
-mar 16      Dad's birthday
-April 15, 2013 Income tax due.
-&* 15       time cards due.
-@end example
-
-@noindent
-This format is essentially the same as the one used by the separate
-@command{calendar} utility that is present on some Unix systems.  This
-example uses extra spaces to align the event descriptions of most of
-the entries.  Such formatting is purely a matter of taste.
 
   Although you probably will start by creating a diary manually, Emacs
 provides a number of commands to let you view, add, and change diary
 entries.
 
 @menu
-* Displaying the Diary::   Viewing diary entries and associated calendar dates.
 * Format of Diary File::   Entering events in your diary.
+* Displaying the Diary::   Viewing diary entries and associated calendar dates.
 * Date Formats::           Various ways you can specify dates.
 * Adding to Diary::        Commands to create diary entries.
 * Special Diary Entries::  Anniversaries, blocks of dates, cyclic entries, etc.
+* Appointments::           Reminders when it's time to do something.
+* Importing Diary::        Converting diary events to/from other formats.
 @end menu
-
-@node Displaying the Diary
-@subsection Displaying the Diary
-
-  Once you have created a diary file, you can use the calendar to view
-it.  You can also view today's events outside of Calendar mode.  In the
-following, key bindings refer to the Calendar buffer.
-
-@table @kbd
-@item Mouse-3 Diary
-@itemx d
-Display all diary entries for the selected date
-(@code{diary-view-entries}).
-@item s
-Display the entire diary file (@code{diary-show-all-entries}).
-@item m
-Mark all visible dates that have diary entries
-(@code{diary-mark-entries}).
-@item u
-Unmark the calendar window (@code{calendar-unmark}).
-@item M-x diary-print-entries
-Print hard copy of the diary display as it appears.
-@item M-x diary
-Display all diary entries for today's date.
-@item M-x diary-mail-entries
-Mail yourself email reminders about upcoming diary entries.
-@end table
-
-@kindex d @r{(Calendar mode)}
-@findex diary-view-entries
-@vindex calendar-view-diary-initially-flag
-  Displaying the diary entries with @kbd{d} shows in a separate window
-the diary entries for the selected date in the calendar.  The mode line
-of the new window shows the date of the diary entries.  Holidays are
-shown either in the buffer or in the mode line, depending on the display
-method you choose
-@iftex
-(@pxref{Diary Display,,, emacs-xtra, Specialized Emacs Features}).
-@end iftex
-@ifnottex
-(@pxref{Diary Display}).
-@end ifnottex
-If you specify a numeric argument with @kbd{d}, it shows all the diary
-entries for that many successive days.  Thus, @kbd{2 d} displays all the
-entries for the selected date and for the following day.
-
-  Another way to display the diary entries for a date is to click
-@kbd{Mouse-3} on the date, and then choose @kbd{Diary entries} from
-the menu that appears.  If the variable
-@code{calendar-view-diary-initially-flag} is non-@code{nil}, creating the
-calendar lists the diary entries for the current date (provided the
-current date is visible).
-
-@kindex m @r{(Calendar mode)}
-@findex diary-mark-entries
-@vindex calendar-mark-diary-entries-flag
-  To get a broader view of which days are mentioned in the diary, use
-the @kbd{m} command.  This marks the dates that have diary entries in
-a different face.
-@iftex
-@xref{Calendar Customizing,,, emacs-xtra, Specialized Emacs Features}.
-@end iftex
-@ifnottex
-@xref{Calendar Customizing, diary-entry-marker}.
-@end ifnottex
-
-  This command applies both to the months that are currently visible
-and to those that subsequently become visible after scrolling.  To turn
-marking off and erase the current marks, type @kbd{u}, which also
-turns off holiday marks (@pxref{Holidays}).  If the variable
-@code{calendar-mark-diary-entries-flag} is non-@code{nil}, creating or
-updating the calendar marks diary dates automatically.
-
-@kindex s @r{(Calendar mode)}
-@findex diary-show-all-entries
-  To see the full diary file, rather than just some of the entries, use
-the @kbd{s} command.
-
-@findex diary
-  The command @kbd{M-x diary} displays the diary entries for the current
-date, independently of the calendar display, and optionally for the next
-few days as well; the variable @code{diary-number-of-entries} specifies
-how many days to include.
-@iftex
-@xref{Diary Customizing,,, emacs-xtra, Specialized Emacs Features}.
-@end iftex
-@ifnottex
-@xref{Diary Customizing, diary-number-of-entries}.
-@end ifnottex
-
-  If you put @code{(diary)} in your @file{.emacs} file, this
-automatically displays a window with the day's diary entries when you
-start Emacs.
-
-@findex diary-mail-entries
-@vindex diary-mail-days
-  Some people like to receive email notifications of events in their
-diary.  To send such mail to yourself, use the command @kbd{M-x
-diary-mail-entries}.  A prefix argument specifies how many days
-(starting with today) to check; otherwise, the variable
-@code{diary-mail-days} says how many days.
 
 @node Format of Diary File
 @subsection The Diary File
@@ -1068,11 +953,18 @@ diary-mail-entries}.  A prefix argument specifies how many days
 @vindex diary-file
   Your @dfn{diary file} is a file that records events associated with
 particular dates.  The name of the diary file is specified by the
-variable @code{diary-file}; @file{~/diary} is the default.  The
-@code{calendar} utility program supports a subset of the format allowed
-by the Emacs diary facilities, so you can use that utility to view the
-diary file, with reasonable results aside from the entries it cannot
-understand.
+variable @code{diary-file}.  The default is @file{~/.emacs.d/diary},
+though for compatibility with older versions Emacs will use
+@file{~/diary} if it exists.
+@ignore
+@c I don't think this is relevant any more.  The utility doesn't seem
+@c to be part of the default install on GNU/Linux machines these days.
+@c When I tried it with my basic diary file, it just died with an error.
+The @code{calendar} utility program supports a subset of the format
+allowed by the Emacs diary facilities, so you can use that utility to
+view the diary file, with reasonable results aside from the entries it
+cannot understand.
+@end ignore
 
   Each entry in the diary file describes one event and consists of one
 or more lines.  An entry always begins with a date specification at the
@@ -1080,7 +972,24 @@ left margin.  The rest of the entry is simply text to describe the
 event.  If the entry has more than one line, then the lines after the
 first must begin with whitespace to indicate they continue a previous
 entry.  Lines that do not begin with valid dates and do not continue a
-preceding entry are ignored.
+preceding entry are ignored.  Here's an example:
+
+@example
+12/22/2015  Twentieth wedding anniversary!
+10/22       Ruth's birthday.
+* 21, *:    Payday
+Tuesday--weekly meeting with grad students at 10am
+         Supowit, Shen, Bitner, and Kapoor to attend.
+1/13/89     Friday the thirteenth!!
+thu 4pm     squash game with Lloyd.
+mar 16      Dad's birthday
+April 15, 2016 Income tax due.
+* 15        time cards due.
+@end example
+
+@noindent
+This example uses extra spaces to align the event descriptions of most
+of the entries.  Such formatting is purely a matter of taste.
 
   You can also use a format where the first line of a diary entry
 consists only of the date or day name (with no following blanks or
@@ -1110,15 +1019,115 @@ continuation lines appear.  This style of entry looks neater when you
 display just a single day's entries, but can cause confusion if you ask
 for more than one day's entries.
 
+@node Displaying the Diary
+@subsection Displaying the Diary
+
+  Once you have created a diary file, you can use the calendar to view
+it.  You can also view today's events outside of Calendar mode.  In the
+following, key bindings refer to the Calendar buffer.
+
+@table @kbd
+@item mouse-3 Diary
+@itemx d
+Display all diary entries for the selected date
+(@code{diary-view-entries}).
+@item s
+Display the entire diary file (@code{diary-show-all-entries}).
+@item m
+Mark all visible dates that have diary entries
+(@code{diary-mark-entries}).
+@item u
+Unmark the calendar window (@code{calendar-unmark}).
+@item M-x diary-print-entries
+Print hard copy of the diary display as it appears.
+@item M-x diary
+Display all diary entries for today's date.
+@item M-x diary-mail-entries
+Mail yourself email reminders about upcoming diary entries.
+@end table
+
+@kindex d @r{(Calendar mode)}
+@findex diary-view-entries
+@vindex calendar-view-diary-initially-flag
+  Displaying the diary entries with @kbd{d} shows in a separate buffer
+the diary entries for the selected date in the calendar.  The mode line
+of the new buffer shows the date of the diary entries.  Holidays are
+shown either in the buffer or in the mode line, depending on the display
+method you choose
+@iftex
+(@pxref{Diary Display,,, emacs-xtra, Specialized Emacs Features}).
+@end iftex
+@ifnottex
+(@pxref{Diary Display}).
+@end ifnottex
+If you specify a numeric argument with @kbd{d}, it shows all the diary
+entries for that many successive days.  Thus, @kbd{2 d} displays all the
+entries for the selected date and for the following day.
+
+  Another way to display the diary entries for a date is to click
+@kbd{mouse-3} on the date, and then choose @kbd{Diary entries} from
+the menu that appears.  If the variable
+@code{calendar-view-diary-initially-flag} is non-@code{nil}, creating the
+calendar lists the diary entries for the current date (provided the
+current date is visible).
+
+@kindex m @r{(Calendar mode)}
+@findex diary-mark-entries
+@vindex calendar-mark-diary-entries-flag
+  To get a broader view of which days are mentioned in the diary, use
+the @kbd{m} command.  This marks the dates that have diary entries in
+a different face.
+@iftex
+@xref{Calendar Customizing,,, emacs-xtra, Specialized Emacs Features}.
+@end iftex
+@ifnottex
+@xref{Calendar Customizing, diary-entry-marker}.
+@end ifnottex
+
+  This command applies both to the months that are currently visible
+and to those that subsequently become visible after scrolling.  To turn
+marking off and erase the current marks, type @kbd{u}, which also
+turns off holiday marks (@pxref{Holidays}).  If the variable
+@code{calendar-mark-diary-entries-flag} is non-@code{nil}, creating or
+updating the calendar marks diary dates automatically.
+
 @vindex diary-nonmarking-symbol
-  You can inhibit the marking of certain diary entries in the calendar
-window; to do this, insert the string that
-@code{diary-nonmarking-symbol} specifies (default @samp{&}) at the
-beginning of the entry, before the date.  This
-has no effect on display of the entry in the diary window; it only
-affects marks on dates in the calendar window.  Nonmarking entries are
-especially useful for generic entries that would otherwise mark many
-different dates.
+  To prevent an individual diary entry from being marked in the
+calendar, insert the string that @code{diary-nonmarking-symbol}
+specifies (the default is @samp{&}) at the beginning of the entry,
+before the date.  This has no effect on display of the entry in the
+diary buffer; it only affects marks on dates in the calendar.
+Nonmarking entries can be useful for generic entries that would
+otherwise mark many different dates.
+
+@kindex s @r{(Calendar mode)}
+@findex diary-show-all-entries
+  To see the full diary file, rather than just some of the entries, use
+the @kbd{s} command.
+
+@findex diary
+  The command @kbd{M-x diary} displays the diary entries for the current
+date, independently of the calendar display, and optionally for the next
+few days as well; the variable @code{diary-number-of-entries} specifies
+how many days to include.
+@iftex
+@xref{Diary Customizing,,, emacs-xtra, Specialized Emacs Features}.
+@end iftex
+@ifnottex
+@xref{Diary Customizing, diary-number-of-entries}.
+@end ifnottex
+
+  If you put @code{(diary)} in your @file{.emacs} file, this
+automatically displays a window with the day's diary entries when you
+start Emacs.
+
+@findex diary-mail-entries
+@vindex diary-mail-days
+  Some people like to receive email notifications of events in their
+diary.  To send such mail to yourself, use the command @kbd{M-x
+diary-mail-entries}.  A prefix argument specifies how many days
+(starting with today) to check; otherwise, the variable
+@code{diary-mail-days} says how many days.
 
 @node Date Formats
 @subsection Date Formats
@@ -1271,12 +1280,12 @@ entry.  The entry looks like this:
 
 @findex diary-anniversary
 @example
-%%(diary-anniversary 10 31 1948) Arthur's birthday
+%%(diary-anniversary 10 31 1988) Arthur's birthday
 @end example
 
 @noindent
-This entry applies to October 31 in any year after 1948; @samp{10 31
-1948} specifies the date.  (If you are using the European or ISO
+This entry applies to October 31 in any year after 1988; @samp{10 31
+1988} specifies the date.  (If you are using the European or ISO
 calendar style, the input order of month, day and year is different.)
 The reason this expression requires a beginning year is that advanced
 diary functions can use it to calculate the number of elapsed years.
@@ -1362,7 +1371,7 @@ can perform arbitrary computations to determine when they apply.
 @end ifnottex
 
 @node Appointments
-@section Appointments
+@subsection Appointments
 @cindex appointment notification
 
 @vindex appt-display-format
@@ -1434,7 +1443,11 @@ also updated whenever the diary file (or a file it includes; see
 @ifnottex
 @ref{Fancy Diary Display})
 @end ifnottex
-is saved.
+is saved.  If you use the Org Mode and keep appointments in your Org
+agenda files, you can add those appointments to the list using the
+@code{org-agenda-to-appt} command.  @xref{Weekly/daily agenda,
+Appointment reminders,,org, The Org Manual}, for more about that
+command.
 
 @findex appt-add
 @findex appt-delete
@@ -1445,7 +1458,7 @@ list without affecting your diary file.  You delete entries from the
 appointment list with @kbd{M-x appt-delete}.
 
 @node Importing Diary
-@section Importing and Exporting Diary Entries
+@subsection Importing and Exporting Diary Entries
 
   You can transfer diary entries between Emacs diary files and a
 variety of other formats.
@@ -1461,11 +1474,11 @@ variable @code{diary-outlook-formats}.  Other mail clients can set
 @c FIXME the name of the RFC is hardly very relevant.
 @cindex iCalendar support
   The icalendar package allows you to transfer data between your Emacs
-diary file and iCalendar files, which are defined in ``RFC
+diary file and iCalendar files, which are defined in @cite{RFC
 2445---Internet Calendaring and Scheduling Core Object Specification
-(iCalendar)'' (as well as the earlier vCalendar format).
+(iCalendar)} (as well as the earlier vCalendar format).
 
-@c  Importing works for ``ordinary'' (i.e., non-recurring) events, but
+@c  Importing works for ordinary (i.e., non-recurring) events, but
 @c (at present) may not work correctly (if at all) for recurring events.
 @c Exporting of diary files into iCalendar files should work correctly
 @c for most diary entries.  This feature is a work in progress, so the
@@ -1501,7 +1514,8 @@ to the main diary file, if these are different files.
 @end ifnottex
 
 
-@findex icalendar-export-file, icalendar-export-region
+@findex icalendar-export-file
+@findex icalendar-export-region
   Use @code{icalendar-export-file} to interactively export an entire
 Emacs diary file to iCalendar format.  To export only a part of a diary
 file, mark the relevant area, and call @code{icalendar-export-region}.
@@ -1580,10 +1594,13 @@ variables' values are 120.
 @cindex time intervals, summing
 @cindex summing time intervals
 @cindex timeclock
+@cindex clocking time
 
   The timeclock package adds up time intervals, so you can (for
 instance) keep track of how much time you spend working on particular
-projects.
+projects.  (A more advanced alternative is to use the Org Mode's
+facilities for clocking time, @pxref{Clocking Work Time,,,org, The Org
+Manual}).
 
 @findex timeclock-in
 @findex timeclock-out
@@ -1599,14 +1616,14 @@ timeclock-change}.
   Once you've collected data from a number of time intervals, you can use
 @kbd{M-x timeclock-workday-remaining} to see how much time is left to
 work today (assuming a typical average of 8 hours a day), and @kbd{M-x
-timeclock-when-to-leave} which will calculate when you're ``done''.
+timeclock-when-to-leave} which will calculate when you're done.
 
-@vindex timeclock-modeline-display
-@findex timeclock-modeline-display
-  If you want Emacs to display the amount of time ``left'' of your
+@vindex timeclock-mode-line-display
+@findex timeclock-mode-line-display
+  If you want Emacs to display the amount of time left of your
 workday in the mode line, either customize the
-@code{timeclock-modeline-display} variable and set its value to
-@code{t}, or invoke the @kbd{M-x timeclock-modeline-display} command.
+@code{timeclock-mode-line-display} variable and set its value to
+@code{t}, or invoke the @kbd{M-x timeclock-mode-line-display} command.
 
 @vindex timeclock-ask-before-exiting
   Terminating the current Emacs session might or might not mean that

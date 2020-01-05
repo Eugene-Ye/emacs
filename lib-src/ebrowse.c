@@ -1,13 +1,13 @@
 /* ebrowse.c --- parsing files for the ebrowse C++ browser
 
-Copyright (C) 1992-2014 Free Software Foundation, Inc.
+Copyright (C) 1992-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,44 +15,50 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 #include <config.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
 #include <getopt.h>
 
+#include <flexmember.h>
+#include <min-max.h>
+#include <unlocked-io.h>
+
 /* The SunOS compiler doesn't have SEEK_END.  */
 #ifndef SEEK_END
 #define SEEK_END 2
 #endif
 
-/* Conditionalize function prototypes.  */
-
-/* Value is non-zero if strings X and Y compare equal.  */
-
-#define streq(X, Y) (*(X) == *(Y) && strcmp ((X) + 1, (Y) + 1) == 0)
-
-#include <min-max.h>
-
 /* Files are read in chunks of this number of bytes.  */
 
-#define READ_CHUNK_SIZE (100 * 1024)
+enum { READ_CHUNK_SIZE = 100 * 1024 };
 
-#if defined (__MSDOS__)
-#define FILENAME_EQ(X,Y)    (strcasecmp (X,Y) == 0)
+/* Value is true if strings X and Y compare equal.  */
+
+static bool
+streq (char const *x, char const *y)
+{
+  return strcmp (x, y) == 0;
+}
+
+static bool
+filename_eq (char const *x, char const *y)
+{
+#ifdef __MSDOS__
+  return strcasecmp (x, y) == 0;
+#elif defined WINDOWSNT
+  return stricmp (x, y) == 0;
 #else
-#if defined (WINDOWSNT)
-#define FILENAME_EQ(X,Y)    (stricmp (X,Y) == 0)
-#else
-#define FILENAME_EQ(X,Y)    (streq (X,Y))
+  return streq (x, y);
 #endif
-#endif
+}
+
 /* The default output file name.  */
 
 #define DEFAULT_OUTFILE "BROWSE"
@@ -181,7 +187,8 @@ enum token
   STATIC_CAST,			/* static_cast */
   TYPEID,			/* typeid */
   USING,			/* using */
-  WCHAR				/* wchar_t */
+  WCHAR,			/* wchar_t */
+  FINAL                         /* final */
 };
 
 /* Storage classes, in a wider sense.  */
@@ -217,10 +224,19 @@ enum visibility
 #define F_EXTERNC	256	/* Is declared extern "C".  */
 #define F_DEFINE	512	/* Is a #define.  */
 
-/* Two macros to set and test a bit in an int.  */
+/* Set and test a bit in an int.  */
 
-#define SET_FLAG(F, FLAG)	((F) |= (FLAG))
-#define HAS_FLAG(F, FLAG)	(((F) & (FLAG)) != 0)
+static void
+set_flag (int *f, int flag)
+{
+  *f |= flag;
+}
+
+static bool
+has_flag (int f, int flag)
+{
+  return (f & flag) != 0;
+}
 
 /* Structure describing a class member.  */
 
@@ -290,19 +306,19 @@ struct sym
 #define P_DEFN	1
 #define P_DECL  2
 
-int info_where;
-struct sym *info_cls = NULL;
-struct member *info_member = NULL;
+static int info_where;
+static struct sym *info_cls = NULL;
+static struct member *info_member = NULL;
 
 /* Experimental.  For option `--position-info', the buffer position we
    are interested in.  When this position is reached, print out
    information about what we know about that point.  */
 
-int info_position = -1;
+static int info_position = -1;
 
 /* Command line options structure for getopt_long.  */
 
-struct option options[] =
+static struct option const options[] =
 {
   {"append", 			no_argument, 	   NULL, 'a'},
   {"files", 			required_argument, NULL, 'f'},
@@ -323,28 +339,28 @@ struct option options[] =
 
 /* Semantic values of tokens.  Set by yylex..  */
 
-unsigned yyival;		/* Set for token CINT.  */
-char *yytext;			/* Set for token IDENT.  */
-char *yytext_end;
+static unsigned yyival;		/* Set for token CINT.  */
+static char *yytext;		/* Set for token IDENT.  */
+static char *yytext_end;
 
 /* Output file.  */
 
-FILE *yyout;
+static FILE *yyout;
 
 /* Current line number.  */
 
-int yyline;
+static int yyline;
 
 /* The name of the current input file.  */
 
-const char *filename;
+static const char *filename;
 
 /* Three character class vectors, and macros to test membership
    of characters.  */
 
-char is_ident[255];
-char is_digit[255];
-char is_white[255];
+static char is_ident[255];
+static char is_digit[255];
+static char is_white[255];
 
 #define IDENTP(C)	is_ident[(unsigned char) (C)]
 #define DIGITP(C)	is_digit[(unsigned char) (C)]
@@ -352,25 +368,25 @@ char is_white[255];
 
 /* Command line flags.  */
 
-int f_append;
-int f_verbose;
-int f_very_verbose;
-int f_structs = 1;
-int f_regexps = 1;
-int f_nested_classes = 1;
+static int f_append;
+static int f_verbose;
+static int f_very_verbose;
+static int f_structs = 1;
+static int f_regexps = 1;
+static int f_nested_classes = 1;
 
 /* Maximum and minimum lengths of regular expressions matching a
    member, class etc., for writing them to the output file.  These are
    overridable from the command line.  */
 
-int min_regexp = 5;
-int max_regexp = 50;
+static int min_regexp = 5;
+static int max_regexp = 50;
 
 /* Input buffer.  */
 
-char *inbuffer;
-char *in;
-size_t inbuffer_size;
+static char *inbuffer;
+static char *in;
+static size_t inbuffer_size;
 
 /* Return the current buffer position in the input file.  */
 
@@ -380,7 +396,7 @@ size_t inbuffer_size;
    first character in the string constant.  Used for recognizing
    extern "C".  */
 
-char *string_start;
+static char *string_start;
 
 /* The size of the hash tables for classes.and members.  Should be
    prime.  */
@@ -389,40 +405,40 @@ char *string_start;
 
 /* The hash table for class symbols.  */
 
-struct sym *class_table[TABLE_SIZE];
+static struct sym *class_table[TABLE_SIZE];
 
 /* Hash table containing all member structures.  This is generally
    faster for member lookup than traversing the member lists of a
    `struct sym'.  */
 
-struct member *member_table[TABLE_SIZE];
+static struct member *member_table[TABLE_SIZE];
 
 /* Hash table for namespace aliases */
 
-struct alias *namespace_alias_table[TABLE_SIZE];
+static struct alias *namespace_alias_table[TABLE_SIZE];
 
 /* The special class symbol used to hold global functions,
    variables etc.  */
 
-struct sym *global_symbols;
+static struct sym *global_symbols;
 
 /* The current namespace.  */
 
-struct sym *current_namespace;
+static struct sym *current_namespace;
 
 /* The list of all known namespaces.  */
 
-struct sym *all_namespaces;
+static struct sym *all_namespaces;
 
 /* Stack of namespaces we're currently nested in, during the parse.  */
 
-struct sym **namespace_stack;
-int namespace_stack_size;
-int namespace_sp;
+static struct sym **namespace_stack;
+static int namespace_stack_size;
+static int namespace_sp;
 
 /* The current lookahead token.  */
 
-int tk = -1;
+static int tk = -1;
 
 /* Structure describing a keyword.  */
 
@@ -436,7 +452,7 @@ struct kw
 /* Keywords are lookup up in a hash table of their own.  */
 
 #define KEYWORD_TABLE_SIZE 1001
-struct kw *keyword_table[KEYWORD_TABLE_SIZE];
+static struct kw *keyword_table[KEYWORD_TABLE_SIZE];
 
 /* Search path.  */
 
@@ -446,8 +462,8 @@ struct search_path
   struct search_path *next;
 };
 
-struct search_path *search_path;
-struct search_path *search_path_tail;
+static struct search_path *search_path;
+static struct search_path *search_path_tail;
 
 /* Function prototypes.  */
 
@@ -456,7 +472,7 @@ static struct sym *add_sym (const char *, struct sym *);
 static void add_global_defn (char *, char *, int, unsigned, int, int, int);
 static void add_global_decl (char *, char *, int, unsigned, int, int, int);
 static struct member *add_member (struct sym *, char *, int, int, unsigned);
-static void class_definition (struct sym *, int, int, int);
+static void class_definition (struct sym *, const char *, int, int, int);
 static char *operator_name (int *);
 static void parse_qualified_param_ident_or_type (char **);
 
@@ -479,7 +495,7 @@ yyerror (const char *format, const char *s)
 /* Like malloc but print an error and exit if not enough memory is
    available.  */
 
-static void *
+static void * ATTRIBUTE_MALLOC
 xmalloc (size_t nbytes)
 {
   void *p = malloc (nbytes);
@@ -568,7 +584,7 @@ add_sym (const char *name, struct sym *nested_in_class)
 	  puts (name);
 	}
 
-      sym = xmalloc (offsetof (struct sym, name) + strlen (name) + 1);
+      sym = xmalloc (FLEXSIZEOF (struct sym, name, strlen (name) + 1));
       memset (sym, 0, offsetof (struct sym, name));
       strcpy (sym->name, name);
       sym->namesp = scope;
@@ -682,7 +698,7 @@ add_member_decl (struct sym *cls, char *name, char *regexp, int pos, unsigned in
     m = add_member (cls, name, var, sc, hash);
 
   /* Have we seen a new filename?  If so record that.  */
-  if (!cls->filename || !FILENAME_EQ (cls->filename, filename))
+  if (!cls->filename || !filename_eq (cls->filename, filename))
     m->filename = filename;
 
   m->regexp = regexp;
@@ -745,7 +761,7 @@ add_member_defn (struct sym *cls, char *name, char *regexp, int pos, unsigned in
   if (!cls->sfilename)
     cls->sfilename = filename;
 
-  if (!FILENAME_EQ (cls->sfilename, filename))
+  if (!filename_eq (cls->sfilename, filename))
     m->def_filename = filename;
 
   m->def_regexp = regexp;
@@ -830,7 +846,7 @@ add_global_decl (char *name, char *regexp, int pos, unsigned int hash, int var, 
   if (!found)
     {
       if (!global_symbols->filename
-	  || !FILENAME_EQ (global_symbols->filename, filename))
+	  || !filename_eq (global_symbols->filename, filename))
 	m->filename = filename;
 
       m->regexp = regexp;
@@ -853,8 +869,8 @@ add_global_decl (char *name, char *regexp, int pos, unsigned int hash, int var, 
 static struct member *
 add_member (struct sym *cls, char *name, int var, int sc, unsigned int hash)
 {
-  struct member *m = xmalloc (offsetof (struct member, name)
-			      + strlen (name) + 1);
+  struct member *m = xmalloc (FLEXSIZEOF (struct member, name,
+					  strlen (name) + 1));
   struct member **list;
   struct member *p;
   struct member *prev;
@@ -931,11 +947,11 @@ mark_virtual (struct sym *r)
   for (p = r->subs; p; p = p->next)
     {
       for (m = r->fns; m; m = m->next)
-        if (HAS_FLAG (m->flags, F_VIRTUAL))
+        if (has_flag (m->flags, F_VIRTUAL))
           {
             for (m2 = p->sym->fns; m2; m2 = m2->next)
               if (m->param_hash == m2->param_hash && streq (m->name, m2->name))
-                SET_FLAG (m2->flags, F_VIRTUAL);
+                set_flag (&m2->flags, F_VIRTUAL);
           }
 
       mark_virtual (p->sym);
@@ -964,7 +980,7 @@ mark_inherited_virtual (void)
 static struct sym *
 make_namespace (char *name, struct sym *context)
 {
-  struct sym *s = xmalloc (offsetof (struct sym, name) + strlen (name) + 1);
+  struct sym *s = xmalloc (FLEXSIZEOF (struct sym, name, strlen (name) + 1));
   memset (s, 0, offsetof (struct sym, name));
   strcpy (s->name, name);
   s->next = all_namespaces;
@@ -1048,7 +1064,7 @@ register_namespace_alias (char *new_name, struct link *old_name)
     if (streq (new_name, al->name) && (al->namesp == current_namespace))
       return;
 
-  al = xmalloc (offsetof (struct alias, name) + strlen (new_name) + 1);
+  al = xmalloc (FLEXSIZEOF (struct alias, name, strlen (new_name) + 1));
   strcpy (al->name, new_name);
   al->next = namespace_alias_table[h];
   al->namesp = current_namespace;
@@ -1116,9 +1132,9 @@ putstr (const char *s, FILE *fp)
 
 /* A dynamically allocated buffer for constructing a scope name.  */
 
-char *scope_buffer;
-int scope_buffer_size;
-int scope_buffer_len;
+static char *scope_buffer;
+static int scope_buffer_size;
+static int scope_buffer_len;
 
 
 /* Make sure scope_buffer has enough room to add LEN chars to it.  */
@@ -1150,19 +1166,19 @@ sym_scope_1 (struct sym *p)
   if (*scope_buffer)
     {
       ensure_scope_buffer_room (3);
-      strcat (scope_buffer, "::");
+      strcpy (scope_buffer + scope_buffer_len, "::");
       scope_buffer_len += 2;
     }
 
   len = strlen (p->name);
   ensure_scope_buffer_room (len + 1);
-  strcat (scope_buffer, p->name);
+  strcpy (scope_buffer + scope_buffer_len, p->name);
   scope_buffer_len += len;
 
-  if (HAS_FLAG (p->flags, F_TEMPLATE))
+  if (has_flag (p->flags, F_TEMPLATE))
     {
       ensure_scope_buffer_room (3);
-      strcat (scope_buffer, "<>");
+      strcpy (scope_buffer + scope_buffer_len, "<>");
       scope_buffer_len += 2;
     }
 
@@ -1241,7 +1257,7 @@ dump_sym (FILE *fp, struct sym *root)
     putstr (NULL, fp);
 
   /* Print flags.  */
-  fprintf (fp, "%u", root->flags);
+  fprintf (fp, "%d", root->flags);
   putstr (root->filename, fp);
   putstr (root->regexp, fp);
   fprintf (fp, "%u", (unsigned) root->pos);
@@ -2020,6 +2036,7 @@ token_string (int t)
     case USING:			return "using";
     case WCHAR:			return "wchar_t";
     case YYEOF:                 return "EOF";
+    case FINAL:                 return "final";
 
     default:
       if (t < 255)
@@ -2125,6 +2142,7 @@ init_scanner (void)
   insert_keyword ("explicit", EXPLICIT);
   insert_keyword ("extern", EXTERN);
   insert_keyword ("false", FALSE);
+  insert_keyword ("final", FINAL);
   insert_keyword ("float", FLOAT);
   insert_keyword ("for", FOR);
   insert_keyword ("friend", FRIEND);
@@ -2435,7 +2453,7 @@ parm_list (int *flags)
         {
           /* We can overload the same function on `const' */
           hash = (hash << 1) ^ CONST;
-          SET_FLAG (*flags, F_CONST);
+          set_flag (flags, F_CONST);
           MATCH ();
         }
 
@@ -2443,7 +2461,7 @@ parm_list (int *flags)
         {
           MATCH ();
           SKIP_MATCHING_IF ('(');
-          SET_FLAG (*flags, F_THROW);
+          set_flag (flags, F_THROW);
         }
 
       if (LOOKING_AT ('='))
@@ -2452,7 +2470,7 @@ parm_list (int *flags)
           if (LOOKING_AT (CINT) && yyival == 0)
             {
               MATCH ();
-              SET_FLAG (*flags, F_PURE);
+              set_flag (flags, F_PURE);
             }
         }
     }
@@ -2486,9 +2504,9 @@ member (struct sym *cls, int vis)
   char *regexp = NULL;
   int pos;
   int is_constructor;
-  int anonymous = 0;
   int flags = 0;
   int class_tag;
+  char *class_name;
   int type_seen = 0;
   int paren_seen = 0;
   unsigned hash = 0;
@@ -2505,25 +2523,25 @@ member (struct sym *cls, int vis)
           /* A function or class may follow.  */
         case TEMPLATE:
           MATCH ();
-          SET_FLAG (flags, F_TEMPLATE);
+          set_flag (&flags, F_TEMPLATE);
           /* Skip over template argument list */
           SKIP_MATCHING_IF ('<');
           break;
 
         case EXPLICIT:
-          SET_FLAG (flags, F_EXPLICIT);
+          set_flag (&flags, F_EXPLICIT);
           goto typeseen;
 
         case MUTABLE:
-          SET_FLAG (flags, F_MUTABLE);
+          set_flag (&flags, F_MUTABLE);
           goto typeseen;
 
         case T_INLINE:
-          SET_FLAG (flags, F_INLINE);
+          set_flag (&flags, F_INLINE);
           goto typeseen;
 
         case VIRTUAL:
-          SET_FLAG (flags, F_VIRTUAL);
+          set_flag (&flags, F_VIRTUAL);
           goto typeseen;
 
         case '[':
@@ -2611,7 +2629,7 @@ member (struct sym *cls, int vis)
           class_tag = LA1;
           type_seen = 1;
           MATCH ();
-          anonymous = 1;
+          class_name = NULL;
 
           /* More than one ident here to allow for MS-DOS specialties
              like `_export class' etc.  The last IDENT seen counts
@@ -2619,14 +2637,33 @@ member (struct sym *cls, int vis)
 	  while (!LOOKING_AT4 (YYEOF, ';', ':', '{'))
 	    {
 	      if (LOOKING_AT (IDENT))
-		anonymous = 0;
-	      MATCH ();
+                {
+                  if (class_name)
+                    {
+                      int size = strlen (yytext);
+
+                      if(strlen (class_name) < size)
+                        {
+                          class_name = (char *) xrealloc(class_name, size + 1);
+                        }
+
+                      memcpy(class_name, yytext, size + 1);
+                    }
+                  else
+                    {
+                      class_name = xstrdup(yytext);
+                    }
+                }
+
+              MATCH ();
 	    }
 
           if (LOOKING_AT2 (':', '{'))
-	    class_definition (anonymous ? NULL : cls, class_tag, flags, 1);
+	    class_definition (class_name ? cls : NULL, class_name ? class_name : yytext, class_tag, flags, 1);
           else
             skip_to (';');
+
+          free(class_name);
           break;
 
         case INT:       case CHAR:      case LONG:      case UNSIGNED:
@@ -2761,7 +2798,7 @@ parse_classname (void)
       if (LOOKING_AT ('<'))
         {
           skip_matching ();
-          SET_FLAG (last_class->flags, F_TEMPLATE);
+          set_flag (&last_class->flags, F_TEMPLATE);
         }
 
       if (!LOOKING_AT (DCOLON))
@@ -2797,24 +2834,25 @@ operator_name (int *sc)
       s = token_string (LA1);
       MATCH ();
 
-      len = strlen (s) + 10;
+      ptrdiff_t slen = strlen (s);
+      len = slen + 10;
       if (len > id_size)
 	{
 	  size_t new_size = max (len, 2 * id_size);
 	  id = (char *) xrealloc (id, new_size);
 	  id_size = new_size;
 	}
-      strcpy (id, s);
+      char *z = stpcpy (id, s);
 
       /* Vector new or delete?  */
       if (LOOKING_AT ('['))
 	{
-	  strcat (id, "[");
+	  z = stpcpy (z, "[");
 	  MATCH ();
 
 	  if (LOOKING_AT (']'))
 	    {
-	      strcat (id, "]");
+	      strcpy (z, "]");
 	      MATCH ();
 	    }
 	}
@@ -2830,7 +2868,7 @@ operator_name (int *sc)
 	  id = (char *) xrealloc (id, new_size);
 	  id_size = new_size;
 	}
-      strcpy (id, "operator");
+      char *z = stpcpy (id, "operator");
 
       /* Beware access declarations of the form "X::f;" Beware of
 	 `operator () ()'.  Yet another difficulty is found in
@@ -2842,14 +2880,16 @@ operator_name (int *sc)
 	  len += strlen (s) + 2;
 	  if (len > id_size)
 	    {
+	      ptrdiff_t idlen = z - id;
 	      size_t new_size = max (len, 2 * id_size);
 	      id = (char *) xrealloc (id, new_size);
 	      id_size = new_size;
+	      z = id + idlen;
 	    }
 
 	  if (*s != ')' && *s != ']')
-	    strcat (id, " ");
-          strcat (id, s);
+	    *z++ = ' ';
+          z = stpcpy (z, s);
           MATCH ();
 
 	  /* If this is a simple operator like `+', stop now.  */
@@ -2979,7 +3019,7 @@ parse_qualified_param_ident_or_type (char **last_id)
    Current lookahead is the class name.  */
 
 static void
-class_definition (struct sym *containing, int tag, int flags, int nested)
+class_definition (struct sym *containing, const char *class_name, int tag, int flags, int nested)
 {
   struct sym *current;
   struct sym *base_class;
@@ -2991,7 +3031,7 @@ class_definition (struct sym *containing, int tag, int flags, int nested)
     current = NULL;
   else
     {
-      current = add_sym (yytext, containing);
+      current = add_sym (class_name, containing);
       current->pos = BUFFER_POS ();
       current->regexp = matching_regexp ();
       current->filename = filename;
@@ -3041,8 +3081,7 @@ class_definition (struct sym *containing, int tag, int flags, int nested)
                  MATCH until we see something like `;' or `{'.  */
               while (!LOOKING_AT3 (';', YYEOF, '{'))
                 MATCH ();
-	      done = 1;
-
+	      FALLTHROUGH;
             case '{':
               done = 1;
 	      break;
@@ -3166,7 +3205,7 @@ declaration (int flags)
 	      free (id);
 	      return;
 	    }
-
+	  FALLTHROUGH;
         case '=':
           /* Assumed to be the start of an initialization in this
 	     context.  */
@@ -3186,7 +3225,7 @@ declaration (int flags)
           break;
 
         case T_INLINE:
-          SET_FLAG (flags, F_INLINE);
+          set_flag (&flags, F_INLINE);
           MATCH ();
           break;
 
@@ -3275,8 +3314,8 @@ declaration (int flags)
 static int
 globals (int start_flags)
 {
-  int anonymous;
   int class_tk;
+  char *class_name;
   int flags = start_flags;
 
   for (;;)
@@ -3332,20 +3371,20 @@ globals (int start_flags)
                   MATCH_IF ('}');
                 }
               else
-                SET_FLAG (flags, F_EXTERNC);
+                set_flag (&flags, F_EXTERNC);
             }
           break;
 
         case TEMPLATE:
           MATCH ();
           SKIP_MATCHING_IF ('<');
-          SET_FLAG (flags, F_TEMPLATE);
+          set_flag (&flags, F_TEMPLATE);
           break;
 
         case CLASS: case STRUCT: case UNION:
           class_tk = LA1;
           MATCH ();
-          anonymous = 1;
+          class_name = NULL;
 
           /* More than one ident here to allow for MS-DOS and OS/2
              specialties like `far', `_Export' etc.  Some C++ libs
@@ -3354,19 +3393,37 @@ globals (int start_flags)
 	  while (!LOOKING_AT4 (YYEOF, ';', ':', '{'))
 	    {
 	      if (LOOKING_AT (IDENT))
-		anonymous = 0;
+                {
+                  if (class_name)
+                    {
+                      int size = strlen (yytext);
+
+                      if(strlen (class_name) < size)
+                        {
+                          class_name = (char *) xrealloc(class_name, size + 1);
+                        }
+
+                      memcpy(class_name, yytext, size + 1);
+                    }
+                  else
+                    {
+                      class_name = xstrdup(yytext);
+                    }
+                }
+
 	      MATCH ();
 	    }
 
           /* Don't add anonymous unions.  */
-          if (LOOKING_AT2 (':', '{') && !anonymous)
-              class_definition (NULL, class_tk, flags, 0);
+          if (LOOKING_AT2 (':', '{') && class_name)
+            class_definition (NULL, class_name, class_tk, flags, 0);
           else
             {
               if (skip_to (';') == ';')
                 MATCH ();
             }
 
+          free(class_name);
           flags = start_flags;
           break;
 
@@ -3462,9 +3519,9 @@ open_file (char *file)
 	  buffer = (char *) xrealloc (buffer, buffer_size);
 	}
 
-      strcpy (buffer, path->path);
-      strcat (buffer, "/");
-      strcat (buffer, file);
+      char *z = stpcpy (buffer, path->path);
+      *z++ = '/';
+      strcpy (z, file);
       fp = fopen (buffer, "r");
     }
 
@@ -3516,21 +3573,15 @@ usage (int error)
 }
 
 
-/* Display version and copyright info.  The VERSION macro is set
-   from config.h and contains the Emacs version.  */
-
-#ifndef VERSION
-# define VERSION "21"
-#endif
+/* Display version and copyright info.  */
 
 static _Noreturn void
 version (void)
 {
-  char emacs_copyright[] = COPYRIGHT;
-
-  printf ("ebrowse %s\n", VERSION);
-  puts (emacs_copyright);
-  puts ("This program is distributed under the same terms as Emacs.");
+  fputs (("ebrowse " PACKAGE_VERSION "\n"
+	  COPYRIGHT "\n"
+	  "This program is distributed under the same terms as Emacs.\n"),
+	 stdout);
   exit (EXIT_SUCCESS);
 }
 
@@ -3744,27 +3795,27 @@ main (int argc, char **argv)
 	  fp = fopen (out_filename, "r");
 	  if (fp == NULL)
 	    {
-	      yyerror ("file `%s' must exist for --append", out_filename);
+	      yyerror ("file '%s' must exist for --append", out_filename);
 	      exit (EXIT_FAILURE);
 	    }
 
 	  rc = fseek (fp, 0, SEEK_END);
 	  if (rc == -1)
 	    {
-	      yyerror ("error seeking in file `%s'", out_filename);
+	      yyerror ("error seeking in file '%s'", out_filename);
 	      exit (EXIT_FAILURE);
 	    }
 
 	  rc = ftell (fp);
 	  if (rc == -1)
 	    {
-	      yyerror ("error getting size of file `%s'", out_filename);
+	      yyerror ("error getting size of file '%s'", out_filename);
 	      exit (EXIT_FAILURE);
 	    }
 
 	  else if (rc == 0)
 	    {
-	      yyerror ("file `%s' is empty", out_filename);
+	      yyerror ("file '%s' is empty", out_filename);
 	      /* It may be ok to use an empty file for appending.
 		 exit (EXIT_FAILURE); */
 	    }
@@ -3775,7 +3826,7 @@ main (int argc, char **argv)
       yyout = fopen (out_filename, f_append ? "a" : "w");
       if (yyout == NULL)
 	{
-	  yyerror ("cannot open output file `%s'", out_filename);
+	  yyerror ("cannot open output file '%s'", out_filename);
 	  exit (EXIT_FAILURE);
 	}
     }
@@ -3803,7 +3854,7 @@ main (int argc, char **argv)
           FILE *fp = fopen (input_filenames[i], "r");
 
           if (fp == NULL)
-            yyerror ("cannot open input file `%s'", input_filenames[i]);
+            yyerror ("cannot open input file '%s'", input_filenames[i]);
           else
             {
 	      char *file;

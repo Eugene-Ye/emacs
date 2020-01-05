@@ -1,6 +1,6 @@
 ;;; hebrew.el --- support for Hebrew -*- coding: utf-8 -*-
 
-;; Copyright (C) 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -25,7 +25,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -152,7 +152,7 @@ Bidirectional editing is supported.")))
 ;; (3) If the font has precomposed glyphs, use them as far as
 ;; possible.  Adjust the remaining glyphs artificially.
 
-(defun hebrew-shape-gstring (gstring)
+(defun hebrew-shape-gstring (gstring direction)
   (let* ((font (lgstring-font gstring))
 	 (otf (font-get font :otf))
 	 (nchars (lgstring-char-len gstring))
@@ -172,7 +172,7 @@ Bidirectional editing is supported.")))
 
      ((or (assq 'hebr (car otf)) (assq 'hebr (cdr otf)))
       ;; FONT has OpenType features for Hebrew.
-      (font-shape-gstring gstring))
+      (font-shape-gstring gstring direction))
 
      (t
       ;; FONT doesn't have OpenType features for Hebrew.
@@ -216,28 +216,31 @@ Bidirectional editing is supported.")))
 	  (setq idx 1 nglyphs nchars))
 	;; Now IDX is an index to the first non-precomposed glyph.
 	;; Adjust positions of the remaining glyphs artificially.
-	(setq base-width (lglyph-width (lgstring-glyph gstring 0)))
-	(while (< idx nglyphs)
-	  (setq glyph (lgstring-glyph gstring idx))
-	  (lglyph-set-from-to glyph 0 (1- nchars))
-	  (if (>= (lglyph-lbearing glyph) (lglyph-width glyph))
-	      ;; It seems that this glyph is designed to be rendered
-	      ;; before the base glyph.
-	      (lglyph-set-adjustment glyph (- base-width) 0 0)
-	    (if (>= (lglyph-lbearing glyph) 0)
-		;; Align the horizontal center of this glyph to the
-		;; horizontal center of the base glyph.
-		(let ((width (- (lglyph-rbearing glyph)
-				(lglyph-lbearing glyph))))
-		  (lglyph-set-adjustment glyph
-					 (- (/ (- base-width width) 2)
-					    (lglyph-lbearing glyph)
-					    base-width) 0 0))))
-	  (setq idx (1+ idx))))))
+        (if (font-get font :combining-capability)
+            (font-shape-gstring gstring direction)
+          (setq base-width (lglyph-width (lgstring-glyph gstring 0)))
+          (while (< idx nglyphs)
+            (setq glyph (lgstring-glyph gstring idx))
+            (lglyph-set-from-to glyph 0 (1- nchars))
+            (if (>= (lglyph-lbearing glyph) (lglyph-width glyph))
+                ;; It seems that this glyph is designed to be rendered
+                ;; before the base glyph.
+                (lglyph-set-adjustment glyph (- base-width) 0 0)
+              (if (>= (lglyph-lbearing glyph) 0)
+                  ;; Align the horizontal center of this glyph to the
+                  ;; horizontal center of the base glyph.
+                  (let ((width (- (lglyph-rbearing glyph)
+                                  (lglyph-lbearing glyph))))
+                    (lglyph-set-adjustment glyph
+                                           (- (/ (- base-width width) 2)
+                                              (lglyph-lbearing glyph)
+                                              base-width) 0 0))))
+            (setq idx (1+ idx)))))))
     gstring))
 
-(let* ((base "[\u05D0-\u05F2]")
-       (combining "[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]+")
+(let* ((base "[\u05D0-\u05F2\uFB1D\uFB1F-\uFB28\uFB2A-\uFB4F]")
+       (combining
+        "[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7\uFB1E]+")
        (pattern1 (concat base combining))
        (pattern2 (concat base "\u200D" combining)))
   (set-char-table-range

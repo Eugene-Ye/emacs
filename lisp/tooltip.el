@@ -1,6 +1,6 @@
 ;;; tooltip.el --- show tooltip windows
 
-;; Copyright (C) 1997, 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Gerd Moellmann <gerd@acm.org>
 ;; Keywords: help c mouse tools
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -42,9 +42,6 @@
 
 (define-minor-mode tooltip-mode
   "Toggle Tooltip mode.
-With a prefix argument ARG, enable Tooltip mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable the mode
-if ARG is omitted or nil.
 
 When this global minor mode is enabled, Emacs displays help
 text (e.g. for buttons and menu items that you put the mouse on)
@@ -119,7 +116,8 @@ the value of `tooltip-y-offset' is ignored."
 (defcustom tooltip-frame-parameters
   '((name . "tooltip")
     (internal-border-width . 2)
-    (border-width . 1))
+    (border-width . 1)
+    (no-special-glyphs . t))
   "Frame parameters used for tooltips.
 
 If `left' or `top' parameters are included, they specify the absolute
@@ -127,8 +125,11 @@ position to pop up the tooltip.
 
 Note that font and color parameters are ignored, and the attributes
 of the `tooltip' face are used instead."
-  :type 'sexp
-  :group 'tooltip)
+  :type '(repeat (cons :format "%v"
+		       (symbol :tag "Parameter")
+		       (sexp :tag "Value")))
+  :group 'tooltip
+  :version "26.1")
 
 (defface tooltip
   '((((class color))
@@ -150,6 +151,18 @@ This variable is obsolete; instead of setting it to t, disable
 
 (make-obsolete-variable 'tooltip-use-echo-area
 			"disable Tooltip mode instead" "24.1" 'set)
+
+(defcustom tooltip-resize-echo-area nil
+  "If non-nil, using the echo area for tooltips will resize the echo area.
+By default, when the echo area is used for displaying tooltips,
+the tooltip text is truncated if it exceeds a single screen line.
+When this variable is non-nil, the text is not truncated; instead,
+the echo area is resized as needed to accommodate the full text
+of the tooltip.
+This variable has effect only on GUI frames."
+  :type 'boolean
+  :group 'tooltip
+  :version "27.1")
 
 
 ;;; Variables that are not customizable.
@@ -188,7 +201,8 @@ This might return nil if the event did not occur over a buffer."
 (defun tooltip-delay ()
   "Return the delay in seconds for the next tooltip."
   (if (and tooltip-hide-time
-           (< (- (float-time) tooltip-hide-time) tooltip-recent-seconds))
+	   (time-less-p (time-since tooltip-hide-time)
+			tooltip-recent-seconds))
       tooltip-short-delay
     tooltip-delay))
 
@@ -284,10 +298,6 @@ is based on the current syntax table."
 	(when (> (point) start)
 	  (buffer-substring start (point)))))))
 
-(defmacro tooltip-region-active-p ()
-  "Value is non-nil if the region should override command actions."
-  `(use-region-p))
-
 (defun tooltip-expr-to-print (event)
   "Return an expression that should be printed for EVENT.
 If a region is active and the mouse is inside the region, print
@@ -295,7 +305,7 @@ the region.  Otherwise, figure out the identifier around the point
 where the mouse is."
   (with-current-buffer (tooltip-event-buffer event)
     (let ((point (posn-point (event-end event))))
-      (if (tooltip-region-active-p)
+      (if (use-region-p)
 	  (when (and (<= (region-beginning) point) (<= point (region-end)))
 	    (buffer-substring (region-beginning) (region-end)))
 	(tooltip-identifier-from-point point)))))
@@ -347,14 +357,18 @@ It is also called if Tooltip mode is on, for text-only displays."
 						   (current-message))))
         (setq tooltip-previous-message (current-message)))
       (setq tooltip-help-message help)
-      (let ((message-truncate-lines t)
+      (let ((message-truncate-lines
+             (or (not (display-graphic-p)) (not tooltip-resize-echo-area)))
             (message-log-max nil))
         (message "%s" help)))
      ((stringp tooltip-previous-message)
       (let ((message-log-max nil))
         (message "%s" tooltip-previous-message)
         (setq tooltip-previous-message nil)))
-     (t
+     ;; Only stop displaying the message when the current message is our own.
+     ;; This has the advantage of not clearing the echo area when
+     ;; running after an error message was displayed (Bug#3192).
+     ((equal-including-properties tooltip-help-message (current-message))
       (message nil)))))
 
 (defun tooltip-show-help (msg)

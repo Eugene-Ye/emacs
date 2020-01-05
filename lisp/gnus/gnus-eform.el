@@ -1,6 +1,6 @@
 ;;; gnus-eform.el --- a mode for editing forms for Gnus
 
-;; Copyright (C) 1996-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -96,7 +96,8 @@ The optional LAYOUT overrides the `edit-form' window layout."
     (while (not (eobp))
       (insert ";;; ")
       (forward-line 1))
-    (insert ";; Type `C-c C-c' after you've finished editing.\n")
+    (insert (substitute-command-keys
+	     ";; Type `C-c C-c' after you've finished editing.\n"))
     (insert "\n")
     (let ((p (point)))
       (gnus-pp form)

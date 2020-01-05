@@ -1,16 +1,17 @@
-;;; ps-print.el --- print text from the buffer as PostScript
+;;; ps-print.el --- print text from the buffer as PostScript -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993-2020 Free Software Foundation, Inc.
 
 ;; Author: Jim Thompson (was <thompson@wg2.waii.com>)
 ;;	Jacques Duthen (was <duthen@cegelec-red.fr>)
-;;	Vinicius Jose Latorre <viniciusjl@ig.com.br>
-;;	Kenichi Handa <handa@m17n.org> (multi-byte characters)
-;; Maintainer: Kenichi Handa <handa@m17n.org> (multi-byte characters)
-;;	Vinicius Jose Latorre <viniciusjl@ig.com.br>
+;;	Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
+;;	Kenichi Handa <handa@gnu.org> (multi-byte characters)
+;; Maintainer: Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
 ;; Keywords: wp, print, PostScript
 ;; Version: 7.3.5
 ;; X-URL: http://www.emacswiki.org/cgi-bin/wiki/ViniciusJoseLatorre
+
+(eval-when-compile (require 'cl-lib))
 
 (defconst ps-print-version "7.3.5"
   "ps-print.el, v 7.3.5 <2009/12/23 vinicius>
@@ -20,7 +21,7 @@ Emacs without changes to the version number.  When reporting bugs, please also
 report the version of Emacs, if any, that ps-print was distributed with.
 
 Please send all bug fixes and enhancements to
-	bug-gnu-emacs@gnu.org and Vinicius Jose Latorre <viniciusjl@ig.com.br>.")
+	bug-gnu-emacs@gnu.org and Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>.")
 
 ;; This file is part of GNU Emacs.
 
@@ -35,7 +36,7 @@ Please send all bug fixes and enhancements to
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -46,7 +47,7 @@ Please send all bug fixes and enhancements to
 ;;
 ;; This package provides printing of Emacs buffers on PostScript printers; the
 ;; buffer's bold and italic text attributes are preserved in the printer
-;; output.  ps-print is intended for use with Emacs or XEmacs, together with a
+;; output.  ps-print is intended for use with Emacs, together with a
 ;; fontifying package such as font-lock or hilit.
 ;;
 ;; ps-print uses the same face attributes defined through font-lock or hilit to
@@ -809,7 +810,7 @@ Please send all bug fixes and enhancements to
 ;; on next page.  Visually, valid values are (the character `+' at right of
 ;; each column indicates that a line is printed):
 ;;
-;;		   `nil'        `follow'        `full'        `full-follow'
+;;		    nil         `follow'        `full'        `full-follow'
 ;; Current Page --------     -----------     ---------     ----------------
 ;;		1  XXXXX +   1  XXXXXXXX +   1  XXXXXX +   1  XXXXXXXXXXXXX +
 ;;		2  XXXXX +   2  XXXXXXXX +   2  XXXXXX +   2  XXXXXXXXXXXXX +
@@ -1216,7 +1217,7 @@ Please send all bug fixes and enhancements to
 ;; New since version 2.8
 ;; ---------------------
 ;;
-;; [vinicius] Vinicius Jose Latorre <viniciusjl@ig.com.br>
+;; [vinicius] Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
 ;;
 ;;    2007-10-27
 ;;	 `ps-fg-validate-p', `ps-fg-list'
@@ -1274,7 +1275,7 @@ Please send all bug fixes and enhancements to
 ;;
 ;;    `ps-print-region-function'
 ;;
-;; [vinicius] Vinicius Jose Latorre <viniciusjl@ig.com.br>
+;; [vinicius] Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
 ;;
 ;;    1999-03-01
 ;;	 PostScript tumble and setpagedevice.
@@ -1287,7 +1288,7 @@ Please send all bug fixes and enhancements to
 ;;
 ;;    Multi-byte buffer handling.
 ;;
-;; [vinicius] Vinicius Jose Latorre <viniciusjl@ig.com.br>
+;; [vinicius] Vinicius Jose Latorre <viniciusjl.gnu@gmail.com>
 ;;
 ;;    1998-03-06
 ;;	 Skip invisible text.
@@ -1319,28 +1320,17 @@ Please send all bug fixes and enhancements to
 ;; Known bugs and limitations of ps-print
 ;; --------------------------------------
 ;;
-;; Although color printing will work in XEmacs 19.12, it doesn't work well; in
-;; particular, bold or italic fonts don't print in the right background color.
-;;
-;; Invisible properties aren't correctly ignored in XEmacs 19.12.
-;;
 ;; Automatic font-attribute detection doesn't work well, especially with
 ;; hilit19 and older versions of get-create-face.  Users having problems with
 ;; auto-font detection should use the lists `ps-italic-faces', `ps-bold-faces'
 ;; and `ps-underlined-faces' and/or turn off automatic detection by setting
 ;; `ps-auto-font-detect' to nil.
 ;;
-;; Automatic font-attribute detection doesn't work with XEmacs 19.12 in tty
-;; mode; use the lists `ps-italic-faces', `ps-bold-faces' and
-;; `ps-underlined-faces' instead.
-;;
 ;; Still too slow; could use some hand-optimization.
 ;;
 ;; Default background color isn't working.
 ;;
 ;; Faces are always treated as opaque.
-;;
-;; Epoch, Lucid and Emacs 22 not supported.  At all.
 ;;
 ;; Fixed-pitch fonts work better for line folding, but are not required.
 ;;
@@ -1403,7 +1393,7 @@ Please send all bug fixes and enhancements to
 ;; prologue code suggestion, for odd/even printing suggestion and for
 ;; `ps-prologue-file' enhancement.
 ;;
-;; Thanks to Ken'ichi Handa <handa@m17n.org> for multi-byte buffer handling.
+;; Thanks to Ken'ichi Handa <handa@gnu.org> for multi-byte buffer handling.
 ;;
 ;; Thanks to Matthew O Persico <Matthew.Persico@lazard.com> for line number on
 ;; empty columns.
@@ -1463,18 +1453,11 @@ Please send all bug fixes and enhancements to
 
 (require 'lpr)
 
-
-(if (featurep 'xemacs)
-    (or (featurep 'lisp-float-type)
-	(error "`ps-print' requires floating point support"))
-  (unless (and (boundp 'emacs-major-version)
-	       (>= emacs-major-version 23))
-    (error "`ps-print' only supports Emacs 23 and higher")))
-
-
-;; Load XEmacs/Emacs definitions
+;; Load Emacs definitions
 (require 'ps-def)
 
+;; autoloads for secondary file
+(require 'ps-print-loaddefs)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; User Variables:
@@ -1493,7 +1476,7 @@ Please send all bug fixes and enhancements to
   :link '(emacs-library-link :tag "Source Lisp File" "ps-print.el")
   :prefix "ps-"
   :version "20"
-  :group 'wp
+  :group 'text
   :group 'postscript)
 
 (defgroup ps-print-horizontal nil
@@ -1684,7 +1667,7 @@ non-default settings would be \"LPT1\" to \"LPT3\" for parallel printers, or
 for a shared network printer.  You can also set it to a name of a file, in
 which case the output gets appended to that file.  \(Note that `ps-print'
 package already has facilities for printing to a file, so you might as well use
-them instead of changing the setting of this variable.\)  If you want to
+them instead of changing the setting of this variable.)  If you want to
 silently discard the printed output, set this to \"NUL\".
 
 Set to t, if the utility given by `ps-lpr-command' needs an empty printer name.
@@ -1771,7 +1754,7 @@ See `ps-lpr-command'."
 
 (defcustom ps-print-region-function
   (if (memq system-type '(ms-dos windows-nt))
-      #'w32-direct-ps-print-region-function
+      'w32-direct-ps-print-region-function
     #'call-process-region)
   "Specify a function to print the region on a PostScript printer.
 See definition of `call-process-region' for calling conventions.  The fourth
@@ -1953,7 +1936,7 @@ If you set option `ps-selected-pages', first the pages are
 filtered by option `ps-selected-pages' and then by `ps-even-or-odd-pages'.
 For example, if we have:
 
-   (setq ps-selected-pages '(1 4 (6 . 10) (12 . 16) 20))
+   (setq ps-selected-pages \\='(1 4 (6 . 10) (12 . 16) 20))
 
 Combining with `ps-even-or-odd-pages' and option `ps-n-up-printing', we have:
 
@@ -2117,7 +2100,7 @@ See also documentation for `ps-zebra-stripes' and `ps-zebra-stripe-height'."
 Visually, valid values are (the character `+' at right of each column indicates
 that a line is printed):
 
-		   `nil'        `follow'        `full'        `full-follow'
+		    nil         `follow'        `full'        `full-follow'
    Current Page --------     -----------     ---------     ----------------
 		1  XXXXX +   1  XXXXXXXX +   1  XXXXXX +   1  XXXXXXXXXXXXX +
 		2  XXXXX +   2  XXXXXXXX +   2  XXXXXX +   2  XXXXXXXXXXXXX +
@@ -2249,9 +2232,9 @@ X, Y, XSCALE, YSCALE and ROTATION may be a floating point number, an integer
 number or a string.  If it is a string, the string should contain PostScript
 programming that returns a float or integer value.
 
-For example, if you wish to print an EPS image on all pages do:
+For example, if you wish to print an EPS image on all pages use:
 
-   '((\"~/images/EPS-image.ps\"))"
+   ((\"~/images/EPS-image.ps\"))"
   :type '(repeat
 	  (list
 	   (file   :tag "EPS File")
@@ -2300,9 +2283,9 @@ X, Y, FONTSIZE, GRAY and ROTATION may be a floating point number, an integer
 number or a string.  If it is a string, the string should contain PostScript
 programming that returns a float or integer value.
 
-For example, if you wish to print text \"Preliminary\" on all pages do:
+For example, if you wish to print text \"Preliminary\" on all pages use:
 
-   '((\"Preliminary\"))"
+   ((\"Preliminary\"))"
   :type '(repeat
 	  (list
 	   (string :tag "Text")
@@ -2948,13 +2931,8 @@ Either a float or a cons of floats (LANDSCAPE-SIZE . PORTRAIT-SIZE)."
 ;;; Colors
 
 ;; Printing color requires x-color-values.
-;; XEmacs change: Need autoload for the "Options->Printing->Color Printing"
-;;                widget to work.
 ;;;###autoload
-(defcustom ps-print-color-p
-  (or (fboundp 'x-color-values)		; Emacs
-      (fboundp 'color-instance-rgb-components))
-					; XEmacs
+(defcustom ps-print-color-p (fboundp 'x-color-values)
   "Specify how buffer's text color is printed.
 
 Valid values are:
@@ -3172,7 +3150,7 @@ This variable is used only when `ps-print-color-p' is set to `black-white'."
       font-lock-variable-name-face
       font-lock-keyword-face
       font-lock-warning-face))
-  "A list of the \(non-bold\) faces that should be printed in bold font.
+  "A list of the (non-bold) faces that should be printed in bold font.
 This applies to generating PostScript."
   :type '(repeat face)
   :version "20"
@@ -3185,7 +3163,7 @@ This applies to generating PostScript."
       font-lock-string-face
       font-lock-comment-face
       font-lock-warning-face))
-  "A list of the \(non-italic\) faces that should be printed in italic font.
+  "A list of the (non-italic) faces that should be printed in italic font.
 This applies to generating PostScript."
   :type '(repeat face)
   :version "20"
@@ -3196,7 +3174,7 @@ This applies to generating PostScript."
     '(font-lock-function-name-face
       font-lock-constant-face
       font-lock-warning-face))
-  "A list of the \(non-underlined\) faces that should be printed underlined.
+  "A list of the (non-underlined) faces that should be printed underlined.
 This applies to generating PostScript."
   :type '(repeat face)
   :version "20"
@@ -3232,7 +3210,7 @@ in the PostScript array HeaderLinesLeft.
 
 Strings are inserted unchanged into the array; those representing
 PostScript string literals should be delimited with PostScript string
-delimiters '(' and ')'.
+delimiters `(' and `)'.
 
 For symbols with bound functions, the function is called and should return a
 string to be inserted into the array.  For symbols with bound values, the value
@@ -3286,8 +3264,8 @@ The value should be a list of strings and symbols, each representing an entry
 in the PostScript array FooterLinesLeft.
 
 Strings are inserted unchanged into the array; those representing PostScript
-string literals should be delimited with PostScript string delimiters '(' and
-')'.
+string literals should be delimited with PostScript string delimiters `(' and
+`)'.
 
 For symbols with bound functions, the function is called and should return a
 string to be inserted into the array.  For symbols with bound values, the value
@@ -3378,13 +3356,7 @@ It's like the very first character of buffer (or region) is ^L (\\014)."
   :version "20"
   :group 'ps-print-headers)
 
-(defcustom ps-postscript-code-directory
-  (cond ((fboundp 'locate-data-directory) ; XEmacs
-         (locate-data-directory "ps-print"))
-        ((boundp 'data-directory)       ; XEmacs and Emacs.
-         data-directory)
-        (t                              ; don't know what to do
-         (error "`ps-postscript-code-directory' isn't set properly")))
+(defcustom ps-postscript-code-directory data-directory
   "Directory where it's located the PostScript prologue file used by ps-print.
 By default, this directory is the same as in the variable `data-directory'."
   :type 'directory
@@ -3601,7 +3573,7 @@ image in a file with that name."
 (defun ps-line-lengths ()
   "Display the correspondence between a line length and a font size.
 Done using the current ps-print setup.
-Try: pr -t file | awk '{printf \"%3d %s\n\", length($0), $0}' | sort -r | head"
+Try: pr -t file | awk \\='{printf \"%3d %s\n\", length($0), $0}\\=' | sort -r | head"
   (interactive)
   (ps-line-lengths-internal))
 
@@ -3629,8 +3601,7 @@ The table depends on the current ps-print setup."
     (mapconcat
      #'ps-print-quote
      (list
-      (concat "\n;;; (" (if (featurep 'xemacs) "XEmacs" "Emacs")
-	      ") ps-print version " ps-print-version "\n")
+      (concat "\n;;; (Emacs) ps-print version " ps-print-version "\n")
       ";; internal vars"
       (ps-comment-string "emacs-version     " emacs-version)
       (ps-comment-string "lpr-windows-system" lpr-windows-system)
@@ -4138,48 +4109,6 @@ If EXTENSION is any other symbol, it is ignored."
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Adapted from font-lock: (obsolete stuff)
-;; Originally face attributes were specified via `font-lock-face-attributes'.
-;; Users then changed the default face attributes by setting that variable.
-;; However, we try and be back-compatible and respect its value if set except
-;; for faces where M-x customize has been used to save changes for the face.
-
-
-(defun ps-font-lock-face-attributes ()
-  (and (boundp 'font-lock-mode) (symbol-value 'font-lock-mode)
-       (boundp 'font-lock-face-attributes)
-       (let ((face-attributes (symbol-value 'font-lock-face-attributes)))
-	 (while face-attributes
-	   (let* ((face-attribute
-		   (car (prog1 face-attributes
-			  (setq face-attributes (cdr face-attributes)))))
-		  (face (car face-attribute)))
-	     ;; Rustle up a `defface' SPEC from a
-	     ;; `font-lock-face-attributes' entry.
-	     (unless (get face 'saved-face)
-	       (let ((foreground (nth 1 face-attribute))
-		     (background (nth 2 face-attribute))
-		     (bold-p (nth 3 face-attribute))
-		     (italic-p (nth 4 face-attribute))
-		     (underline-p (nth 5 face-attribute))
-		     face-spec)
-		 (when foreground
-		   (setq face-spec (cons ':foreground
-					 (cons foreground face-spec))))
-		 (when background
-		   (setq face-spec (cons ':background
-					 (cons background face-spec))))
-		 (when bold-p
-		   (setq face-spec (append '(:weight bold) face-spec)))
-		 (when italic-p
-		   (setq face-spec (append '(:slant italic) face-spec)))
-		 (when underline-p
-		   (setq face-spec (append '(:underline t) face-spec)))
-		 (custom-declare-face face (list (list t face-spec)) nil)
-		 )))))))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Internal functions and variables
 
 
@@ -4308,7 +4237,7 @@ which long lines wrap around."
 (defun ps-line-lengths-internal ()
   "Display the correspondence between a line length and a font size.
 Done using the current ps-print setup.
-Try: pr -t file | awk '{printf \"%3d %s\n\", length($0), $0}' | sort -r | head"
+Try: pr -t file | awk \\='{printf \"%3d %s\n\", length($0), $0}\\=' | sort -r | head"
   (let* ((ps-font-size-internal
 	  (or ps-font-size-internal
 	      (ps-get-font-size 'ps-font-size)))
@@ -4604,8 +4533,8 @@ page-height == ((floor print-height ((th + ls) * zh)) * ((th + ls) * zh)) - th
 		       (setq prompt "File is unwritable"))
 		      ((file-exists-p res)
 		       (setq prompt "File exists")
-		       (not (y-or-n-p (format "File `%s' exists; overwrite? "
-					      res))))
+		       (not (y-or-n-p (format-message
+				       "File `%s' exists; overwrite? " res))))
 		      (t nil))
 	   (setq res (read-file-name
 		      (format "%s; save PostScript to file: " prompt)
@@ -4652,7 +4581,9 @@ page-height == ((floor print-height ((th + ls) * zh)) * ((th + ls) * zh)) - th
 (defsubst ps-output-string-prim (string)
   (insert "(")				;insert start-string delimiter
   (save-excursion			;insert string
-    (insert (string-as-unibyte string)))
+    (insert (if (multibyte-string-p string)
+                (encode-coding-string string 'utf-8)
+              string)))
   ;; Find and quote special characters as necessary for PS
   ;; This skips everything except control chars, non-ASCII chars, (, ) and \.
   (while (progn (skip-chars-forward " -'*-[]-~") (not (eobp)))
@@ -4759,7 +4690,11 @@ page-height == ((floor print-height ((th + ls) * zh)) * ((th + ls) * zh)) - th
    ;; Literal strings should be output as is -- the string must contain its own
    ;; PS string delimiters, '(' and ')', if necessary.
    ((stringp content)
-    (ps-output content))
+    (if (functionp ps-encode-header-string-function)
+        (dolist (elem (funcall ps-encode-header-string-function
+                               content fonttag))
+	  (ps-output elem))
+      (ps-output content)))
 
    ;; Functions are called -- they should return strings; they will be inserted
    ;; as strings and the PS string delimiters added.
@@ -4775,7 +4710,7 @@ page-height == ((floor print-height ((th + ls) * zh)) * ((th + ls) * zh)) - th
    ((and (symbolp content) (boundp content))
     (if (fboundp ps-encode-header-string-function)
 	(dolist (l (funcall ps-encode-header-string-function
-			     (symbol-value content) fonttag))
+                            (symbol-value content) fonttag))
 	  (ps-output-string l))
       (ps-output-string (symbol-value content))))
 
@@ -5711,7 +5646,7 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	 (error "Invalid %s `%S'%s"
 		mess size
 		(if arg
-		    (format " for `%S'" arg)
+		    (format-message " for `%S'" arg)
 		  "")))
     siz))
 
@@ -5806,9 +5741,9 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	ps-footer-font-size-internal (ps-get-font-size 'ps-footer-font-size)
 	ps-control-or-escape-regexp
 	(cond ((eq ps-print-control-characters '8-bit)
-	       (string-as-unibyte "[\000-\037\177-\377]"))
+	       "[\000-\037\177-\377]")
 	      ((eq ps-print-control-characters 'control-8-bit)
-	       (string-as-unibyte "[\000-\037\177-\237]"))
+	       "[\000-\037\177-\237]")
 	      ((eq ps-print-control-characters 'control)
 	       "[\000-\037\177]")
 	      (t "[\t\n\f]"))
@@ -5822,7 +5757,7 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	ps-default-background (ps-rgb-color
 			       (cond
 				((or (member ps-print-color-p
-					     '(nil back-white))
+					     '(nil black-white))
 				     (eq genfunc 'ps-generate-postscript))
 				 nil)
 				((eq ps-default-bg 'frame-parameter)
@@ -5836,7 +5771,7 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	ps-default-foreground (ps-rgb-color
 			       (cond
 				((or (member ps-print-color-p
-					     '(nil back-white))
+					     '(nil black-white))
 				     (eq genfunc 'ps-generate-postscript))
 				 nil)
 				((eq ps-default-fg 'frame-parameter)
@@ -5851,18 +5786,19 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 			       #'(lambda (arg)
 				   (ps-rgb-color arg "unspecified-fg" 0.0))
 			       (append (and (not (member ps-print-color-p
-							 '(nil back-white)))
+							 '(nil black-white)))
 					    ps-fg-list)
 				       (list ps-default-foreground
 					     "black")))
 	ps-default-color      (and (not (member ps-print-color-p
-						'(nil back-white)))
+						'(nil black-white)))
 				   ps-default-foreground)
 	ps-current-color      ps-default-color
 	;; Set up default functions.
 	;; They may be overridden by ps-mule-begin-job.
 	ps-basic-plot-string-function    'ps-basic-plot-string
 	ps-encode-header-string-function nil)
+  (cl-assert (not (multibyte-string-p ps-control-or-escape-regexp)))
   ;; initialize page dimensions
   (ps-get-page-dimensions)
   ;; final check
@@ -6043,10 +5979,7 @@ XSTART YSTART are the relative position for the first page in a sheet.")
 	    (progn
 	      (setq ps-razchunk q-done)
 	      (message "Formatting...%3d%%"
-		       (if (< q-todo 100)
-			   (/ (* 100 q-done) q-todo)
-			 (/ q-done (/ q-todo 100)))
-		       ))))))
+		       (floor (* 100.0 q-done) q-todo)))))))
 
 (defvar ps-last-font nil)
 
@@ -6338,7 +6271,7 @@ If FACE is not a valid face name, use default face."
        (ps-font-number 'ps-font-for-text
 		       (or (aref ps-font-type (logand effect 3))
 			   face))
-       fg-color bg-color (lsh effect -2)))))
+       fg-color bg-color (ash effect -2)))))
   (goto-char to))
 
 
@@ -6347,10 +6280,6 @@ If FACE is not a valid face name, use default face."
 
 
 (defun ps-build-reference-face-lists ()
-  ;; Ensure that face database is updated with faces on
-  ;; `font-lock-face-attributes' (obsolete stuff)
-  (ps-font-lock-face-attributes)
-  ;; Now, rebuild reference face lists
   (setq ps-print-face-alist nil)
   (if ps-auto-font-detect
       (mapc 'ps-map-face (face-list))
@@ -6586,79 +6515,6 @@ If FACE is not a valid face name, use default face."
 
 (unless noninteractive
   (add-hook 'kill-emacs-hook #'ps-kill-emacs-check))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; To make this file smaller, some commands go in a separate file.
-;; But autoload them here to make the separation invisible.
-
-;;;### (autoloads nil "ps-mule" "ps-mule.el" "173235d6520575a877c25be437fb9e5f")
-;;; Generated autoloads from ps-mule.el
-
-(defvar ps-multibyte-buffer nil "\
-Specifies the multi-byte buffer handling.
-
-Valid values are:
-
-  nil			  This is the value to use the default settings;
-			  by default, this only works to print buffers with
-			  only ASCII and Latin characters.   But this default
-			  setting can be changed by setting the variable
-			  `ps-mule-font-info-database-default' differently.
-			  The initial value of this variable is
-			  `ps-mule-font-info-database-latin' (see
-			  documentation).
-
-  `non-latin-printer'	  This is the value to use when you have a Japanese
-			  or Korean PostScript printer and want to print
-			  buffer with ASCII, Latin-1, Japanese (JISX0208 and
-			  JISX0201-Kana) and Korean characters.  At present,
-			  it was not tested with the Korean characters
-			  printing.  If you have a korean PostScript printer,
-			  please, test it.
-
-  `bdf-font'		  This is the value to use when you want to print
-			  buffer with BDF fonts.  BDF fonts include both latin
-			  and non-latin fonts.  BDF (Bitmap Distribution
-			  Format) is a format used for distributing X's font
-			  source file.  BDF fonts are included in
-			  `intlfonts-1.2' which is a collection of X11 fonts
-			  for all characters supported by Emacs.  In order to
-			  use this value, be sure to have installed
-			  `intlfonts-1.2' and set the variable
-			  `bdf-directory-list' appropriately (see ps-bdf.el for
-			  documentation of this variable).
-
-  `bdf-font-except-latin' This is like `bdf-font' except that it uses
-			  PostScript default fonts to print ASCII and Latin-1
-			  characters.  This is convenient when you want or
-			  need to use both latin and non-latin characters on
-			  the same buffer.  See `ps-font-family',
-			  `ps-header-font-family' and `ps-font-info-database'.
-
-Any other value is treated as nil.")
-
-(custom-autoload 'ps-multibyte-buffer "ps-mule" t)
-
-(autoload 'ps-mule-initialize "ps-mule" "\
-Initialize global data for printing multi-byte characters.
-
-\(fn)" nil nil)
-
-(autoload 'ps-mule-begin-job "ps-mule" "\
-Start printing job for multi-byte chars between FROM and TO.
-It checks if all multi-byte characters in the region are printable or not.
-
-\(fn FROM TO)" nil nil)
-
-(autoload 'ps-mule-end-job "ps-mule" "\
-Finish printing job for multi-byte chars.
-
-\(fn)" nil nil)
-
-;;;***
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'ps-print)
 

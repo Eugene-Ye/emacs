@@ -1,6 +1,6 @@
 ;;; cmacexp.el --- expand C macros in a region
 
-;; Copyright (C) 1992, 1994, 1996, 2000-2014 Free Software Foundation,
+;; Copyright (C) 1992, 1994, 1996, 2000-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Francesco Potortì <pot@gnu.org>
@@ -27,7 +27,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -364,8 +364,8 @@ Optional arg DISPLAY non-nil means show messages in the echo area."
 	    ;; Find and delete the mark of the start of the expansion.
 	    ;; Look for `# nn "file.c"' lines and delete them.
 	    (goto-char (point-min))
-	    (search-forward startmarker)
-	    (delete-region 1 (point)))
+            (if (search-forward startmarker nil t)
+                (delete-region 1 (point))))
 	  (while (re-search-forward (concat "^# [0-9]+ \""
 					    (regexp-quote filename)
 					    "\"") nil t)
@@ -383,14 +383,16 @@ Optional arg DISPLAY non-nil means show messages in the echo area."
 		       (not (member (file-name-nondirectory shell-file-name)
 				    msdos-shells)))
 		   (eq exit-status 0))
-	      (zerop (nth 7 (file-attributes (expand-file-name tempname))))
+	      (zerop (file-attribute-size
+		      (file-attributes (expand-file-name tempname))))
 	      (progn
 		(goto-char (point-min))
 		;; Put the messages inside a comment, so they won't get in
 		;; the way of font-lock, highlighting etc.
 		(insert
-		 (format "/* Preprocessor terminated with status %s\n\n   Messages from `%s\':\n\n"
-			 exit-status cppcommand))
+		 (format
+		  "/* Preprocessor terminated with status %s\n\n   Messages from '%s':\n\n"
+		  exit-status cppcommand))
 		(goto-char (+ (point)
 			      (nth 1 (insert-file-contents tempname))))
 		(insert "\n\n*/\n")))
@@ -404,7 +406,3 @@ Optional arg DISPLAY non-nil means show messages in the echo area."
       (kill-buffer outbuf))))
 
 ;;; cmacexp.el ends here
-
-;; Local Variables:
-;; coding: utf-8
-;; End:

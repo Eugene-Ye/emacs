@@ -1,6 +1,6 @@
-;;; rmailsum.el --- make summary buffers for the mail reader
+;;; rmailsum.el --- make summary buffers for the mail reader  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985, 1993-1996, 2000-2014 Free Software Foundation,
+;; Copyright (C) 1985, 1993-1996, 2000-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -263,7 +263,7 @@ Setting this option to nil might speed up the generation of summaries."
 ;; Regenerate the contents of the summary
 ;; using the same selection criterion as last time.
 ;; M-x revert-buffer in a summary buffer calls this function.
-(defun rmail-update-summary (&rest ignore)
+(defun rmail-update-summary (&rest _)
   (apply (car rmail-summary-redo) (cdr rmail-summary-redo)))
 
 ;;;###autoload
@@ -288,23 +288,18 @@ LABELS should be a string containing the desired labels, separated by commas."
 			     (mail-comma-list-regexp labels)
 			     "\\)\\(,\\|\\'\\)")))
 
-;; FIXME "a string of regexps separated by commas" makes no sense because:
-;;  i) it's pointless (you can just use \\|)
-;; ii) it's broken (you can't specify a literal comma)
-;; rmail-summary-by-topic and rmail-summary-by-senders have the same issue.
 ;;;###autoload
 (defun rmail-summary-by-recipients (recipients &optional primary-only)
   "Display a summary of all messages with the given RECIPIENTS.
 Normally checks the To, From and Cc fields of headers;
 but if PRIMARY-ONLY is non-nil (prefix arg given),
  only look in the To and From fields.
-RECIPIENTS is a string of regexps separated by commas."
+RECIPIENTS is a regular expression."
   (interactive "sRecipients to summarize by: \nP")
   (rmail-new-summary
    (concat "recipients " recipients)
    (list 'rmail-summary-by-recipients recipients primary-only)
-   'rmail-message-recipients-p
-   (mail-comma-list-regexp recipients) primary-only))
+   'rmail-message-recipients-p recipients primary-only))
 
 (defun rmail-message-recipients-p (msg recipients &optional primary-only)
   (rmail-apply-in-message msg 'rmail-message-recipients-p-1
@@ -341,20 +336,37 @@ Emacs will list the message in the summary."
   "Return t, if for message number MSG, regexp REGEXP matches in the header."
   (rmail-apply-in-message msg 'rmail-message-regexp-p-1 msg regexp))
 
+(defun rmail--decode-and-apply (function &rest args)
+  "Make an RFC2047-decoded copy of current buffer, apply FUNCTION with ARGS."
+  (let ((buff (current-buffer)))
+    (with-temp-buffer
+      (insert-buffer-substring buff)
+      (goto-char (point-min))
+      ;; FIXME?  In rmail-show-message-1, decoding depends on
+      ;; rmail-enable-mime being non-nil (?).
+      (rfc2047-decode-region (point-min)
+			     (save-excursion
+			       (progn
+				 (search-forward "\n\n" nil 'move)
+				 (point))))
+      (apply function args))))
+
 (defun rmail-message-regexp-p-1 (msg regexp)
   ;; Search functions can expect to start from the beginning.
   (narrow-to-region (point) (save-excursion (search-forward "\n\n") (point)))
   (if (and rmail-enable-mime
 	   rmail-search-mime-header-function)
       (funcall rmail-search-mime-header-function msg regexp (point))
-    (re-search-forward regexp nil t)))
+    ;; We need to search the full headers, but probably want to decode
+    ;; them so they match the ones people see displayed.  (Bug#19088)
+    (rmail--decode-and-apply 're-search-forward regexp nil t)))
 
 ;;;###autoload
 (defun rmail-summary-by-topic (subject &optional whole-message)
   "Display a summary of all messages with the given SUBJECT.
 Normally checks just the Subject field of headers; but with prefix
 argument WHOLE-MESSAGE is non-nil, looks in the whole message.
-SUBJECT is a string of regexps separated by commas."
+SUBJECT is a regular expression."
   (interactive
    ;; We quote the default subject, because if it contains regexp
    ;; special characters (eg "?"), it can fail to match itself.  (Bug#2333)
@@ -366,24 +378,32 @@ SUBJECT is a string of regexps separated by commas."
   (rmail-new-summary
    (concat "about " subject)
    (list 'rmail-summary-by-topic subject whole-message)
-   'rmail-message-subject-p
-   (mail-comma-list-regexp subject) whole-message))
+   'rmail-message-subject-p subject whole-message))
 
 (defun rmail-message-subject-p (msg subject &optional whole-message)
   (if whole-message
-      (rmail-apply-in-message msg 're-search-forward subject nil t)
+      ;; SUBJECT and rmail-simplified-subject are 2047 decoded.
+      (rmail-apply-in-message msg 'rmail--decode-and-apply
+			      're-search-forward subject nil t)
     (string-match subject (rmail-simplified-subject msg))))
 
 ;;;###autoload
 (defun rmail-summary-by-senders (senders)
   "Display a summary of all messages whose \"From\" field matches SENDERS.
-SENDERS is a string of regexps separated by commas."
-  (interactive "sSenders to summarize by: ")
+SENDERS is a regular expression.  The default for SENDERS matches the
+sender of the current messsage."
+  (interactive
+   (let* ((def (rmail-get-header "From"))
+          ;; We quote the default argument, because if it contains regexp
+          ;; special characters (eg "?"), it can fail to match itself.
+          (sender (regexp-quote def))
+	  (prompt (concat "Senders to summarize by (regexp"
+			  (if sender ", default this message's sender" "")
+			  "): ")))
+     (list (read-string prompt nil nil sender))))
   (rmail-new-summary
    (concat "senders " senders)
-   (list 'rmail-summary-by-senders senders)
-   'rmail-message-senders-p
-   (mail-comma-list-regexp senders)))
+   (list 'rmail-summary-by-senders senders) 'rmail-message-senders-p senders))
 
 (defun rmail-message-senders-p (msg senders)
   (string-match senders (or (rmail-get-header "From" msg) "")))
@@ -656,7 +676,7 @@ LINES is the number of lines in the message (if we should display that)
   (goto-char (point-min))
   (let ((line (rmail-header-summary))
 	(labels (rmail-get-summary-labels))
-	pos status prefix basic-start basic-end linecount-string)
+        status prefix basic-start basic-end linecount-string)
 
     (setq linecount-string
 	  (cond
@@ -728,7 +748,7 @@ the message being processed."
 				 ;; Get all the lines of the From field
 				 ;; so that we get a whole comment if there is one,
 				 ;; so that mail-strip-quoted-names can discard it.
-				 (let ((opoint (point)))
+				 (progn
 				   (while (progn (forward-line 1)
 						 (looking-at "[ \t]")))
 				   ;; Back up over newline, then trailing spaces or tabs
@@ -742,14 +762,7 @@ the message being processed."
 			    (concat "^\\("
 				    (regexp-quote (user-login-name))
 				    "\\($\\|@\\)\\|"
-				    (regexp-quote
-				     ;; Don't lose if run from init file
-				     ;; where user-mail-address is not
-				     ;; set yet.
-				     (or user-mail-address
-					 (concat (user-login-name) "@"
-						 (or mail-host-address
-						     (system-name)))))
+				    (regexp-quote user-mail-address)
 				    "\\>\\)"))
 			from))
 		   ;; No From field, or it's this user.
@@ -791,7 +804,7 @@ the message being processed."
 		 (forward-line 1)
 		 (setq str (buffer-substring pos (1- (point))))
 		 (while (looking-at "[ \t]")
-		   (setq str (concat str " " 
+		   (setq str (concat str " "
 				     (buffer-substring (match-end 0)
 						       (line-end-position))))
 		   (forward-line 1))
@@ -804,7 +817,8 @@ the message being processed."
 
 (defun rmail-summary-next-all (&optional number)
   (interactive "p")
-  (forward-line (if number number 1))
+  (or number (setq number 1))
+  (forward-line number)
   ;; It doesn't look nice to move forward past the last message line.
   (and (eobp) (> number 0)
        (forward-line -1))
@@ -812,17 +826,14 @@ the message being processed."
 
 (defun rmail-summary-previous-all (&optional number)
   (interactive "p")
-  (forward-line (- (if number number 1)))
-  ;; It doesn't look nice to move forward past the last message line.
-  (and (eobp) (< number 0)
-       (forward-line -1))
-  (display-buffer rmail-buffer))
+  (rmail-summary-next-all (- (or number 1))))
 
 (defun rmail-summary-next-msg (&optional number)
   "Display next non-deleted msg from rmail file.
 With optional prefix argument NUMBER, moves forward this number of non-deleted
 messages, or backward if NUMBER is negative."
   (interactive "p")
+  (or number (setq number 1))
   (forward-line 0)
   (and (> number 0) (end-of-line))
   (let ((count (if (< number 0) (- number) number))
@@ -840,7 +851,7 @@ messages, or backward if NUMBER is negative."
 With optional prefix argument NUMBER, moves backward this number of
 non-deleted messages."
   (interactive "p")
-  (rmail-summary-next-msg (- (if number number 1))))
+  (rmail-summary-next-msg (- (or number 1))))
 
 (defun rmail-summary-next-labeled-message (n labels)
   "Show next message with LABELS.  Defaults to last labels used.
@@ -912,8 +923,8 @@ A prefix argument serves as a repeat count;
 a negative argument means to delete and move backward."
   (interactive "p")
   (unless (numberp count) (setq count 1))
-  (let (end del-msg
-	    (backward (< count 0)))
+  (let (del-msg
+        (backward (< count 0)))
     (while (and (/= count 0)
 		;; Don't waste time if we are at the beginning
 		;; and trying to go backward.
@@ -1032,7 +1043,7 @@ Optional prefix ARG means undelete ARG previous messages."
 	  (forward-line 1))
 	(setq n (1- n)))
     (rmail-summary-goto-msg 1)
-    (dotimes (i rmail-total-messages)
+    (dotimes (_ rmail-total-messages)
       (rmail-summary-goto-msg)
       (let (del-msg)
 	(when (rmail-summary-deleted-p)
@@ -1304,11 +1315,7 @@ advance to the next message."
 		(select-window rmail-buffer-window)
 		(prog1
 		    ;; Is EOB visible in the buffer?
-		    (save-excursion
-		      (let ((ht (window-height)))
-			(move-to-window-line (- ht 2))
-			(end-of-line)
-			(eobp)))
+                    (pos-visible-in-window-p (point-max))
 		  (select-window rmail-summary-window)))
 	      (if (not rmail-summary-scroll-between-messages)
 		  (error "End of buffer")
@@ -1331,10 +1338,7 @@ move to the previous message."
 		(select-window rmail-buffer-window)
 		(prog1
 		    ;; Is BOB visible in the buffer?
-		    (save-excursion
-		      (move-to-window-line 0)
-		      (beginning-of-line)
-		      (bobp))
+		    (pos-visible-in-window-p (point-min))
 		  (select-window rmail-summary-window)))
 	      (if (not rmail-summary-scroll-between-messages)
 		  (error "Beginning of buffer")
@@ -1356,7 +1360,7 @@ move to the previous message."
 
 (defun rmail-summary-show-message (where)
   "Show current mail message.
-Position it according to WHERE which can be BEG or END"
+Position it according to WHERE which can be BEG or END."
   (if (and (one-window-p) (not pop-up-frames))
       ;; If there is just one window, put the summary on the top.
       (let ((buffer rmail-buffer))
@@ -1624,7 +1628,7 @@ original message into it."
 
 (defun rmail-summary-reply (just-sender)
   "Reply to the current message.
-Normally include CC: to all other recipients of original message;
+Normally include Cc: to all other recipients of original message;
 prefix argument means ignore them.  While composing the reply,
 use \\[mail-yank-original] to yank the original message into it."
   (interactive "P")
@@ -1690,7 +1694,7 @@ Deleted messages are skipped and don't count.
 When called from Lisp code, N may be omitted and defaults to 1.
 
 This command always outputs the complete message header,
-even the header display is currently pruned."
+even if the header display is currently pruned."
   (interactive
    (progn (require 'rmailout)
 	  (list (rmail-output-read-file-name)
@@ -1862,7 +1866,7 @@ the summary is only showing a subset of messages."
 (provide 'rmailsum)
 
 ;; Local Variables:
-;; generated-autoload-file: "rmail.el"
+;; generated-autoload-file: "rmail-loaddefs.el"
 ;; End:
 
 ;;; rmailsum.el ends here

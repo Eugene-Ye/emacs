@@ -1,6 +1,6 @@
 ;;; em-glob.el --- extended file name globbing  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -125,7 +125,7 @@ This option slows down recursive glob processing by quite a bit."
 
 ;;; Functions:
 
-(defun eshell-glob-initialize ()
+(defun eshell-glob-initialize ()    ;Called from `eshell-mode' via intern-soft!
   "Initialize the extended globbing code."
   ;; it's important that `eshell-glob-chars-list' come first
   (when (boundp 'eshell-special-chars-outside-quoting)
@@ -193,8 +193,8 @@ The basic syntax is:
   *      .*      matches any group of characters (or none)
   #      *       matches zero or more occurrences of preceding
   ##     +       matches one or more occurrences of preceding
-  (x)    \(x\)   makes 'x' a regular expression group
-  |      \|      boolean OR within an expression group
+  (x)    \\(x\\)   makes `x' a regular expression group
+  |      \\|      boolean OR within an expression group
   [a-b]  [a-b]   matches a character or range
   [^a]   [^a]    excludes a character or range
 
@@ -220,7 +220,7 @@ resulting regular expression."
 		  matched-in-pattern (1+ op-begin))
 	  (let ((xlat (assq op-char eshell-glob-translate-alist)))
 	    (if (not xlat)
-		(error "Unrecognized globbing character '%c'" op-char)
+		(error "Unrecognized globbing character `%c'" op-char)
 	      (if (stringp (cdr xlat))
 		  (setq regexp (concat regexp (cdr xlat))
 			matched-in-pattern (1+ op-begin))
@@ -289,7 +289,7 @@ the form:
 		   glob (car globs)
 		   len (length glob)))))
     (if (and recurse-p (not glob))
-	(error "'**' cannot end a globbing pattern"))
+	(error "`**' cannot end a globbing pattern"))
     (let ((index 1))
       (setq incl glob)
       (while (and (eq incl glob)

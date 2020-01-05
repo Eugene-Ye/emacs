@@ -1,6 +1,6 @@
 ;;; smerge-mode.el --- Minor mode to resolve diff3 conflicts -*- lexical-binding: t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: vc, tools, revision control, merge, diff3, cvs, conflict
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -44,7 +44,8 @@
 ;;; Code:
 
 (eval-when-compile (require 'cl-lib))
-(require 'diff-mode)                    ;For diff-auto-refine-mode.
+(require 'diff)				;For diff-check-labels.
+(require 'diff-mode)                    ;For diff-refine.
 (require 'newcomment)
 
 ;;; The real definition comes later.
@@ -67,53 +68,51 @@
   (append '("-d" "-b")
 	  (if (listp diff-switches) diff-switches (list diff-switches)))
   "A list of strings specifying switches to be passed to diff.
-Used in `smerge-diff-base-mine' and related functions."
+Used in `smerge-diff-base-upper' and related functions."
   :type '(repeat string))
 
 (defcustom smerge-auto-leave t
   "Non-nil means to leave `smerge-mode' when the last conflict is resolved."
   :type 'boolean)
 
-(defface smerge-mine
+(defface smerge-upper
   '((((class color) (min-colors 88) (background light))
-     :background "#ffdddd")
+     :background "#ffdddd" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#553333")
+     :background "#553333" :extend t)
     (((class color))
-     :foreground "red"))
-  "Face for your code.")
-(define-obsolete-face-alias 'smerge-mine-face 'smerge-mine "22.1")
-(defvar smerge-mine-face 'smerge-mine)
+     :foreground "red" :extend))
+  "Face for the `upper' version of a conflict.")
+(define-obsolete-face-alias 'smerge-mine 'smerge-upper "26.1")
+(defvar smerge-upper-face 'smerge-upper)
 
-(defface smerge-other
+(defface smerge-lower
   '((((class color) (min-colors 88) (background light))
-     :background "#ddffdd")
+     :background "#ddffdd" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#335533")
+     :background "#335533" :extend t)
     (((class color))
-     :foreground "green"))
-  "Face for the other code.")
-(define-obsolete-face-alias 'smerge-other-face 'smerge-other "22.1")
-(defvar smerge-other-face 'smerge-other)
+     :foreground "green" :extend))
+  "Face for the `lower' version of a conflict.")
+(define-obsolete-face-alias 'smerge-other 'smerge-lower "26.1")
+(defvar smerge-lower-face 'smerge-lower)
 
 (defface smerge-base
   '((((class color) (min-colors 88) (background light))
-     :background "#ffffaa")
+     :background "#ffffaa" :extend t)
     (((class color) (min-colors 88) (background dark))
-     :background "#888833")
+     :background "#888833" :extend t)
     (((class color))
-     :foreground "yellow"))
+     :foreground "yellow" :extend t))
   "Face for the base code.")
-(define-obsolete-face-alias 'smerge-base-face 'smerge-base "22.1")
 (defvar smerge-base-face 'smerge-base)
 
 (defface smerge-markers
   '((((background light))
-     (:background "grey85"))
+     (:background "grey85" :extend t))
     (((background dark))
-     (:background "grey30")))
+     (:background "grey30" :extend t)))
   "Face for the conflict markers.")
-(define-obsolete-face-alias 'smerge-markers-face 'smerge-markers "22.1")
 (defvar smerge-markers-face 'smerge-markers)
 
 (defface smerge-refined-changed
@@ -149,16 +148,18 @@ Used in `smerge-diff-base-mine' and related functions."
     ("r" . smerge-resolve)
     ("a" . smerge-keep-all)
     ("b" . smerge-keep-base)
-    ("o" . smerge-keep-other)
-    ("m" . smerge-keep-mine)
+    ("o" . smerge-keep-lower)           ; for the obsolete keep-other
+    ("l" . smerge-keep-lower)
+    ("m" . smerge-keep-upper)           ; for the obsolete keep-mine
+    ("u" . smerge-keep-upper)
     ("E" . smerge-ediff)
     ("C" . smerge-combine-with-next)
     ("R" . smerge-refine)
     ("\C-m" . smerge-keep-current)
     ("=" . ,(make-sparse-keymap "Diff"))
-    ("=<" "base-mine" . smerge-diff-base-mine)
-    ("=>" "base-other" . smerge-diff-base-other)
-    ("==" "mine-other" . smerge-diff-mine-other))
+    ("=<" "base-upper" . smerge-diff-base-upper)
+    ("=>" "base-lower" . smerge-diff-base-lower)
+    ("==" "upper-lower" . smerge-diff-upper-lower))
   "The base keymap for `smerge-mode'.")
 
 (defcustom smerge-command-prefix "\C-c^"
@@ -196,19 +197,19 @@ Used in `smerge-diff-base-mine' and related functions."
     "--"
     ["Revert to Base" smerge-keep-base :help "Revert to base version"
      :active (smerge-check 2)]
-    ["Keep Other" smerge-keep-other :help "Keep `other' version"
-     :active (smerge-check 3)]
-    ["Keep Yours" smerge-keep-mine :help "Keep your version"
+    ["Keep Upper" smerge-keep-upper :help "Keep `upper' version"
      :active (smerge-check 1)]
+    ["Keep Lower" smerge-keep-lower :help "Keep `lower' version"
+     :active (smerge-check 3)]
     "--"
-    ["Diff Base/Mine" smerge-diff-base-mine
-     :help "Diff `base' and `mine' for current conflict"
+    ["Diff Base/Upper" smerge-diff-base-upper
+     :help "Diff `base' and `upper' for current conflict"
      :active (smerge-check 2)]
-    ["Diff Base/Other" smerge-diff-base-other
-     :help "Diff `base' and `other' for current conflict"
+    ["Diff Base/Lower" smerge-diff-base-lower
+     :help "Diff `base' and `lower' for current conflict"
      :active (smerge-check 2)]
-    ["Diff Mine/Other" smerge-diff-mine-other
-     :help "Diff `mine' and `other' for current conflict"
+    ["Diff Upper/Lower" smerge-diff-upper-lower
+     :help "Diff `upper' and `lower' for current conflict"
      :active (smerge-check 1)]
     "--"
     ["Invoke Ediff" smerge-ediff
@@ -223,7 +224,7 @@ Used in `smerge-diff-base-mine' and related functions."
     ))
 
 (easy-menu-define smerge-context-menu nil
-  "Context menu for mine area in `smerge-mode'."
+  "Context menu for upper area in `smerge-mode'."
   '(nil
     ["Keep Current" smerge-keep-current :help "Use current (at point) version"]
     ["Kill Current" smerge-kill-current :help "Remove current (at point) version"]
@@ -234,9 +235,9 @@ Used in `smerge-diff-base-mine' and related functions."
 
 (defconst smerge-font-lock-keywords
   '((smerge-find-conflict
-     (1 smerge-mine-face prepend t)
+     (1 smerge-upper-face prepend t)
      (2 smerge-base-face prepend t)
-     (3 smerge-other-face prepend t)
+     (3 smerge-lower-face prepend t)
      ;; FIXME: `keep' doesn't work right with syntactic fontification.
      (0 smerge-markers-face keep)
      (4 nil t t)
@@ -246,7 +247,7 @@ Used in `smerge-diff-base-mine' and related functions."
 (defconst smerge-begin-re "^<<<<<<< \\(.*\\)\n")
 (defconst smerge-end-re "^>>>>>>> \\(.*\\)\n")
 (defconst smerge-base-re "^||||||| \\(.*\\)\n")
-(defconst smerge-other-re "^=======\n")
+(defconst smerge-lower-re "^=======\n")
 
 (defvar smerge-conflict-style nil
   "Keep track of which style of conflict is in use.
@@ -264,10 +265,10 @@ Can be nil if the style is undecided, or else:
 
 ;; Define smerge-next and smerge-prev
 (easy-mmode-define-navigation smerge smerge-begin-re "conflict" nil nil
-  (if diff-auto-refine-mode
+  (if diff-refine
       (condition-case nil (smerge-refine) (error nil))))
 
-(defconst smerge-match-names ["conflict" "mine" "base" "other"])
+(defconst smerge-match-names ["conflict" "upper" "base" "lower"])
 
 (defun smerge-ensure-match (n)
   (unless (match-end n)
@@ -363,9 +364,9 @@ function should only apply safe heuristics) and with the match data set
 according to `smerge-match-conflict'.")
 
 (defvar smerge-text-properties
-  `(help-echo "merge conflict: mouse-3 shows a menu"
-    ;; mouse-face highlight
-    keymap (keymap (down-mouse-3 . smerge-popup-context-menu))))
+  '(help-echo "merge conflict: mouse-3 shows a menu"
+              ;; mouse-face highlight
+              keymap (keymap (down-mouse-3 . smerge-popup-context-menu))))
 
 (defun smerge-remove-props (beg end)
   (remove-overlays beg end 'smerge 'refine)
@@ -570,7 +571,7 @@ major modes.  Uses `smerge-resolve-function' to do the actual work."
               (zerop (call-process diff-command nil buf nil "-bc" b m)))
             (set-match-data md)
 	    (smerge-keep-n 3))
-	   ;; Try "diff -b BASE MINE | patch OTHER".
+	   ;; Try "diff -b BASE UPPER | patch LOWER".
 	   ((when (and (not safe) m2e b
                        ;; If the BASE is empty, this would just concatenate
                        ;; the two, which is rarely right.
@@ -585,7 +586,7 @@ major modes.  Uses `smerge-resolve-function' to do the actual work."
 	      (narrow-to-region m0b m0e)
               (smerge-remove-props m0b m0e)
 	      (insert-file-contents o nil nil nil t)))
-	   ;; Try "diff -b BASE OTHER | patch MINE".
+	   ;; Try "diff -b BASE LOWER | patch UPPER".
 	   ((when (and (not safe) m2e b
                        ;; If the BASE is empty, this would just concatenate
                        ;; the two, which is rarely right.
@@ -685,27 +686,45 @@ major modes.  Uses `smerge-resolve-function' to do the actual work."
   (smerge-keep-n 2)
   (smerge-auto-leave))
 
-(defun smerge-keep-other ()
-  "Use \"other\" version."
+(defun smerge-keep-lower ()
+  "Keep the \"lower\" version of a merge conflict.
+In a conflict that looks like:
+  <<<<<<<
+  UUU
+  =======
+  LLL
+  >>>>>>>
+this keeps \"LLL\"."
   (interactive)
   (smerge-match-conflict)
   ;;(smerge-ensure-match 3)
   (smerge-keep-n 3)
   (smerge-auto-leave))
 
-(defun smerge-keep-mine ()
-  "Keep your version."
+(define-obsolete-function-alias 'smerge-keep-other 'smerge-keep-lower "26.1")
+
+(defun smerge-keep-upper ()
+  "Keep the \"upper\" version of a merge conflict.
+In a conflict that looks like:
+  <<<<<<<
+  UUU
+  =======
+  LLL
+  >>>>>>>
+this keeps \"UUU\"."
   (interactive)
   (smerge-match-conflict)
   ;;(smerge-ensure-match 1)
   (smerge-keep-n 1)
   (smerge-auto-leave))
 
+(define-obsolete-function-alias 'smerge-keep-mine 'smerge-keep-upper "26.1")
+
 (defun smerge-get-current ()
   (let ((i 3))
     (while (or (not (match-end i))
 	       (< (point) (match-beginning i))
-	       (>= (point) (match-end i)))
+	       (> (point) (match-end i)))
       (cl-decf i))
     i))
 
@@ -734,28 +753,37 @@ major modes.  Uses `smerge-resolve-function' to do the actual work."
 	  (smerge-keep-n (car left))
 	  (smerge-auto-leave))))))
 
-(defun smerge-diff-base-mine ()
-  "Diff 'base' and 'mine' version in current conflict region."
+(defun smerge-diff-base-upper ()
+  "Diff `base' and `upper' version in current conflict region."
   (interactive)
   (smerge-diff 2 1))
 
-(defun smerge-diff-base-other ()
-  "Diff 'base' and 'other' version in current conflict region."
+(define-obsolete-function-alias 'smerge-diff-base-mine
+  'smerge-diff-base-upper "26.1")
+
+(defun smerge-diff-base-lower ()
+  "Diff `base' and `lower' version in current conflict region."
   (interactive)
   (smerge-diff 2 3))
 
-(defun smerge-diff-mine-other ()
-  "Diff 'mine' and 'other' version in current conflict region."
+(define-obsolete-function-alias 'smerge-diff-base-other
+  'smerge-diff-base-lower "26.1")
+
+(defun smerge-diff-upper-lower ()
+  "Diff `upper' and `lower' version in current conflict region."
   (interactive)
   (smerge-diff 1 3))
+
+(define-obsolete-function-alias 'smerge-diff-mine-other
+  'smerge-diff-upper-lower "26.1")
 
 (defun smerge-match-conflict ()
   "Get info about the conflict.  Puts the info in the `match-data'.
 The submatches contain:
  0:  the whole conflict.
- 1:  your code.
- 2:  the base code.
- 3:  other code.
+ 1:  upper version of the code.
+ 2:  base version of the code.
+ 3:  lower version of the code.
 An error is raised if not inside a conflict."
   (save-excursion
     (condition-case nil
@@ -765,26 +793,26 @@ An error is raised if not inside a conflict."
 	       (_ (re-search-backward smerge-begin-re))
 
 	       (start (match-beginning 0))
-	       (mine-start (match-end 0))
+	       (upper-start (match-end 0))
 	       (filename (or (match-string 1) ""))
 
 	       (_ (re-search-forward smerge-end-re))
 	       (_ (cl-assert (< orig-point (match-end 0))))
 
-	       (other-end (match-beginning 0))
+	       (lower-end (match-beginning 0))
 	       (end (match-end 0))
 
-	       (_ (re-search-backward smerge-other-re start))
+	       (_ (re-search-backward smerge-lower-re start))
 
-	       (mine-end (match-beginning 0))
-	       (other-start (match-end 0))
+	       (upper-end (match-beginning 0))
+	       (lower-start (match-end 0))
 
 	       base-start base-end)
 
 	  ;; handle the various conflict styles
 	  (cond
 	   ((save-excursion
-	      (goto-char mine-start)
+	      (goto-char upper-start)
 	      (re-search-forward smerge-begin-re end t))
 	    ;; There's a nested conflict and we're after the beginning
 	    ;; of the outer one but before the beginning of the inner one.
@@ -797,8 +825,8 @@ An error is raised if not inside a conflict."
 	   ((re-search-backward smerge-base-re start t)
 	    ;; a 3-parts conflict
 	    (set (make-local-variable 'smerge-conflict-style) 'diff3-A)
-	    (setq base-end mine-end)
-	    (setq mine-end (match-beginning 0))
+	    (setq base-end upper-end)
+	    (setq upper-end (match-beginning 0))
 	    (setq base-start (match-end 0)))
 
 	   ((string= filename (file-name-nondirectory
@@ -811,17 +839,17 @@ An error is raised if not inside a conflict."
 		     (equal filename "ANCESTOR")
 		     (string-match "\\`[.0-9]+\\'" filename)))
 	    ;; a same-diff conflict
-	    (setq base-start mine-start)
-	    (setq base-end   mine-end)
-	    (setq mine-start other-start)
-	    (setq mine-end   other-end)))
+	    (setq base-start upper-start)
+	    (setq base-end   upper-end)
+	    (setq upper-start lower-start)
+	    (setq upper-end   lower-end)))
 
 	  (store-match-data (list start end
-				  mine-start mine-end
+				  upper-start upper-end
 				  base-start base-end
-				  other-start other-end
+				  lower-start lower-end
 				  (when base-start (1- base-start)) base-start
-				  (1- other-start) other-start))
+				  (1- lower-start) lower-start))
 	  t)
       (search-failed (user-error "Point not in conflict region")))))
 
@@ -882,7 +910,7 @@ Point is moved to the end of the conflict."
 
 ;;; Refined change highlighting
 
-(defvar smerge-refine-forward-function 'smerge-refine-forward
+(defvar smerge-refine-forward-function #'smerge--refine-forward
   "Function used to determine an \"atomic\" element.
 You can set it to `forward-char' to get char-level granularity.
 Its behavior has mainly two restrictions:
@@ -890,7 +918,7 @@ Its behavior has mainly two restrictions:
   after the newline.
   This only matters if `smerge-refine-ignore-whitespace' is nil.
 - it needs to be unaffected by changes performed by the `preproc' argument
-  to `smerge-refine-subst'.
+  to `smerge-refine-regions'.
   This only matters if `smerge-refine-weight-hack' is nil.")
 
 (defvar smerge-refine-ignore-whitespace t
@@ -909,15 +937,15 @@ It has the following disadvantages:
 - cannot use `diff -w' because the weighting causes added spaces in a line
   to be represented as added copies of some line, so `diff -w' can't do the
   right thing any more.
-- may in degenerate cases take a 1KB input region and turn it into a 1MB
-  file to pass to diff.")
+- Is a bit more costly (may in degenerate cases use temp files that are 10x
+  larger than the refined regions).")
 
-(defun smerge-refine-forward (n)
+(defun smerge--refine-forward (n)
   (let ((case-fold-search nil)
         (re "[[:upper:]]?[[:lower:]]+\\|[[:upper:]]+\\|[[:digit:]]+\\|.\\|\n"))
     (when (and smerge-refine-ignore-whitespace
                ;; smerge-refine-weight-hack causes additional spaces to
-               ;; appear as additional lines as well, so even if diff ignore
+               ;; appear as additional lines as well, so even if diff ignores
                ;; whitespace changes, it'll report added/removed lines :-(
                (not smerge-refine-weight-hack))
       (setq re (concat "[ \t]*\\(?:" re "\\)")))
@@ -925,7 +953,9 @@ It has the following disadvantages:
       (unless (looking-at re) (error "Smerge refine internal error"))
       (goto-char (match-end 0)))))
 
-(defun smerge-refine-chopup-region (beg end file &optional preproc)
+(defvar smerge--refine-long-words)
+
+(defun smerge--refine-chopup-region (beg end file &optional preproc)
   "Chopup the region into small elements, one per line.
 Save the result into FILE.
 If non-nil, PREPROC is called with no argument in a buffer that contains
@@ -937,44 +967,73 @@ chars to try and eliminate some spurious differences."
   ;; there aren't any, so the resulting "change" didn't make much sense.
   ;; You can still get this behavior by setting
   ;; `smerge-refine-forward-function' to `forward-char'.
-  (let ((buf (current-buffer)))
-    (with-temp-buffer
-      (insert-buffer-substring buf beg end)
-      (when preproc (goto-char (point-min)) (funcall preproc))
-      (when smerge-refine-ignore-whitespace
-        ;; It doesn't make much of a difference for diff-fine-highlight
-        ;; because we still have the _/+/</>/! prefix anyway.  Can still be
-        ;; useful in other circumstances.
-        (subst-char-in-region (point-min) (point-max) ?\n ?\s))
-      (goto-char (point-min))
-      (while (not (eobp))
+  (with-temp-buffer
+    (insert-buffer-substring (marker-buffer beg) beg end)
+    (when preproc (goto-char (point-min)) (funcall preproc))
+    (when smerge-refine-ignore-whitespace
+      ;; It doesn't make much of a difference for diff-fine-highlight
+      ;; because we still have the _/+/</>/! prefix anyway.  Can still be
+      ;; useful in other circumstances.
+      (subst-char-in-region (point-min) (point-max) ?\n ?\s))
+    (goto-char (point-min))
+    (while (not (eobp))
+      (cl-assert (bolp))
+      (let ((start (point)))
         (funcall smerge-refine-forward-function 1)
-        (let ((s (if (prog2 (forward-char -1) (bolp) (forward-char 1))
-                     nil
-                   (buffer-substring (line-beginning-position) (point)))))
-          ;; We add \n after each char except after \n, so we get
-          ;; one line per text char, where each line contains
-          ;; just one char, except for \n chars which are
+        (let ((len (- (point) start)))
+          (cl-assert (>= len 1))
+          ;; We add \n after each chunk except after \n, so we get
+          ;; one line per text chunk, where each line contains
+          ;; just one chunk, except for \n chars which are
           ;; represented by the empty line.
-          (unless (eq (char-before) ?\n) (insert ?\n))
-          ;; HACK ALERT!!
-          (if smerge-refine-weight-hack
-              (dotimes (_i (1- (length s))) (insert s "\n")))))
-      (unless (bolp) (error "Smerge refine internal error"))
-      (let ((coding-system-for-write 'emacs-mule))
-        (write-region (point-min) (point-max) file nil 'nomessage)))))
+          (unless (bolp) (insert ?\n))
+          (when (and smerge-refine-weight-hack (> len 1))
+            (let ((s (buffer-substring-no-properties start (point))))
+              ;; The weight-hack inserts N copies of words of size N,
+              ;; so it naturally suffers from an O(N²) blow up.
+              ;; To circumvent this, we map each long word
+              ;; to a shorter (but still unique) replacement.
+              ;; Another option would be to change smerge--refine-forward
+              ;; so it chops up long words into smaller ones.
+              (when (> len 8)
+                (let ((short (gethash s smerge--refine-long-words)))
+                  (unless short
+                    ;; To avoid accidental conflicts with ≤8 words,
+                    ;; we make sure the replacement is >8 chars.  Overall,
+                    ;; this should bound the blowup factor to ~10x,
+                    ;; tho if those chars end up encoded as multiple bytes
+                    ;; each, it could probably still reach ~30x in
+                    ;; pathological cases.
+                    (setq short
+                          (concat (substring s 0 7)
+                                  " "
+                                  (string
+                                   (+ ?0
+                                      (hash-table-count
+                                       smerge--refine-long-words)))
+                                  "\n"))
+                    (puthash s short smerge--refine-long-words))
+                  (delete-region start (point))
+                  (insert short)
+                  (setq s short)))
+              (dotimes (_i (1- len)) (insert s)))))))
+    (unless (bolp) (error "Smerge refine internal error"))
+    (let ((coding-system-for-write 'utf-8-emacs-unix))
+      (write-region (point-min) (point-max) file nil 'nomessage))))
 
-(defun smerge-refine-highlight-change (buf beg match-num1 match-num2 props)
-  (with-current-buffer buf
+(defun smerge--refine-highlight-change (beg match-num1 match-num2 props)
+  ;; TODO: Add a property pointing to the corresponding text in the
+  ;; other region.
+  (with-current-buffer (marker-buffer beg)
     (goto-char beg)
     (let* ((startline (- (string-to-number match-num1) 1))
            (beg (progn (funcall (if smerge-refine-weight-hack
-                                    'forward-char
+                                    #'forward-char
                                   smerge-refine-forward-function)
                                 startline)
                        (point)))
            (end (progn (funcall (if smerge-refine-weight-hack
-                                    'forward-char
+                                    #'forward-char
                                   smerge-refine-forward-function)
                           (if match-num2
                               (- (string-to-number match-num2)
@@ -994,7 +1053,8 @@ chars to try and eliminate some spurious differences."
           (dolist (x props) (overlay-put ol (car x) (cdr x)))
           ol)))))
 
-(defun smerge-refine-subst (beg1 end1 beg2 end2 props-c &optional preproc props-r props-a)
+;;;###autoload
+(defun smerge-refine-regions (beg1 end1 beg2 end2 props-c &optional preproc props-r props-a)
   "Show fine differences in the two regions BEG1..END1 and BEG2..END2.
 PROPS-C is an alist of properties to put (via overlays) on the changes.
 PROPS-R is an alist of properties to put on removed characters.
@@ -1008,19 +1068,25 @@ PROPS-A on added characters, and PROPS-R on removed characters.
 If non-nil, PREPROC is called with no argument in a buffer that contains
 a copy of a region, just before preparing it to for `diff'.  It can be
 used to replace chars to try and eliminate some spurious differences."
-  (let* ((buf (current-buffer))
-         (pos (point))
+  (let* ((pos (point))
          deactivate-mark         ; The code does not modify any visible buffer.
          (file1 (make-temp-file "diff1"))
-         (file2 (make-temp-file "diff2")))
-    ;; Chop up regions into smaller elements and save into files.
-    (smerge-refine-chopup-region beg1 end1 file1 preproc)
-    (smerge-refine-chopup-region beg2 end2 file2 preproc)
+         (file2 (make-temp-file "diff2"))
+         (smerge--refine-long-words
+          (if smerge-refine-weight-hack (make-hash-table :test #'equal))))
+    (unless (markerp beg1) (setq beg1 (copy-marker beg1)))
+    (unless (markerp beg2) (setq beg2 (copy-marker beg2)))
+    (let ((write-region-inhibit-fsync t)) ; Don't fsync temp files (Bug#12747).
+      ;; Chop up regions into smaller elements and save into files.
+      (smerge--refine-chopup-region beg1 end1 file1 preproc)
+      (smerge--refine-chopup-region beg2 end2 file2 preproc))
 
     ;; Call diff on those files.
     (unwind-protect
         (with-temp-buffer
-          (let ((coding-system-for-read 'emacs-mule))
+          ;; Allow decoding the EOL format, as on MS-Windows the Diff
+          ;; utility might produce CR-LF EOLs.
+          (let ((coding-system-for-read 'utf-8-emacs))
             (call-process diff-command nil t nil
                           (if (and smerge-refine-ignore-whitespace
                                    (not smerge-refine-weight-hack))
@@ -1030,7 +1096,7 @@ used to replace chars to try and eliminate some spurious differences."
                               ;; also and more importantly because otherwise it
                               ;; may happen that diff doesn't behave like
                               ;; smerge-refine-weight-hack expects it to.
-                              ;; See http://thread.gmane.org/gmane.emacs.devel/82685.
+                              ;; See https://lists.gnu.org/r/emacs-devel/2007-11/msg00401.html
                               "-awd" "-ad")
                           file1 file2))
           ;; Process diff's output.
@@ -1048,16 +1114,16 @@ used to replace chars to try and eliminate some spurious differences."
                     (m5 (match-string 5)))
                 (when (memq op '(?d ?c))
                   (setq last1
-                        (smerge-refine-highlight-change
-			 buf beg1 m1 m2
+                        (smerge--refine-highlight-change
+			 beg1 m1 m2
 			 ;; Try to use props-c only for changed chars,
 			 ;; fallback to props-r for changed/removed chars,
 			 ;; but if props-r is nil then fallback to props-c.
 			 (or (and (eq op '?c) props-c) props-r props-c))))
                 (when (memq op '(?a ?c))
                   (setq last2
-                        (smerge-refine-highlight-change
-			 buf beg2 m4 m5
+                        (smerge--refine-highlight-change
+			 beg2 m4 m5
 			 ;; Same logic as for removed chars above.
 			 (or (and (eq op '?c) props-c) props-a props-c)))))
               (forward-line 1)                            ;Skip hunk header.
@@ -1081,6 +1147,8 @@ used to replace chars to try and eliminate some spurious differences."
       (goto-char pos)
       (delete-file file1)
       (delete-file file2))))
+(define-obsolete-function-alias 'smerge-refine-subst
+  #'smerge-refine-regions "26.1")
 
 (defun smerge-refine (&optional part)
   "Highlight the words of the conflict that are different.
@@ -1122,15 +1190,28 @@ repeating the command will highlight other two parts."
       (put-text-property (match-beginning 0) (1+ (match-beginning 0))
                          'smerge-refine-part
                          (cons (buffer-chars-modified-tick) part)))
-    (smerge-refine-subst (match-beginning n1) (match-end n1)
+    (smerge-refine-regions (match-beginning n1) (match-end n1)
                          (match-beginning n2)  (match-end n2)
                          (if smerge-use-changed-face
-			     '((smerge . refine) (face . smerge-refined-change)))
+			     '((smerge . refine) (font-lock-face . smerge-refined-change)))
 			 nil
 			 (unless smerge-use-changed-face
-			   '((smerge . refine) (face . smerge-refined-removed)))
+			   '((smerge . refine) (font-lock-face . smerge-refined-removed)))
 			 (unless smerge-use-changed-face
-			   '((smerge . refine) (face . smerge-refined-added))))))
+			   '((smerge . refine) (font-lock-face . smerge-refined-added))))))
+
+(defun smerge-swap ()
+  "Swap the \"Upper\" and the \"Lower\" chunks.
+Can be used before things like `smerge-keep-all' or `smerge-resolve' where the
+ordering can have some subtle influence on the result, such as preferring the
+spacing of the \"Lower\" chunk."
+  (interactive)
+  (smerge-match-conflict)
+  (goto-char (match-beginning 3))
+  (let ((txt3 (delete-and-extract-region (point) (match-end 3))))
+    (insert (delete-and-extract-region (match-beginning 1) (match-end 1)))
+    (goto-char (match-beginning 1))
+    (insert txt3)))
 
 (defun smerge-diff (n1 n2)
   (smerge-match-conflict)
@@ -1163,9 +1244,12 @@ repeating the command will highlight other two parts."
 	    (let ((status
 		   (apply 'call-process diff-command nil t nil
 			  (append smerge-diff-switches
-				  (list "-L" (concat name1 "/" file)
-					"-L" (concat name2 "/" file)
-					file1 file2)))))
+				  (and (diff-check-labels)
+				       (list "--label"
+					     (concat name1 "/" file)
+					     "--label"
+					     (concat name2 "/" file)))
+				  (list file1 file2)))))
 	      (if (eq status 0) (insert "No differences found.\n"))))
 	  (goto-char (point-min))
 	  (diff-mode)
@@ -1192,9 +1276,9 @@ repeating the command will highlight other two parts."
       default)))
 
 ;;;###autoload
-(defun smerge-ediff (&optional name-mine name-other name-base)
+(defun smerge-ediff (&optional name-upper name-lower name-base)
   "Invoke ediff to resolve the conflicts.
-NAME-MINE, NAME-OTHER, and NAME-BASE, if non-nil, are used for the
+NAME-UPPER, NAME-LOWER, and NAME-BASE, if non-nil, are used for the
 buffer names."
   (interactive)
   (let* ((buf (current-buffer))
@@ -1202,18 +1286,18 @@ buffer names."
 	 ;;(ediff-default-variant 'default-B)
 	 (config (current-window-configuration))
 	 (filename (file-name-nondirectory (or buffer-file-name "-")))
-	 (mine (generate-new-buffer
-		(or name-mine
+	 (upper (generate-new-buffer
+		(or name-upper
                     (concat "*" filename " "
-                            (smerge--get-marker smerge-begin-re "MINE")
+                            (smerge--get-marker smerge-begin-re "UPPER")
                             "*"))))
-	 (other (generate-new-buffer
-		 (or name-other
+	 (lower (generate-new-buffer
+		 (or name-lower
                      (concat "*" filename " "
-                             (smerge--get-marker smerge-end-re "OTHER")
+                             (smerge--get-marker smerge-end-re "LOWER")
                              "*"))))
 	 base)
-    (with-current-buffer mine
+    (with-current-buffer upper
       (buffer-disable-undo)
       (insert-buffer-substring buf)
       (goto-char (point-min))
@@ -1224,7 +1308,7 @@ buffer names."
       (set-buffer-modified-p nil)
       (funcall mode))
 
-    (with-current-buffer other
+    (with-current-buffer lower
       (buffer-disable-undo)
       (insert-buffer-substring buf)
       (goto-char (point-min))
@@ -1256,9 +1340,9 @@ buffer names."
     ;; Fire up ediff.
     (set-buffer
      (if base
-	 (ediff-merge-buffers-with-ancestor mine other base)
+	 (ediff-merge-buffers-with-ancestor upper lower base)
 	  ;; nil 'ediff-merge-revisions-with-ancestor buffer-file-name)
-       (ediff-merge-buffers mine other)))
+       (ediff-merge-buffers upper lower)))
         ;; nil 'ediff-merge-revisions buffer-file-name)))
 
     ;; Ediff is now set up, and we are in the control buffer.
@@ -1300,28 +1384,26 @@ with a \\[universal-argument] prefix, makes up a 3-way conflict."
   (pcase-let ((`(,pt1 ,pt2 ,pt3 ,pt4)
                (sort `(,pt1 ,pt2 ,pt3 ,@(if pt4 (list pt4))) '>=)))
     (goto-char pt1) (beginning-of-line)
-    (insert ">>>>>>> OTHER\n")
+    (insert ">>>>>>> LOWER\n")
     (goto-char pt2) (beginning-of-line)
     (insert "=======\n")
     (goto-char pt3) (beginning-of-line)
     (when pt4
       (insert "||||||| BASE\n")
       (goto-char pt4) (beginning-of-line))
-    (insert "<<<<<<< MINE\n"))
+    (insert "<<<<<<< UPPER\n"))
   (if smerge-mode nil (smerge-mode 1))
   (smerge-refine))
 
 
 (defconst smerge-parsep-re
   (concat smerge-begin-re "\\|" smerge-end-re "\\|"
-          smerge-base-re "\\|" smerge-other-re "\\|"))
+          smerge-base-re "\\|" smerge-lower-re "\\|"))
 
 ;;;###autoload
 (define-minor-mode smerge-mode
   "Minor mode to simplify editing output from the diff3 program.
-With a prefix argument ARG, enable the mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable the mode
-if ARG is omitted or nil.
+
 \\{smerge-mode-map}"
   :group 'smerge :lighter " SMerge"
   (when (and (boundp 'font-lock-mode) font-lock-mode)
@@ -1353,6 +1435,40 @@ If no conflict maker is found, turn off `smerge-mode'."
       (unless (looking-at smerge-begin-re)
         (smerge-next))
     (error (smerge-auto-leave))))
+
+(defcustom smerge-change-buffer-confirm t
+  "If non-nil, request confirmation before moving to another buffer."
+  :type 'boolean)
+
+(defun smerge-vc-next-conflict ()
+  "Go to next conflict, possibly in another file.
+First tries to go to the next conflict in the current buffer, and if not
+found, uses VC to try and find the next file with conflict."
+  (interactive)
+  (let ((buffer (current-buffer)))
+    (condition-case nil
+        ;; FIXME: Try again from BOB before moving to the next file.
+        (smerge-next)
+      (error
+       (if (and (or smerge-change-buffer-confirm
+                    (and (buffer-modified-p) buffer-file-name))
+                (not (or (eq last-command this-command)
+                         (eq ?\r last-command-event)))) ;Called via M-x!?
+           ;; FIXME: Don't emit this message if `vc-find-conflicted-file' won't
+           ;; go to another file anyway (because there are no more conflicted
+           ;; files).
+           (message (if (buffer-modified-p)
+                        "No more conflicts here.  Repeat to save and go to next buffer"
+                      "No more conflicts here.  Repeat to go to next buffer"))
+         (if (and (buffer-modified-p) buffer-file-name)
+             (save-buffer))
+         (vc-find-conflicted-file)
+         (if (eq buffer (current-buffer))
+             ;; Do nothing: presumably `vc-find-conflicted-file' already
+             ;; emitted a message explaining there aren't any more conflicts.
+             nil
+           (goto-char (point-min))
+           (smerge-next)))))))
 
 (provide 'smerge-mode)
 

@@ -1,6 +1,6 @@
 ;;; erc-compat.el --- ERC compatibility code for XEmacs
 
-;; Copyright (C) 2002-2003, 2005-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2003, 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: Alex Schroeder <alex@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -29,7 +29,7 @@
 
 (require 'format-spec)
 
-;;;###autoload (autoload 'erc-define-minor-mode "erc-compat")
+;;;###autoload(autoload 'erc-define-minor-mode "erc-compat")
 (defalias 'erc-define-minor-mode 'define-minor-mode)
 (put 'erc-define-minor-mode 'edebug-form-spec 'define-minor-mode)
 
@@ -54,10 +54,10 @@ See `erc-encoding-coding-alist'."
   (set (make-local-variable 'write-file-functions) new-val))
 
 (defvar erc-emacs-build-time
-  (if (stringp emacs-build-time)
+  (if (or (stringp emacs-build-time) (not emacs-build-time))
       emacs-build-time
     (format-time-string "%Y-%m-%d" emacs-build-time))
-  "Time at which Emacs was dumped out.")
+  "Time at which Emacs was dumped out, or nil if not available.")
 
 ;; Emacs 21 and XEmacs do not have user-emacs-directory, but XEmacs
 ;; has user-init-directory.
@@ -71,17 +71,13 @@ See `erc-encoding-coding-alist'."
 are placed.
 Note that this should end with a directory separator.")
 
-;; XEmacs's `replace-match' does not replace matching subexpressions in strings.
 (defun erc-replace-match-subexpression-in-string
   (newtext string match subexp start &optional fixedcase literal)
   "Replace the subexpression SUBEXP of the last match in STRING with NEWTEXT.
 MATCH is the text which matched the subexpression (see `match-string').
 START is the beginning position of the last match (see `match-beginning').
 See `replace-match' for explanations of FIXEDCASE and LITERAL."
-  (cond ((featurep 'xemacs)
-	 (string-match match string start)
-	 (replace-match newtext fixedcase literal string))
-	(t (replace-match newtext fixedcase literal string subexp))))
+  (replace-match newtext fixedcase literal string subexp))
 
 (defalias 'erc-with-selected-window 'with-selected-window)
 (defalias 'erc-cancel-timer 'cancel-timer)
@@ -161,7 +157,5 @@ If START or END is negative, it counts from the end."
 ;;; erc-compat.el ends here
 ;;
 ;; Local Variables:
-;; indent-tabs-mode: t
-;; tab-width: 8
+;; generated-autoload-file: "erc-loaddefs.el"
 ;; End:
-

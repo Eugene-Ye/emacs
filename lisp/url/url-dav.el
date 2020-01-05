@@ -1,6 +1,6 @@
 ;;; url-dav.el --- WebDAV support
 
-;; Copyright (C) 2001, 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2001, 2004-2020 Free Software Foundation, Inc.
 
 ;; Author: Bill Perry <wmperry@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; DAV is in RFC 2518.
 
@@ -33,6 +33,7 @@
 (require 'url-util)
 (require 'url-handlers)
 (require 'url-http)
+(require 'parse-time)
 
 (defvar url-dav-supported-protocols '(1 2)
   "List of supported DAV versions.")
@@ -83,72 +84,14 @@ Returns nil if WebDAV is not supported."
 (defun url-dav-process-number-property (node)
   (string-to-number (url-dav-node-text node)))
 
-(defconst url-dav-iso8601-regexp
-  (let* ((dash "-?")
-	 (colon ":?")
-	 (4digit "\\([0-9][0-9][0-9][0-9]\\)")
-	 (2digit "\\([0-9][0-9]\\)")
-	 (date-fullyear 4digit)
-	 (date-month 2digit)
-	 (date-mday 2digit)
-	 (time-hour 2digit)
-	 (time-minute 2digit)
-	 (time-second 2digit)
-	 (time-secfrac "\\(\\.[0-9]+\\)?")
-	 (time-numoffset (concat "[-+]\\(" time-hour "\\):" time-minute))
-	 (time-offset (concat "Z" time-numoffset))
-	 (partial-time (concat time-hour colon time-minute colon time-second
-			       time-secfrac))
-	 (full-date (concat date-fullyear dash date-month dash date-mday))
-	 (full-time (concat partial-time time-offset))
-	 (date-time (concat full-date "T" full-time)))
-    (list (concat "^" full-date)
-	  (concat "T" partial-time)
-	  (concat "Z" time-numoffset)))
-  "List of regular expressions matching ISO 8601 dates.
-1st regular expression matches the date.
-2nd regular expression matches the time.
-3rd regular expression matches the (optional) timezone specification.")
-
 (defun url-dav-process-date-property (node)
-  (require 'parse-time)
-  (let* ((date-re (nth 0 url-dav-iso8601-regexp))
-	 (time-re (nth 1 url-dav-iso8601-regexp))
-	 (tz-re (nth 2 url-dav-iso8601-regexp))
-	 (date-string (url-dav-node-text node))
-	 re-start
-	 time seconds minute hour fractional-seconds
-	 day month year day-of-week dst tz)
-    ;; We need to populate 'time' with
-    ;; (SEC MIN HOUR DAY MON YEAR DOW DST TZ)
-
-    ;; Nobody else handles iso8601 correctly, let's do it ourselves.
-    (when (string-match date-re date-string re-start)
-      (setq year (string-to-number (match-string 1 date-string))
-	    month (string-to-number (match-string 2 date-string))
-	    day (string-to-number (match-string 3 date-string))
-	    re-start (match-end 0))
-      (when (string-match time-re date-string re-start)
-	(setq hour (string-to-number (match-string 1 date-string))
-	      minute (string-to-number (match-string 2 date-string))
-	      seconds (string-to-number (match-string 3 date-string))
-	      fractional-seconds (string-to-number (or
-                                                    (match-string 4 date-string)
-                                                    "0"))
-	      re-start (match-end 0))
-	(when (string-match tz-re date-string re-start)
-	  (setq tz (match-string 1 date-string)))
-	(url-debug 'dav "Parsed iso8601%s date" (if tz "tz" ""))
-	(setq time (list seconds minute hour day month year day-of-week dst tz))))
-
-    ;; Fall back to having Gnus do fancy things for us.
-    (when (not time)
-      (setq time (parse-time-string date-string)))
-
+  (let* ((date-string (url-dav-node-text node))
+         (time (parse-iso8601-time-string date-string)))
     (if time
-	(setq time (apply 'encode-time time))
+	(setq time (encode-time time))
       (url-debug 'dav "Unable to decode date (%S) (%s)"
-		 (xml-node-name node) date-string))
+		 (xml-node-name node)
+                 date-string))
     time))
 
 (defun url-dav-process-boolean-property (node)
@@ -204,22 +147,22 @@ Returns nil if WebDAV is not supported."
 	    value nil)
 
       (pcase node-type
-	((or `dateTime.iso8601tz
-             `dateTime.iso8601
-             `dateTime.tz
-             `dateTime.rfc1123
-             `dateTime
-             `date)                     ; date is our 'special' one...
+	((or 'dateTime.iso8601tz
+             'dateTime.iso8601
+             'dateTime.tz
+             'dateTime.rfc1123
+             'dateTime
+             'date)                     ; date is our 'special' one...
 	 ;; Some type of date/time string.
 	 (setq value (url-dav-process-date-property node)))
-	(`int
+	('int
 	 ;; Integer type...
 	 (setq value (url-dav-process-integer-property node)))
-	((or `number `float)
+	((or 'number 'float)
 	 (setq value (url-dav-process-number-property node)))
-	(`boolean
+	('boolean
 	 (setq value (url-dav-process-boolean-property node)))
-	(`uri
+	('uri
 	 (setq value (url-dav-process-uri-property node)))
 	(_
 	 (if (not (eq node-type 'unknown))
@@ -479,9 +422,9 @@ names (ie: DAV:resourcetype)."
 		     "  <DAV:allprop/>")
 		   depth nil namespaces))
 
-(defmacro url-dav-http-success-p (status)
+(define-inline url-dav-http-success-p (status)
   "Return whether STATUS was the result of a successful DAV request."
-  `(= (/ (or ,status 500) 100) 2))
+  (inline-quote (= (/ (or ,status 500) 100) 2)))
 
 
 ;;; Locking support
@@ -495,7 +438,7 @@ make sure you are comfortable with it leaking to the outside world.")
 (defun url-dav-lock-resource (url exclusive &optional depth)
   "Request a lock on URL.  If EXCLUSIVE is non-nil, get an exclusive lock.
 Optional 3rd argument DEPTH says how deep the lock should go, default is 0
-\(lock only the resource and none of its children\).
+\(lock only the resource and none of its children).
 
 Returns a cons-cell of (SUCCESSFUL-RESULTS . FAILURE-RESULTS).
 SUCCESSFUL-RESULTS is a list of (URL STATUS locktoken).
@@ -518,7 +461,7 @@ FAILURE-RESULTS is a list of (URL STATUS)."
 				    depth '(("Timeout" . "Infinite"))))
 
     ;; Get the parent URL ready for expand-file-name
-    (if (not (vectorp url))
+    (if (not (url-p url))
 	(setq url (url-generic-parse-url url)))
 
     ;; Walk thru the response list, fully expand the URL, and grab the
@@ -540,7 +483,7 @@ FAILURE-RESULTS is a list of (URL STATUS)."
 	(child-url nil)
 	(child-results nil)
 	(results nil))
-    (if (not (vectorp url))
+    (if (not (url-p url))
 	(setq url (url-generic-parse-url url)))
 
     (while response
@@ -611,11 +554,11 @@ Returns t if the lock was successfully released."
       (setq lock (car supported-locks)
 	    supported-locks (cdr supported-locks))
       (pcase (car lock)
-	(`DAV:write
+	('DAV:write
 	 (pcase (cdr lock)
-	   (`DAV:shared			; group permissions (possibly world)
+	   ('DAV:shared			; group permissions (possibly world)
 	    (aset modes 5 ?w))
-	   (`DAV:exclusive
+	   ('DAV:exclusive
 	    (aset modes 2 ?w))		; owner permissions?
 	   (_
 	    (url-debug 'dav "Unrecognized DAV:lockscope (%S)" (cdr lock)))))
@@ -741,7 +684,7 @@ files in the collection as well."
 		 (if (and (not recursive)
 			  (/= (length props) 1))
 		     (signal 'file-error (list "Removing directory"
-					       "directory not empty" url)))))
+					       "Directory not empty" url)))))
 
      (mapc (lambda (result)
 	     (setq status (plist-get (cdr result) 'DAV:status))
@@ -760,7 +703,7 @@ files in the collection as well."
 		 url lock-token
 		 (setq props (url-dav-get-properties url))
 		 (if (eq (plist-get (cdar props) 'DAV:resourcetype) 'DAV:collection)
-		     (signal 'file-error (list "Removing old name" "is a collection" url)))))
+		     (signal 'file-error (list "Removing old name" "Is a collection" url)))))
 
     (mapc (lambda (result)
 	    (setq status (plist-get (cdr result) 'DAV:status))
@@ -787,7 +730,7 @@ If NOSORT is non-nil, the list is not sorted--its order is unpredictable.
 
     (when (and (= (length properties) 1)
 	       (not (url-dav-file-directory-p url)))
-      (signal 'file-error (list "Opening directory" "not a directory" url)))
+      (signal 'file-error (list "Opening directory" "Not a directory" url)))
 
     (while properties
       (setq child-props (pop properties)

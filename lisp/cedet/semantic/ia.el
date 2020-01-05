@@ -1,6 +1,6 @@
 ;;; semantic/ia.el --- Interactive Analysis functions
 
-;;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: syntax
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -146,7 +146,7 @@ Completion options are calculated with `semantic-analyze-possible-completions'."
 
 (defcustom semantic-ia-completion-menu-format-tag-function
   'semantic-format-tag-uml-concise-prototype
-  "*Function used to convert a tag to a string during completion."
+  "Function used to convert a tag to a string during completion."
   :group 'semantic
   :type semantic-format-tag-custom-list)
 
@@ -163,7 +163,7 @@ Completion options are calculated with `semantic-analyze-possible-completions'."
     (if (not syms)
 	(progn
 	  (message "No smart completions found.")
-          ;; Disabled - see http://debbugs.gnu.org/14522
+          ;; Disabled - see https://debbugs.gnu.org/14522
 	  ;; (message "No smart completions found.  Trying Senator.")
 	  ;; (when (semantic-analyze-context-p a)
 	  ;;   ;; This is a quick way of getting a nice completion list
@@ -252,7 +252,7 @@ Completion options are calculated with `semantic-analyze-possible-completions'."
 ;;;###autoload
 (defun semantic-ia-show-variants (point)
   "Display a list of all variants for the symbol under POINT."
-  (interactive "P")
+  (interactive "d")
   (let* ((ctxt (semantic-analyze-current-context point))
 	 (comp nil))
 
@@ -316,13 +316,13 @@ This helper manages the mark, buffer switching, and pulsing."
   ;; 1) Push the mark, so you can pop global mark back, or
   ;;    use semantic-mru-bookmark mode to do so.
   (push-mark)
-  (when (fboundp 'push-tag-mark)
-    (push-tag-mark))
+  (when (fboundp 'xref-push-marker-stack)
+    (xref-push-marker-stack))
   ;; 2) Visits the tag.
   (semantic-go-to-tag dest)
   ;; 3) go-to-tag doesn't switch the buffer in the current window,
   ;;    so it is like find-file-noselect.  Bring it forward.
-  (switch-to-buffer (current-buffer))
+  (pop-to-buffer-same-window (current-buffer))
   ;; 4) Fancy pulsing.
   (pulse-momentary-highlight-one-line (point))
   )
@@ -364,15 +364,17 @@ origin of the code at point."
       (let ((secondclass (car (reverse (oref ctxt prefixtypes)))))
 	(cond
 	 ((and (semantic-tag-with-position-p secondclass)
-	       (y-or-n-p (format "Could not find `%s'.  Jump to %s? "
-				 first (semantic-tag-name secondclass))))
+	       (y-or-n-p (format-message
+			  "Could not find `%s'.  Jump to %s? "
+			  first (semantic-tag-name secondclass))))
 	  (semantic-ia--fast-jump-helper secondclass)
 	  )
 	 ;; If we missed out on the class of the second item, then
 	 ;; just visit SECOND.
 	 ((and (semantic-tag-p second)
-	       (y-or-n-p (format "Could not find `%s'.  Jump to %s? "
-				 first (semantic-tag-name second))))
+	       (y-or-n-p (format-message
+			  "Could not find `%s'.  Jump to %s? "
+			  first (semantic-tag-name second))))
 	  (semantic-ia--fast-jump-helper second)
 	  ))))
 
@@ -383,8 +385,8 @@ origin of the code at point."
       ;; Push the mark, so you can pop global mark back, or
       ;; use semantic-mru-bookmark mode to do so.
       (push-mark)
-      (when (fboundp 'push-tag-mark)
-	(push-tag-mark))
+      (when (fboundp 'xref-push-marker-stack)
+	(xref-push-marker-stack))
 
       (semantic-decoration-include-visit)
       )

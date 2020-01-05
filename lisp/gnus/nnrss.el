@@ -1,6 +1,6 @@
 ;;; nnrss.el --- interfacing with RSS
 
-;; Copyright (C) 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Shenghuo Zhu <zsh@cs.rochester.edu>
 ;; Keywords: RSS
@@ -18,13 +18,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 
 (require 'gnus)
 (require 'nnoo)
@@ -36,11 +36,14 @@
 (require 'rfc2231)
 (require 'mm-url)
 (require 'rfc2047)
+(require 'iso8601)
 (require 'mml)
-(eval-when-compile
-  (ignore-errors
-   (require 'xml)))
-(eval '(require 'xml))
+(require 'xml)
+(require 'dom)
+
+(defgroup nnrss nil
+  "RSS access for Gnus."
+  :group 'gnus)
 
 (nnoo-declare nnrss)
 
@@ -48,7 +51,7 @@
   "Where nnrss will save its files.")
 
 (defvoo nnrss-ignore-article-fields '(slash:comments)
-  "*List of fields that should be ignored when comparing RSS articles.
+  "List of fields that should be ignored when comparing RSS articles.
 Some RSS feeds update article fields during their lives, e.g. to
 indicate the number of comments or the number of times the
 articles have been seen.  However, if there is a difference
@@ -89,14 +92,16 @@ The arguments are (ENTRY GROUP ARTICLE).
 ENTRY is the record of the current headline.  GROUP is the group name.
 ARTICLE is the article number of the current headline.")
 
-(defvar nnrss-file-coding-system mm-universal-coding-system
-  "*Coding system used when reading and writing files.
+(defcustom nnrss-file-coding-system mm-universal-coding-system
+  "Coding system used when reading and writing files.
 If you run Gnus with various versions of Emacsen, the value of this
 variable should be the coding system that all those Emacsen support.
 Note that you have to regenerate all the nnrss groups if you change
 the value.  Moreover, you should be patient even if you are made to
 read the same articles twice, that arises for the difference of the
-versions of xml.el.")
+versions of xml.el."
+  :group 'nnrss
+  :type 'coding-system)
 
 (defvar nnrss-compatible-encoding-alist
   (delq nil (mapcar (lambda (elem)
@@ -114,11 +119,11 @@ for decoding when the cdr that the data specify is not available.")
 ;;; Interface functions
 
 (defsubst nnrss-format-string (string)
-  (gnus-replace-in-string string " *\n *" " "))
+  (replace-regexp-in-string " *\n *" " " string))
 
 (defun nnrss-decode-group-name (group)
   (if (and group (mm-coding-system-p 'utf-8))
-      (setq group (mm-decode-coding-string group 'utf-8))
+      (setq group (decode-coding-string group 'utf-8))
     group))
 
 (deffoo nnrss-retrieve-headers (articles &optional group server fetch-old)
@@ -243,7 +248,6 @@ for decoding when the cdr that the data specify is not available.")
 			  (max 1 (/ (* (window-width window) 7) 8))))
 		  (fill-region (point) (point-max))
 		  (goto-char (point-max))
-		  ;; XEmacs version of `fill-region' inserts newline.
 		  (unless (bolp)
 		    (insert "\n"))))
 	      (when (or link enclosure)
@@ -295,7 +299,7 @@ for decoding when the cdr that the data specify is not available.")
 			(let ((rfc2047-encoding-type 'mime)
 			      rfc2047-encode-max-chars)
 			  (rfc2047-encode-string
-			   (gnus-replace-in-string group "[\t\n ]+" "_")))))
+			   (replace-regexp-in-string "[\t\n ]+" "_" group)))))
 	(when nnrss-content-function
 	  (funcall nnrss-content-function e group article))))
     (cond
@@ -338,10 +342,10 @@ for decoding when the cdr that the data specify is not available.")
   (let (elem)
     ;; There may be two or more entries in `nnrss-group-alist' since
     ;; this function didn't delete them formerly.
-    (while (setq elem (assoc group nnrss-group-alist))
+    (while (setq elem (assoc-string group nnrss-group-alist))
       (setq nnrss-group-alist (delq elem nnrss-group-alist))))
   (setq nnrss-server-data
-	(delq (assoc group nnrss-server-data) nnrss-server-data))
+	(delq (assoc-string group nnrss-server-data) nnrss-server-data))
   (nnrss-save-server-data server)
   (ignore-errors
     (let ((file-name-coding-system nnmail-pathname-coding-system))
@@ -353,8 +357,8 @@ for decoding when the cdr that the data specify is not available.")
   (with-current-buffer nntp-server-buffer
     (erase-buffer)
     (dolist (elem nnrss-group-alist)
-      (if (third elem)
-	  (insert (car elem) "\t" (third elem) "\n"))))
+      (if (nth 2 elem)
+	  (insert (car elem) "\t" (nth 2 elem) "\n"))))
   t)
 
 (deffoo nnrss-retrieve-groups (groups &optional server)
@@ -365,15 +369,13 @@ for decoding when the cdr that the data specify is not available.")
   (with-current-buffer nntp-server-buffer
     (erase-buffer)
     (dolist (group groups)
-      (let ((elem (assoc (gnus-group-decoded-name group) nnrss-server-data)))
+      (let ((elem (assoc-string group nnrss-server-data)))
 	(insert (format "%S %s 1 y\n" group (or (cadr elem) 0)))))
     'active))
 
 (nnoo-define-skeleton nnrss)
 
 ;;; Internal functions
-(eval-when-compile (defun xml-rpc-method-call (&rest args)))
-
 (defun nnrss-get-encoding ()
   "Return an encoding attribute specified in the current xml contents.
 If `nnrss-compatible-encoding-alist' specifies the compatible encoding,
@@ -395,7 +397,7 @@ otherwise return nil."
     (mm-coding-system-p 'utf-8)))
 
 (declare-function libxml-parse-html-region "xml.c"
-		  (start end &optional base-url))
+		  (start end &optional base-url discard-comments))
 (defun nnrss-fetch (url &optional local)
   "Fetch URL and put it in a the expected Lisp structure."
   (mm-with-unibyte-buffer
@@ -417,7 +419,7 @@ otherwise return nil."
       ;; Decode text according to the encoding attribute.
       (when (setq cs (nnrss-get-encoding))
 	(insert (prog1
-		    (mm-decode-coding-string (buffer-string) cs)
+		    (decode-coding-string (buffer-string) cs)
 		  (erase-buffer)
 		  (mm-enable-multibyte))))
       (goto-char (point-min))
@@ -446,16 +448,16 @@ nnrss: %s: Not valid XML %s and libxml-parse-html-region doesn't work %s"
 (autoload 'timezone-parse-date "timezone")
 
 (defun nnrss-normalize-date (date)
-  "Return a date string of DATE in the RFC822 style.
+  "Return a date string of DATE in the style of RFC 822 and its successors.
 This function handles the ISO 8601 date format described in
-URL `http://www.w3.org/TR/NOTE-datetime', and also the RFC822 style
+URL `http://www.w3.org/TR/NOTE-datetime', and also the RFC 822 style
 which RSS 2.0 allows."
   (let (case-fold-search vector year month day time zone cts given)
     (cond ((null date))			; do nothing for this case
 	  ;; if the date is just digits (unix time stamp):
 	  ((string-match "^[0-9]+$" date)
-	   (setq given (seconds-to-time (string-to-number date))))
-	  ;; RFC822
+	   (setq given (time-convert (string-to-number date))))
+	  ;; RFC 822
 	  ((string-match " [0-9]+ " date)
 	   (setq vector (timezone-parse-date date)
 		 year (string-to-number (aref vector 0)))
@@ -468,49 +470,25 @@ which RSS 2.0 allows."
 			(not (string-match "\\`[A-Z+-]" zone)))
 	       (setq zone nil))))
 	  ;; ISO 8601
-	  ((string-match
-	    (eval-when-compile
-	      (concat
-	       ;; 1. year
-	       "\\(199[0-9]\\|20[0-9][0-9]\\)"
-	       "\\(?:-"
-	       ;; 2. month
-	       "\\([01][0-9]\\)"
-	       "\\(?:-"
-	       ;; 3. day
-	       "\\([0-3][0-9]\\)"
-	       "\\)?\\)?\\(?:T"
-	       ;; 4. hh:mm
-	       "\\([012][0-9]:[0-5][0-9]\\)"
-	       "\\(?:"
-	       ;; 5. :ss
-	       "\\(:[0-5][0-9]\\)"
-	       "\\(?:\\.[0-9]+\\)?\\)?\\)?"
-	       ;; 6+7,8,9. zone
-	       "\\(?:\\(?:\\([+-][012][0-9]\\):\\([0-5][0-9]\\)\\)"
-	       "\\|\\([+-][012][0-9][0-5][0-9]\\)"
-	       "\\|\\(Z\\)\\)?"))
-	    date)
-	   (setq year (string-to-number (match-string 1 date))
-		 month (string-to-number (or (match-string 2 date) "1"))
-		 day (string-to-number (or (match-string 3 date) "1"))
-		 time (if (match-beginning 5)
-			  (substring date (match-beginning 4) (match-end 5))
-			(concat (or (match-string 4 date) "00:00") ":00"))
-		 zone (cond ((match-beginning 6)
-			     (concat (match-string 6 date)
-				     (match-string 7 date)))
-			    ((match-beginning 9) ;; Z
-			     "+0000")
-			    (t ;; nil if zone is not provided.
-			     (match-string 8 date))))))
+	  ((iso8601-valid-p date)
+	   (let ((decoded (decoded-time-set-defaults (iso8601-parse date))))
+	     (setq year (decoded-time-year decoded)
+		   month (decoded-time-month decoded)
+		   day (decoded-time-day decoded)
+		   time (format "%02d:%02d:%02d"
+				(decoded-time-hour decoded)
+				(decoded-time-minute decoded)
+				(decoded-time-second decoded))
+		   zone (if (equal (decoded-time-zone decoded) "Z")
+			    0
+			  (decoded-time-zone decoded))))))
     (if month
 	(progn
 	  (setq cts (current-time-string (encode-time 0 0 0 day month year)))
 	  (format "%s, %02d %s %04d %s%s"
 		  (substring cts 0 3) day (substring cts 4 7) year time
 		  (if zone
-		      (concat " " zone)
+		      (concat " " (format-time-string "%z" nil zone))
 		    "")))
       (message-make-date given))))
 
@@ -539,7 +517,7 @@ which RSS 2.0 allows."
   (if (hash-table-p nnrss-group-hashtb)
       (clrhash nnrss-group-hashtb)
     (setq nnrss-group-hashtb (make-hash-table :test 'equal)))
-  (let ((pair (assoc group nnrss-server-data)))
+  (let ((pair (assoc-string group nnrss-server-data)))
     (setq nnrss-group-max (or (cadr pair) 0))
     (setq nnrss-group-min (+ nnrss-group-max 1)))
   (let ((file (nnrss-make-filename group server))
@@ -588,12 +566,11 @@ which RSS 2.0 allows."
   "")
 
 (defun nnrss-insert (url)
-  (mm-with-unibyte-current-buffer
-    (condition-case err
-	(mm-url-insert url)
-      (error (if (or debug-on-quit debug-on-error)
-		 (signal (car err) (cdr err))
-	       (message "nnrss: Failed to fetch %s" url))))))
+  (condition-case err
+      (mm-url-insert url)
+    (error (if (or debug-on-quit debug-on-error)
+	       (signal (car err) (cdr err))
+	     (message "nnrss: Failed to fetch %s" url)))))
 
 (defun nnrss-decode-entities-string (string)
   (if string
@@ -626,7 +603,7 @@ which RSS 2.0 allows."
 ;;; Snarf functions
 (defun nnrss-make-hash-index (item)
   (gnus-message 9 "nnrss: Making hash index of %s" (gnus-prin1-to-string item))
-  (setq item (gnus-remove-if
+  (setq item (seq-remove
 	      (lambda (field)
 		(when (listp field)
 		  (memq (car field) nnrss-ignore-article-fields)))
@@ -645,8 +622,8 @@ which RSS 2.0 allows."
 					 (concat group ".xml"))
 					nnrss-directory))))
 	(setq xml (nnrss-fetch file t))
-      (setq url (or (nth 2 (assoc group nnrss-server-data))
-		    (second (assoc group nnrss-group-alist))))
+      (setq url (or (nth 2 (assoc-string group nnrss-server-data))
+		    (cadr (assoc-string group nnrss-group-alist))))
       (unless url
 	(setq url
 	      (cdr
@@ -654,7 +631,7 @@ which RSS 2.0 allows."
 		      (nnrss-discover-feed
 		       (read-string
 			(format "URL to search for %s: " group) "http://")))))
-	(let ((pair (assoc group nnrss-server-data)))
+	(let ((pair (assoc-string group nnrss-server-data)))
 	  (if pair
 	      (setcdr (cdr pair) (list url))
 	    (push (list group nnrss-group-max url) nnrss-server-data)))
@@ -692,7 +669,7 @@ which RSS 2.0 allows."
 		  (if (and len (integerp (setq len (string-to-number len))))
 		      ;; actually already in `ls-lisp-format-file-size' but
 		      ;; probably not worth to require it for one function
-		      (do ((size (/ len 1.0) (/ size 1024.0))
+		      (cl-do ((size (/ len 1.0) (/ size 1024.0))
 			   (post-fixes (list "" "k" "M" "G" "T" "P" "E")
 				       (cdr post-fixes)))
 			  ((< size 1024)
@@ -706,7 +683,7 @@ which RSS 2.0 allows."
 	    (setq enclosure (list url name len type))))
 	(push
 	 (list
-	  (incf nnrss-group-max)
+	  (cl-incf nnrss-group-max)
 	  (current-time)
 	  url
 	  (and subject (nnrss-mime-encode-string subject))
@@ -722,7 +699,7 @@ which RSS 2.0 allows."
       (setq extra nil))
     (when changed
       (nnrss-save-group-data group server)
-      (let ((pair (assoc group nnrss-server-data)))
+      (let ((pair (assoc-string group nnrss-server-data)))
 	(if pair
 	    (setcar (cdr pair) nnrss-group-max)
 	  (push (list group nnrss-group-max) nnrss-server-data)))
@@ -763,7 +740,7 @@ Read the file and attempt to subscribe to each Feed in the file."
 Export subscriptions to a buffer in OPML Format."
   (interactive)
   (with-current-buffer (get-buffer-create "*OPML Export*")
-    (mm-set-buffer-file-coding-system 'utf-8)
+    (set-buffer-file-coding-system 'utf-8)
     (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
 	    "<!-- OPML generated by Emacs Gnus' nnrss.el -->\n"
 	    "<opml version=\"1.1\">\n"
@@ -793,7 +770,7 @@ It is useful when `(setq nnrss-use-local t)'."
   (insert "RSSDIR='" (expand-file-name nnrss-directory) "'\n")
   (dolist (elem nnrss-server-data)
     (let ((url (or (nth 2 elem)
-		   (second (assoc (car elem) nnrss-group-alist)))))
+		   (cadr (assoc-string (car elem) nnrss-group-alist)))))
       (insert "$WGET -q -O \"$RSSDIR\"/'"
 	      (nnrss-translate-file-chars (concat (car elem) ".xml"))
 	      "' '" url "'\n"))))
@@ -810,10 +787,11 @@ It is useful when `(setq nnrss-use-local t)'."
 		   (nnrss-node-just-text node)
 		 node))
 	 (cleaned-text (if text
-			   (gnus-replace-in-string
-			    (gnus-replace-in-string
-			     text "^[\000-\037\177]+\\|^ +\\| +$" "")
-			    "\r\n" "\n"))))
+			   (replace-regexp-in-string
+			    "\r\n" "\n"
+			    (replace-regexp-in-string
+			     "^[\000-\037\177]+\\|^ +\\| +$" ""
+			     text)))))
     (if (string-equal "" cleaned-text)
 	nil
       cleaned-text)))
@@ -959,6 +937,9 @@ Use Mark Pilgrim's `ultra-liberal rss locator'."
 	      ;;    4. check syndic8
 	      (nnrss-find-rss-via-syndic8 url))))))))
 
+(declare-function xml-rpc-method-call "ext:xml-rpc"
+		  (server-url method &rest params))
+
 (defun nnrss-find-rss-via-syndic8 (url)
   "Query syndic8 for the rss feeds it has for URL."
   (if (not (locate-library "xml-rpc"))
@@ -1028,7 +1009,11 @@ Simply ensures that the first element is rss or rdf."
   "Given EL (containing a parsed element) and URI (containing a string
 that gives the URI for which you want to retrieve the namespace
 prefix), return the prefix."
-  (let* ((prefix (car (rassoc uri (cadar el))))
+  (let* ((prefix (car (rassoc uri (dom-attributes
+				   (dom-search
+				    el
+				    (lambda (node)
+				      (rassoc uri (dom-attributes node))))))))
 	 (nslist (if prefix
 		     (split-string (symbol-name prefix) ":")))
 	 (ns (cond ((eq (length nslist) 1) ; no prefix given

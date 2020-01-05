@@ -1,7 +1,7 @@
 ;;; vip.el --- a VI Package for GNU Emacs
 
-;; Copyright (C) 1986-1988, 1992-1993, 1998, 2001-2014
-;;   Free Software Foundation, Inc.
+;; Copyright (C) 1986-1988, 1992-1993, 1998, 2001-2020 Free Software
+;; Foundation, Inc.
 
 ;; Author: Masahiko Sato <ms@sail.stanford.edu>
 ;; Keywords: emulations
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -462,7 +462,8 @@ ARG is used as the prefix value for the executed command.  If
 EVENTS is a list of events, which become the beginning of the command."
   (interactive "P")
   (let (com key (old-map (current-local-map)))
-    (if events (setq unread-command-events events))
+    (if events (setq unread-command-events
+                     (append events unread-command-events)))
     (setq prefix-arg arg)
     (use-local-map vip-emacs-local-map)
     (unwind-protect
@@ -518,7 +519,7 @@ obtained so far, and COM is the command part obtained so far."
   (while (= char ?U)
     (vip-describe-arg prefix-arg)
     (setq char (read-char)))
-  (setq unread-command-events (list char)))
+  (push char unread-command-events))
 
 (defun vip-prefix-arg-com (char value com)
   "Vi operator as prefix argument."
@@ -572,7 +573,7 @@ obtained so far, and COM is the command part obtained so far."
 	(while (= char ?U)
 	  (vip-describe-arg prefix-arg)
 	  (setq char (read-char)))
-	(setq unread-command-events (list char)))
+	(push char unread-command-events))
     ;; as com is non-nil, this means that we have a command to execute
     (if (or (= (car com) ?r) (= (car com) ?R))
 	;; execute appropriate region command.
@@ -1857,7 +1858,7 @@ STRING.  Search will be forward if FORWARD, otherwise backward."
 	       (+ vip-use-register 32) (point) (+ (point) val))
 	    (copy-to-register vip-use-register (point) (+ (point) val) nil))
 	  (setq vip-use-register nil)))
-    (delete-backward-char val t)))
+    (with-no-warnings (delete-backward-char val t))))
 
 
 ;; join lines.
@@ -2186,19 +2187,19 @@ a token has type \(command, address, end-mark\) and value."
 	  ((looking-at "%")
 	   (forward-char 1)
 	   (setq ex-token-type "whole"))
-	  ((looking-at "+")
-	   (cond ((or (looking-at "+[-+]") (looking-at "+[\n|]"))
+	  ((looking-at "\\+")
+	   (cond ((looking-at "\\+[-+\n|]")
 		  (forward-char 1)
 		  (insert "1")
 		  (backward-char 1)
 		  (setq ex-token-type "plus"))
-		 ((looking-at "+[0-9]")
+		 ((looking-at "\\+[0-9]")
 		  (forward-char 1)
 		  (setq ex-token-type "plus"))
 		 (t
 		  (error "Badly formed address"))))
 	  ((looking-at "-")
-	   (cond ((or (looking-at "-[-+]") (looking-at "-[\n|]"))
+	   (cond ((looking-at "-[-+\n|]")
 		  (forward-char 1)
 		  (insert "1")
 		  (backward-char 1)
@@ -2215,7 +2216,7 @@ a token has type \(command, address, end-mark\) and value."
 	     (while (and (not (eolp)) cont)
 	       ;;(re-search-forward "[^/]*/")
 	       (re-search-forward "[^/]*\\(/\\|\n\\)")
-	       (if (not (vip-looking-back "[^\\\\]\\(\\\\\\\\\\)*\\\\/"))
+	       (if (not (vip-looking-back "[^\\]\\(\\\\\\\\\\)*\\\\/"))
 		   (setq cont nil))))
 	   (backward-char 1)
 	   (setq ex-token (buffer-substring (point) (mark)))
@@ -2228,7 +2229,7 @@ a token has type \(command, address, end-mark\) and value."
 	     (while (and (not (eolp)) cont)
 	       ;;(re-search-forward "[^\\?]*\\?")
 	       (re-search-forward "[^\\?]*\\(\\?\\|\n\\)")
-	       (if (not (vip-looking-back "[^\\\\]\\(\\\\\\\\\\)*\\\\\\?"))
+	       (if (not (vip-looking-back "[^\\]\\(\\\\\\\\\\)*\\\\\\?"))
 		   (setq cont nil))
 	       (backward-char 1)
 	       (if (not (looking-at "\n")) (forward-char 1))))
@@ -2249,7 +2250,7 @@ a token has type \(command, address, end-mark\) and value."
 	   (forward-char 1)
 	   (cond ((looking-at "'") (setq ex-token nil))
 		 ((looking-at "[a-z]") (setq ex-token (following-char)))
-		 (t (error "Marks are ' and a-z")))
+		 (t (error "%s" "Marks are ' and a-z")))
 	   (forward-char 1))
 	  ((looking-at "\n")
 	   (setq ex-token-type "end-mark")
@@ -2324,7 +2325,7 @@ a token has type \(command, address, end-mark\) and value."
 	    (while (and (not (eolp)) cont)
 	      (re-search-forward "[^/]*\\(/\\|\n\\)")
 	      ;;(re-search-forward "[^/]*/")
-	      (if (not (vip-looking-back "[^\\\\]\\(\\\\\\\\\\)*\\\\/"))
+	      (if (not (vip-looking-back "[^\\]\\(\\\\\\\\\\)*\\\\/"))
 		  (setq cont nil))))
 	  (setq ex-token
 		(if (= (mark) (point)) ""
@@ -2519,7 +2520,7 @@ a token has type \(command, address, end-mark\) and value."
 		ex-variant t)
 	  (forward-char 2)
 	  (skip-chars-forward " \t")))
-    (if (looking-at "+")
+    (if (looking-at "\\+")
 	(progn
 	  (forward-char 1)
 	  (set-mark (point))
@@ -2595,7 +2596,7 @@ a token has type \(command, address, end-mark\) and value."
   "ex goto command"
   (if (null ex-addresses)
       (setq ex-addresses (cons (point) nil)))
-  (push-mark (point))
+  (push-mark)
   (goto-char (car ex-addresses))
   (beginning-of-line))
 
@@ -2978,9 +2979,10 @@ vip-s-string"
     (vip-change-mode-to-emacs)
     (condition-case conditions
 	(progn
-	  (if (string= tag "")
-	      (find-tag ex-tag t)
-	    (find-tag-other-window ex-tag))
+          (with-suppressed-warnings ((obsolete find-tag find-tag-other-window))
+	    (if (string= tag "")
+	        (find-tag ex-tag t)
+	      (find-tag-other-window ex-tag)))
 	  (vip-change-mode-to-vi))
       (error
        (vip-change-mode-to-vi)

@@ -1,6 +1,6 @@
 ;;; reftex-vars.el --- configuration variables for RefTeX
 
-;; Copyright (C) 1997-1999, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1999, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <dominik@science.uva.nl>
 ;; Maintainer: auctex-devel@gnu.org
@@ -18,13 +18,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 (defvar reftex-tables-dirty)
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 (eval-and-compile
   (defun reftex-set-dirty (symbol value)
     (setq reftex-tables-dirty t)
@@ -85,8 +85,9 @@
     (supertab    "Supertabular environment"
      (("supertabular" ?t nil nil "\\tablecaption{")))
 
-    (wrapfig     "The wrapfigure environment"
-     (("wrapfigure" ?f nil nil caption)))
+    (wrapfig     "The wrapfig package"
+     (("wrapfigure" ?f nil nil caption)
+      ("wraptable"  ?t nil nil caption)))
 
     (ctable	"The ctable package"
      (("\\ctable[]{}{}{}" ?t "tab:" "~\\ref{%s}" 1 ("table" "Tabelle"))))
@@ -150,6 +151,24 @@ distribution.  Mixed-case symbols are convenience aliases.")
       (?A    . "\\citeauthor*{%l}")
       (?y    . "\\citeyear{%l}")
       (?n    . "\\nocite{%l}")))
+    (biblatex "The Biblatex package"
+     ((?\C-m . "\\cite[][]{%l}")
+      (?C    . "\\cite*[][]{%l}")
+      (?t    . "\\textcite[][]{%l}")
+      (?T    . "\\textcite*[][]{%l}")
+      (?p    . "\\parencite[][]{%l}")
+      (?P    . "\\parencite*[][]{%l}")
+      (?f    . "\\footcite[][]{%l}")
+      (?s    . "\\smartcite[][]{%l}")
+      (?u    . "\\autocite[][]{%l}")
+      (?U    . "\\autocite*[][]{%l}")
+      (?a    . "\\citeauthor{%l}")
+      (?A    . "\\citeauthor*{%l}")
+      (?i    . "\\citetitle{%l}")
+      (?I    . "\\citetitle*{%l}")
+      (?y    . "\\citeyear{%l}")
+      (?Y    . "\\citeyear*{%l}")
+      (?n    . "\\nocite{%l}")))
     (amsrefs "The AMSRefs package"
      ((?\C-m . "\\cite{%l}")
       (?p    . "\\cite{%l}")
@@ -183,8 +202,8 @@ distribution.  Mixed-case symbols are convenience aliases.")
     (harvard "The Harvard package"
      ((?\C-m . "\\cite[]{%l}")
       (?p    . "\\cite[]{%l}")
-      (?t    . "\\citeasnoun{%l}")
-      (?n    . "\\citeasnoun{%l}")
+      (?t    . "\\citeasnoun[]{%l}")
+      (?n    . "\\citeasnoun[]{%l}")
       (?s    . "\\possessivecite{%l}")
       (?e    . "\\citeaffixed{%l}{?}")
       (?y    . "\\citeyear{%l}")
@@ -245,7 +264,7 @@ distribution.  Mixed-case symbols are convenience aliases.")
   "LaTeX label and citation support."
   :tag "RefTeX"
   :link '(url-link :tag "Home Page"
-                   "http://www.gnu.org/software/auctex/reftex.html")
+                   "https://www.gnu.org/software/auctex/reftex.html")
   :link '(emacs-commentary-link :tag "Commentary in reftex.el" "reftex.el")
   :link '(custom-manual "(reftex)Top")
   :prefix "reftex-"
@@ -263,6 +282,7 @@ distribution.  Mixed-case symbols are convenience aliases.")
 The file name is expected after the command, either in braces or separated
 by whitespace."
   :group 'reftex-table-of-contents-browser
+  :set 'reftex-set-dirty
   :type '(repeat string))
 
 (defcustom reftex-max-section-depth 12
@@ -333,7 +353,7 @@ more than `reftex-idle-time' seconds.
 Value t means, turn on immediately when RefTeX gets started.  Then,
 recentering will work for any TOC window created during the session.
 
-Value 'frame (the default) means, turn automatic recentering on only while the
+Value `frame' (the default) means, turn automatic recentering on only while the
 dedicated TOC frame does exist, and do the recentering only in that frame.  So
 when creating that frame (with `d' key in an ordinary TOC window), the
 automatic recentering is turned on.  When the frame gets destroyed, automatic
@@ -652,7 +672,7 @@ Possible keys are sectioning macro names like `chapter', section levels
                 (string :tag "Prefix"))))
 
 (defcustom reftex-default-context-regexps
-  '((caption       . "\\\\\\(rot\\)?caption\\*?[[{]")
+  '((caption       . "\\\\\\(rot\\|bi\\)?\\(sub\\)?caption\\(box\\)?\\*?[[{]")
     (item          . "\\\\item\\(\\[[^]]*\\]\\)?")
     (eqnarray-like . "\\\\begin{%s}\\|\\\\\\\\")
     (alignat-like  . "\\\\begin{%s}{[0-9]*}\\|\\\\\\\\"))
@@ -737,7 +757,7 @@ And here is the setup for RefTeX:
    \\end.  Here we use \"linguex\" as this name.
 
    (setq reftex-label-alist
-         '((\"linguex\" ?x \"ex:\" \"~\\\\ref{%s}\" nil (\"Example\" \"Ex.\"))))
+         \\='((\"linguex\" ?x \"ex:\" \"~\\\\ref{%s}\" nil (\"Example\" \"Ex.\"))))
 
 2. Write a function to detect the list macros and the determinators as well.
 
@@ -760,7 +780,7 @@ And here is the setup for RefTeX:
 
 3. Tell RefTeX to use this function
 
-   (setq reftex-special-environment-functions '(my-detect-linguex-list))"
+   (setq reftex-special-environment-functions \\='(my-detect-linguex-list))"
   :group 'reftex-defining-label-environments
   :type 'hook)
 
@@ -866,28 +886,69 @@ DOWNCASE    t:   Downcase words before using them."
                          (string :tag ""))
                 (option (boolean :tag "Downcase words          "))))
 
-(defcustom reftex-label-regexps
-  '(;; Normal \\label{foo} labels
-    "\\\\label{\\(?1:[^}]*\\)}"
-    ;; keyvals [..., label = {foo}, ...] forms used by ctable,
-    ;; listings, minted, ...
-    "\\[[^]]*\\<label[[:space:]]*=[[:space:]]*{?\\(?1:[^],}]+\\)}?")
-  "List of regexps matching \\label definitions.
+(if (featurep 'xemacs)
+    ;; XEmacs 21.5 doesn't have explicitly numbered matching groups,
+    ;; so this list mustn't get any more items.
+    (defconst reftex-label-regexps '("\\\\label{\\([^}]*\\)}"))
+  (defcustom reftex-label-regexps
+    `(;; Normal \\label{foo} labels
+      "\\\\label{\\(?1:[^}]*\\)}"
+      ;; keyvals [..., label = {foo}, ...] forms used by ctable,
+      ;; listings, breqn, ...
+      ,(concat
+        ;; Make sure we search only for optional arguments of
+        ;; environments/macros and don't match any other [.  ctable
+        ;; provides a macro called \ctable, listings/breqn have
+        ;; environments.  Start with a backslash and a group for names
+        "\\\\\\(?:"
+        ;; begin, optional spaces and opening brace
+        "begin[[:space:]]*{"
+        ;; Build a regexp for env names
+        (regexp-opt '("lstlisting" "dmath" "dseries" "dgroup" "darray"))
+        ;; closing brace, optional spaces
+        "}[[:space:]]*"
+        ;; Now for macros
+        "\\|"
+        ;; Build a regexp for macro names; currently only \ctable
+        (regexp-opt '("ctable"))
+        ;; Close the group for names
+        "\\)"
+        ;; Match the opening [ and the following chars
+        "\\[[^][]*"
+        ;; Allow nested levels of chars enclosed in braces
+        "\\(?:{[^}{]*"
+          "\\(?:{[^}{]*"
+            "\\(?:{[^}{]*}[^}{]*\\)*"
+          "}[^}{]*\\)*"
+        "}[^][]*\\)*"
+        ;; Match the label key
+        "\\<label[[:space:]]*=[[:space:]]*"
+        ;; Match the label value; braces around the value are
+        ;; optional.
+        "{?\\(?1:[^] ,}\r\n\t%]+\\)}?"
+        ;; We are done.  Just search until the next closing bracket
+        "[^]]*\\]"))
+    "List of regexps matching \\label definitions.
 The default value matches usual \\label{...} definitions and
-keyval style [..., label = {...}, ...] label definitions.  It is
-assumed that the regexp group 1 matches the label text, so you
-have to define it using \\(?1:...\\) when adding new regexps.
+keyval style [..., label = {...}, ...] label definitions.  The
+regexp for keyval style explicitly looks for environments
+provided by the packages \"listings\" (\"lstlisting\"),
+\"breqn\" (\"dmath\", \"dseries\", \"dgroup\", \"darray\") and
+the macro \"\\ctable\" provided by the package of the same name.
+
+It is assumed that the regexp group 1 matches the label text, so
+you have to define it using \\(?1:...\\) when adding new regexps.
 
 When changed from Lisp, make sure to call
 `reftex-compile-variables' afterwards to make the change
 effective."
-  :version "24.4"
-  :set (lambda (symbol value)
-	 (set symbol value)
-	 (when (fboundp 'reftex-compile-variables)
-	   (reftex-compile-variables)))
-  :group 'reftex-defining-label-environments
-  :type '(repeat (regexp :tag "Regular Expression")))
+    :version "27.1"
+    :set (lambda (symbol value)
+	   (set symbol value)
+	   (when (fboundp 'reftex-compile-variables)
+	     (reftex-compile-variables)))
+    :group 'reftex-defining-label-environments
+    :type '(repeat (regexp :tag "Regular Expression"))))
 
 (defcustom reftex-label-ignored-macros-and-environments nil
   "List of macros and environments to be ignored when searching for labels.
@@ -998,15 +1059,17 @@ This is used to string together whole reference sets, like
 
 (defcustom reftex-ref-style-alist
   '(("Default" t
-     (("\\ref" ?\C-m) ("\\pageref" ?p)))
+     (("\\ref" ?\C-m) ("\\Ref" ?R) ("\\pageref" ?p)))
     ("Varioref" "varioref"
-     (("\\vref" ?v) ("\\vpageref" ?g) ("\\Vref" ?V) ("\\Ref" ?R)))
+     (("\\vref" ?v) ("\\Vref" ?V) ("\\vpageref" ?g)))
     ("Fancyref" "fancyref"
      (("\\fref" ?f) ("\\Fref" ?F)))
     ("Hyperref" "hyperref"
      (("\\autoref" ?a) ("\\autopageref" ?u)))
     ("Cleveref" "cleveref"
-     (("\\cref" ?c) ("\\Cref" ?C) ("\\cpageref" ?d) ("\\Cpageref" ?D))))
+     (("\\cref" ?c) ("\\Cref" ?C) ("\\cpageref" ?d) ("\\Cpageref" ?D)))
+    ("AMSmath" "amsmath"
+     (("\\eqref" ?e))))
   "Alist of reference styles.
 Each element is a list of the style name, the name of the LaTeX
 package associated with the style or t for any package, and an
@@ -1016,7 +1079,7 @@ the macro type is being prompted for.  (See also
 `reftex-ref-macro-prompt'.)  The keys, represented as characters,
 have to be unique."
   :group 'reftex-referencing-labels
-  :version "24.3"
+  :version "27.1"
   :type '(alist :key-type (string :tag "Style name")
 		:value-type (group (choice :tag "Package"
 					   (const :tag "Any package" t)
@@ -1070,9 +1133,9 @@ used in the variable `reftex-ref-style-alist'."
 
 ;; Compatibility with obsolete variables.
 (when reftex-vref-is-default
-  (add-to-list 'reftex-ref-style-default-list "Varioref"))
+  (cl-pushnew "Varioref" reftex-ref-style-default-list :test #'equal))
 (when reftex-fref-is-default
-  (add-to-list 'reftex-ref-style-default-list "Fancyref"))
+  (cl-pushnew "Fancyref" reftex-ref-style-default-list :test #'equal))
 
 (defcustom reftex-level-indent 2
   "Number of spaces to be used for indentation per section level."
@@ -1148,9 +1211,9 @@ path."
   "Sorting of the entries found in BibTeX databases by reftex-citation.
 Possible values:
 nil            Do not sort entries.
-'author        Sort entries by author name.
-'year          Sort entries by increasing year.
-'reverse-year  Sort entries by decreasing year."
+`author'       Sort entries by author name.
+`year'         Sort entries by increasing year.
+`reverse-year' Sort entries by decreasing year."
   :group 'reftex-citation-support
   :type '(choice (const :tag "not" nil)
                  (const :tag "by author" author)
@@ -1200,7 +1263,7 @@ strings.
 `reftex-cite-format' directly yourself or set it to the SYMBOL of one of
 the predefined styles.  The predefined symbols are those which have an
 association in the constant `reftex-cite-format-builtin'.
-E.g.: (setq reftex-cite-format 'natbib)"
+E.g.: (setq reftex-cite-format \\='natbib)"
   :group 'reftex-citation-support
   :type
   `(choice
@@ -1381,7 +1444,7 @@ the text, so that the text has to be repeated outside the index macro.
 Needed for `reftex-index-selection-or-word' and for indexing from the
 phrase buffer.
 
-The final entry may also be a symbol if this entry has a association
+The final entry may also be a symbol if this entry has an association
 in the variable `reftex-index-macros-builtin' to specify the main
 indexing package you are using.  Valid values are currently
 default         The LaTeX default - unnecessary to specify this one
@@ -1592,7 +1655,7 @@ viewing can be useful.  Each entry has the structure
 
 MACRO-RE is matched against the macro.  SEARCH-RE is the regexp used
 to search for cross references.  `%s' in this regexp is replaced with
-with the macro argument at point.  HIGHLIGHT is an integer indicating
+the macro argument at point.  HIGHLIGHT is an integer indicating
 which subgroup of the match should be highlighted."
   :group 'reftex-viewing-cross-references
   :type '(repeat (group (regexp  :tag "Macro  Regexp  ")
@@ -1899,7 +1962,7 @@ instead or as well.  The variable may have one of these values:
    mouse    Highlighting is mouse driven.
    both     Both cursor and mouse trigger highlighting.
 
-Changing this variable requires to rebuild the selection and *toc* buffers
+Changing this variable requires rebuilding the selection and *toc* buffers
 to become effective (keys `g' or `r')."
   :group 'reftex-fontification-configurations
   :type '(choice
@@ -1986,7 +2049,8 @@ symbol indicating in what context the hook is called."
 
 (defcustom reftex-extra-bindings nil
   "Non-nil means, make additional key bindings on startup.
-These extra bindings are located in the users `C-c letter' map."
+These extra bindings are located in the users `C-c letter' map.
+Note that this variable needs to be set before reftex is loaded."
   :group 'reftex-miscellaneous-configurations
   :type 'boolean)
 

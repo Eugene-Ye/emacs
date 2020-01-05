@@ -1,6 +1,6 @@
 ;;; gulp.el --- ask for updates for Lisp packages
 
-;; Copyright (C) 1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Sam Shteingold <shteingd@math.ucla.edu>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -70,7 +70,7 @@ please send them to me ASAP.
 Please don't send the whole file.  Instead, please send a patch made with
 `diff -c' that shows precisely the changes you would like me to install.
 Also please include itemized change log entries for your changes;
-please use lisp/ChangeLog as a guide for the style and for what kinds
+please use lisp/ChangeLog* as a guide for the style and for what kinds
 of information to include.
 
 Thanks.")
@@ -137,7 +137,7 @@ is left in the `*gulp*' buffer at the end."
   "Create the maintainer/package alist for files in FLIST in DIR.
 That is a list of elements, each of the form (MAINTAINER PACKAGES...)."
   (save-excursion
-    (let (mplist filen node mnt-tm mnt tm fl-tm)
+    (let (mplist filen node mnt tm fl-tm)
       (get-buffer-create gulp-tmp-buffer)
       (set-buffer gulp-tmp-buffer)
       (setq buffer-undo-list t)

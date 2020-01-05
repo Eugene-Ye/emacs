@@ -277,7 +277,7 @@ BITS must be of length nrings.  Start at START-TIME."
 	     ;; Disable display of line and column numbers, for speed.
 	     (line-number-mode nil) (column-number-mode nil))
 	  ;; do it!
-	  (hanoi-n bits rings (car poles) (cadr poles) (cl-caddr poles)
+	  (hanoi-n bits rings (nth 0 poles) (nth 1 poles) (nth 2 poles)
 		   start-time))
 	(message "Done"))
     (setq buffer-read-only t)
@@ -381,7 +381,7 @@ BITS must be of length nrings.  Start at START-TIME."
 	(cl-loop for elapsed = (- (float-time) start-time)
                  while (< elapsed hanoi-move-period)
                  with tick-period = (/ (float hanoi-move-period) total-ticks)
-                 for tick = (ceiling (/ elapsed tick-period)) do
+		 for tick = (ceiling elapsed tick-period) do
                  (hanoi-ring-to-pos ring (funcall tick-to-pos tick))
                  (hanoi-sit-for (- (* tick tick-period) elapsed)))
       (cl-loop for tick from 1 to total-ticks by 2 do

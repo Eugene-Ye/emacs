@@ -1,10 +1,9 @@
 ;;; mh-show.el --- MH-Show mode
 
-;; Copyright (C) 1993, 1995, 1997, 2000-2014 Free Software Foundation,
+;; Copyright (C) 1993, 1995, 1997, 2000-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Bill Wohler <wohler@newt.com>
-;; Maintainer: Bill Wohler <wohler@newt.com>
 ;; Keywords: mail
 ;; See: mh-e.el
 
@@ -21,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -222,6 +221,8 @@ Sets the current buffer to the show buffer."
              ;; pgp.el uses this.
              (if (boundp 'write-contents-hooks) ;Emacs 19
                  (kill-local-variable 'write-contents-hooks))
+             (font-lock-mode -1)
+             (mh-show-mode)
              (if formfile
                  (mh-exec-lib-cmd-output "mhl" "-nobell" "-noclear"
                                          (if (stringp formfile)
@@ -233,7 +234,6 @@ Sets the current buffer to the show buffer."
                (mh-add-missing-mime-version-header)
                (setf (mh-buffer-data) (mh-make-buffer-data))
                (mh-mime-display))
-             (mh-show-mode)
              ;; Header cleanup
              (goto-char (point-min))
              (cond (clean-message-header
@@ -253,13 +253,11 @@ Sets the current buffer to the show buffer."
              (setq buffer-backed-up nil)
              (auto-save-mode 1)
              (set-mark nil)
-             (unwind-protect
-                 (when (and mh-decode-mime-flag (not formfile))
-                   (setq buffer-read-only nil)
-                   (mh-display-smileys)
-                   (mh-display-emphasis))
-               (setq buffer-read-only t))
+             (when (and mh-decode-mime-flag (not formfile))
+               (mh-display-smileys)
+               (mh-display-emphasis))
              (set-buffer-modified-p nil)
+             (setq buffer-read-only t)
              (setq mh-show-folder-buffer folder)
              (setq mode-line-buffer-identification
                    (list (format mh-show-buffer-mode-line-buffer-id
@@ -375,8 +373,8 @@ still visible.\n")
            (cond ((not normal-exit)
                   (set-window-configuration config))
                  ,(if dont-return
-                      `(t (setq mh-previous-window-config config))
-                    `((and (get-buffer cur-buffer-name)
+                      '(t (setq mh-previous-window-config config))
+                    '((and (get-buffer cur-buffer-name)
                            (window-live-p (get-buffer-window
                                            (get-buffer cur-buffer-name))))
                       (pop-to-buffer (get-buffer cur-buffer-name) nil)))))))))
@@ -774,7 +772,7 @@ operation."
     ("^\\(Apparently-To:\\|Newsgroups:\\)\\(.*\\)"
      (1 'default)
      (2 'mh-show-cc))
-    ("^\\(In-reply-to\\|Date\\):\\(.*\\)$"
+    ("^\\(In-Reply-To\\|Date\\):\\(.*\\)$"
      (1 'default)
      (2 'mh-show-date))
     (mh-letter-header-font-lock
@@ -871,7 +869,6 @@ See also `mh-folder-mode'.
   (easy-menu-add mh-show-folder-menu)
   (make-local-variable 'mh-show-folder-buffer)
   (buffer-disable-undo)
-  (setq buffer-read-only t)
   (use-local-map mh-show-mode-map))
 
 
@@ -900,8 +897,8 @@ See also `mh-folder-mode'.
   (interactive)
   ;; Don't allow Gnus to create buttons while highlighting, maybe this is bad
   ;; style?
-  (mh-cl-flet
-   ((gnus-article-add-button (&rest args) nil))
+  (mh-flet
+   ((gnus-article-add-button (&rest _args) nil))
    (let* ((modified (buffer-modified-p))
           (gnus-article-buffer (buffer-name))
           (gnus-cite-face-list `(,@(cdr gnus-cite-face-list)

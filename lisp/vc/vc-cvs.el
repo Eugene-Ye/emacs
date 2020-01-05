@@ -1,9 +1,8 @@
 ;;; vc-cvs.el --- non-resident support for CVS version-control  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1995, 1998-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995, 1998-2020 Free Software Foundation, Inc.
 
-;; Author:      FSF (see vc.el for full credits)
-;; Maintainer:  Andre Spiegel <spiegel@gnu.org>
+;; Author: FSF (see vc.el for full credits)
 ;; Package: vc
 
 ;; This file is part of GNU Emacs.
@@ -19,13 +18,19 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
 (eval-when-compile (require 'vc))
+
+(declare-function vc-branch-p "vc" (rev))
+(declare-function vc-checkout "vc" (file &optional rev))
+(declare-function vc-expand-dirs "vc" (file-or-dir-list backend))
+(declare-function vc-read-revision "vc"
+                  (prompt &optional files backend default initial-input))
 
 ;; Clear up the cache to force vc-call to check again and discover
 ;; new functions when we reload this file.
@@ -48,10 +53,10 @@
                     ;; If the file is not writable (despite CVSREAD being
                     ;; undefined), this is probably because the file is being
                     ;; "watched" by other developers.
-                    ;; (If vc-mistrust-permissions was t, we actually shouldn't
-                    ;; trust this, but there is no other way to learn this from
-                    ;; CVS at the moment (version 1.9).)
-                    (string-match "r-..-..-." (nth 8 attrib)))
+                    ;; (We actually shouldn't trust this, but there is
+                    ;; no other way to learn this from CVS at the
+                    ;; moment (version 1.9).)
+		    (string-match "r-..-..-." (file-attribute-modes attrib)))
                'announce
              'implicit))))))
 
@@ -96,7 +101,18 @@ If nil, use the value of `vc-diff-switches'.  If t, use no switches."
   :version "21.1"
   :group 'vc-cvs)
 
-(defcustom vc-cvs-header '("\$Id\$")
+(defcustom vc-cvs-annotate-switches nil
+  "String or list of strings specifying switches for cvs annotate under VC.
+If nil, use the value of `vc-annotate-switches'.  If t, use no
+switches."
+  :type '(choice (const :tag "Unspecified" nil)
+		 (const :tag "None" t)
+		 (string :tag "Argument String")
+		 (repeat :tag "Argument List" :value ("") string))
+  :version "25.1"
+  :group 'vc-cvs)
+
+(defcustom vc-cvs-header '("$Id\ $")
   "Header keywords to be inserted by `vc-insert-headers'."
   :version "24.1"     ; no longer consult the obsolete vc-header-alist
   :type '(repeat string)
@@ -120,11 +136,11 @@ server, but heuristics will be used to determine the status for
 all other VC operations.
 
 The value can also be a regular expression or list of regular
-expressions to match against the host name of a repository; then VC
-only stays local for hosts that match it.  Alternatively, the value
-can be a list of regular expressions where the first element is the
-symbol `except'; then VC always stays local except for hosts matched
-by these regular expressions."
+expressions to match against the host name of a repository; then
+vc-cvs only stays local for hosts that match it.  Alternatively,
+the value can be a list of regular expressions where the first
+element is the symbol `except'; then vc-cvs always stays local
+except for hosts matched by these regular expressions."
   :type '(choice (const :tag "Always stay local" t)
 		 (const :tag "Only for file operations" only-file)
 		 (const :tag "Don't stay local" nil)
@@ -150,7 +166,7 @@ Format is according to `format-time-string'.  Only used if
   "Specify the mode-line display of sticky tags.
 Value t means default display, nil means no display at all.  If the
 value is a function or macro, it is called with the sticky tag and
-its' type as parameters, in that order.  TYPE can have three different
+its type as parameters, in that order.  TYPE can have three different
 values: `symbolic-name' (TAG is a string), `revision-number' (TAG is a
 string) and `date' (TAG is a date as returned by `encode-time').  The
 return value of the function or macro will be displayed as a string.
@@ -159,10 +175,10 @@ Here's an example that will display the formatted date for sticky
 dates and the word \"Sticky\" for sticky tag names and revisions.
 
   (lambda (tag type)
-    (cond ((eq type 'date) (format-time-string
+    (cond ((eq type \\='date) (format-time-string
                               vc-cvs-sticky-date-format-string tag))
-          ((eq type 'revision-number) \"Sticky\")
-          ((eq type 'symbolic-name) \"Sticky\")))
+          ((eq type \\='revision-number) \"Sticky\")
+          ((eq type \\='symbolic-name) \"Sticky\")))
 
 Here's an example that will abbreviate to the first character only,
 any text before the first occurrence of `-' for sticky symbolic tags.
@@ -170,9 +186,9 @@ If the sticky tag is a revision number, the word \"Sticky\" is
 displayed.  Date and time is displayed for sticky dates.
 
    (lambda (tag type)
-     (cond ((eq type 'date) (format-time-string \"%Y%m%d %H:%M\" tag))
-           ((eq type 'revision-number) \"Sticky\")
-           ((eq type 'symbolic-name)
+     (cond ((eq type \\='date) (format-time-string \"%Y%m%d %H:%M\" tag))
+           ((eq type \\='revision-number) \"Sticky\")
+           ((eq type \\='symbolic-name)
             (condition-case nil
                 (progn
                   (string-match \"\\\\([^-]*\\\\)\\\\(.*\\\\)\" tag)
@@ -222,7 +238,7 @@ See also variable `vc-cvs-sticky-date-format-string'."
 
 (defun vc-cvs-state (file)
   "CVS-specific version of `vc-state'."
-  (if (vc-stay-local-p file 'CVS)
+  (if (vc-cvs-stay-local-p file)
       (let ((state (vc-file-getprop file 'vc-state)))
         ;; If we should stay local, use the heuristic but only if
         ;; we don't have a more precise state already available.
@@ -240,7 +256,7 @@ See also variable `vc-cvs-sticky-date-format-string'."
   ;; If the file has not changed since checkout, consider it `up-to-date'.
   ;; Otherwise consider it `edited'.
   (let ((checkout-time (vc-file-getprop file 'vc-checkout-time))
-        (lastmod (nth 5 (file-attributes file))))
+        (lastmod (file-attribute-modification-time (file-attributes file))))
     (cond
      ((equal checkout-time lastmod) 'up-to-date)
      ((string= (vc-working-revision file) "0") 'added)
@@ -270,8 +286,8 @@ committed and support display of sticky tags."
     (propertize
      (if (zerop (length sticky-tag))
 	 string
-       (setq help-echo (format "%s on the '%s' branch"
-			       help-echo sticky-tag))
+       (setq help-echo (format-message "%s on the `%s' branch"
+                                       help-echo sticky-tag))
        (concat string "[" sticky-tag "]"))
      'help-echo help-echo)))
 
@@ -282,7 +298,7 @@ committed and support display of sticky tags."
 
 (autoload 'vc-switches "vc")
 
-(defun vc-cvs-register (files &optional _rev comment)
+(defun vc-cvs-register (files &optional comment)
   "Register FILES into the CVS version-control system.
 COMMENT can be used to provide an initial description of FILES.
 Passes either `vc-cvs-register-switches' or `vc-register-switches'
@@ -321,38 +337,20 @@ its parents."
                   (directory-file-name dir))))
     (eq dir t)))
 
-;; vc-cvs-checkin used to take a 'rev' second argument that allowed
-;; checking in onto a specified branch tip rather than the current
-;; default branch, but nothing in the entire rest of VC exercised
-;; this code.  Removing it simplifies the backend interface for all
-;; modes.
-;;
-;; Here's the setup code preserved in amber, in case the logic needs
-;; to be broken out into a method someday; (if rev (concat "-r" rev))
-;; used to be part of the switches passed to vc-cvs-command.
-;;
-;;  (unless (or (not rev) (vc-cvs-valid-revision-number-p rev))
-;;    (if (not (vc-cvs-valid-symbolic-tag-name-p rev))
-;;	(error "%s is not a valid symbolic tag name" rev)
-;;      ;; If the input revision is a valid symbolic tag name, we create it
-;;      ;; as a branch, commit and switch to it.
-;;      (apply 'vc-cvs-command nil 0 files "tag" "-b" (list rev))
-;;      (apply 'vc-cvs-command nil 0 files "update" "-r" (list rev))
-;;      (mapc (lambda (file) (vc-file-setprop file 'vc-cvs-sticky-tag rev))
-;;	    files)))
-;;
-;; The following postamble cleaned up after the branch change:
-;;
-;;    ;; if this was an explicit check-in (does not include creation of
-;;    ;; a branch), remove the sticky tag.
-;;    (if (and rev (not (vc-cvs-valid-symbolic-tag-name-p rev)))
-;;	(vc-cvs-command nil 0 files "update" "-A"))))
-;;	  files)))
-;;
-(defun vc-cvs-checkin (files comment)
+(defun vc-cvs-checkin (files comment &optional rev)
   "CVS-specific version of `vc-backend-checkin'."
+ (unless (or (not rev) (vc-cvs-valid-revision-number-p rev))
+   (if (not (vc-cvs-valid-symbolic-tag-name-p rev))
+	(error "%s is not a valid symbolic tag name" rev)
+     ;; If the input revision is a valid symbolic tag name, we create it
+     ;; as a branch, commit and switch to it.
+     (apply 'vc-cvs-command nil 0 files "tag" "-b" (list rev))
+     (apply 'vc-cvs-command nil 0 files "update" "-r" (list rev))
+     (mapc (lambda (file) (vc-file-setprop file 'vc-cvs-sticky-tag rev))
+	    files)))
   (let ((status (apply 'vc-cvs-command nil 1 files
-		       "ci" (concat "-m" comment)
+		       "ci" (if rev (concat "-r" rev))
+                       (concat "-m" comment)
 		       (vc-switches 'CVS 'checkin))))
     (set-buffer "*vc*")
     (goto-char (point-min))
@@ -383,7 +381,11 @@ its parents."
     ;; tell it from the permissions of the file (see
     ;; vc-cvs-checkout-model).
     (mapc (lambda (file) (vc-file-setprop file 'vc-checkout-model nil))
-	  files)))
+	  files)
+    ;; if this was an explicit check-in (does not include creation of
+    ;; a branch), remove the sticky tag.
+    (if (and rev (not (vc-cvs-valid-symbolic-tag-name-p rev)))
+	(vc-cvs-command nil 0 files "update" "-A"))))
 
 (defun vc-cvs-find-revision (file rev buffer)
   (apply 'vc-cvs-command
@@ -438,7 +440,36 @@ REV is the revision to check out."
     (if vc-cvs-use-edit
         (vc-cvs-command nil 0 file "unedit")
       ;; Make the file read-only by switching off all w-bits
-      (set-file-modes file (logand (file-modes file) 3950)))))
+      (set-file-modes file (logand (file-modes file) #o7555)))))
+
+(defun vc-cvs-merge-file (file)
+  "Accept a file merge request, prompting for revisions."
+  (let* ((first-revision
+        (vc-read-revision
+         (concat "Merge " file
+                 " from branch or revision "
+                 "(default news on current branch): ")
+         (list file)
+         'CVS))
+        second-revision
+        status)
+    (cond
+     ((string= first-revision "")
+      (setq status (vc-cvs-merge-news file)))
+     (t
+      (if (not (vc-branch-p first-revision))
+         (setq second-revision
+               (vc-read-revision
+                "Second revision: "
+                (list file) 'CVS nil
+                (concat (vc-branch-part first-revision) ".")))
+       ;; We want to merge an entire branch.  Set revisions
+       ;; accordingly, so that vc-cvs-merge understands us.
+       (setq second-revision first-revision)
+       ;; first-revision must be the starting point of the branch
+       (setq first-revision (vc-branch-part first-revision)))
+      (setq status (vc-cvs-merge file first-revision second-revision))))
+    status))
 
 (defun vc-cvs-merge (file first-revision &optional second-revision)
   "Merge changes into current working copy of FILE.
@@ -492,7 +523,8 @@ The changes are between FIRST-REVISION and SECOND-REVISION."
                     (string= (match-string 1) "P "))
                 (vc-file-setprop file 'vc-state 'up-to-date)
                 (vc-file-setprop file 'vc-checkout-time
-                                 (nth 5 (file-attributes file)))
+				 (file-attribute-modification-time
+				  (file-attributes file)))
                 0);; indicate success to the caller
                ;; Merge successful, but our own changes are still in the file
                ((string= (match-string 1) "M ")
@@ -527,7 +559,7 @@ Remaining arguments are ignored."
   ;; It's just the catenation of the individual logs.
   (vc-cvs-command
    buffer
-   (if (vc-stay-local-p files 'CVS) 'async 0)
+   (if (vc-cvs-stay-local-p files) 'async 0)
    files "log")
   (with-current-buffer buffer
     (vc-run-delayed (vc-rcs-print-log-cleanup)))
@@ -540,11 +572,10 @@ Remaining arguments are ignored."
 (autoload 'vc-version-backup-file "vc")
 (declare-function vc-coding-system-for-diff "vc" (file))
 
-(defun vc-cvs-diff (files &optional oldvers newvers buffer)
+(defun vc-cvs-diff (files &optional oldvers newvers buffer async)
   "Get a difference report using CVS between two revisions of FILE."
   (let* (process-file-side-effects
-	 (async (and (not vc-disable-async-diff)
-		     (vc-stay-local-p files 'CVS)))
+	 (async (and async (vc-cvs-stay-local-p files)))
 	 (invoke-cvs-diff-list nil)
 	 status)
     ;; Look through the file list and see if any files have backups
@@ -595,11 +626,12 @@ Remaining arguments are ignored."
 (defun vc-cvs-annotate-command (file buffer &optional revision)
   "Execute \"cvs annotate\" on FILE, inserting the contents in BUFFER.
 Optional arg REVISION is a revision to annotate from."
-  (vc-cvs-command buffer
-                  (if (vc-stay-local-p file 'CVS)
-		      'async 0)
-                  file "annotate"
-                  (if revision (concat "-r" revision)))
+  (apply #'vc-cvs-command buffer
+	 (if (vc-cvs-stay-local-p file)
+	     'async 0)
+	 file "annotate"
+	 (append (vc-switches 'cvs 'annotate)
+		 (if revision (list (concat "-r" revision)))))
   ;; Strip the leading few lines.
   (let ((proc (get-buffer-process buffer)))
     (if proc
@@ -611,13 +643,13 @@ Optional arg REVISION is a revision to annotate from."
         (re-search-forward vc-cvs-annotate-first-line-re)
         (delete-region (point-min) (1- (point)))))))
 
-(declare-function vc-annotate-convert-time "vc-annotate" (time))
+(declare-function vc-annotate-convert-time "vc-annotate" (&optional time))
 
 (defun vc-cvs-annotate-current-time ()
   "Return the current time, based at midnight of the current day, and
 encoded as fractional days."
   (vc-annotate-convert-time
-   (apply 'encode-time 0 0 0 (nthcdr 3 (decode-time)))))
+   (apply #'encode-time 0 0 0 (nthcdr 3 (decode-time)))))
 
 (defun vc-cvs-annotate-time ()
   "Return the time of the next annotation (as fraction of days)
@@ -716,7 +748,8 @@ If UPDATE is non-nil, then update (resynch) any affected buffers."
 		    (vc-file-setprop file 'vc-state 'up-to-date)
 		    (vc-file-setprop file 'vc-working-revision nil)
 		    (vc-file-setprop file 'vc-checkout-time
-				     (nth 5 (file-attributes file))))
+				     (file-attribute-modification-time
+				      (file-attributes file))))
 		   ((or (string= state "M")
 			(string= state "C"))
 		    (vc-file-setprop file 'vc-state 'edited)
@@ -733,7 +766,7 @@ If UPDATE is non-nil, then update (resynch) any affected buffers."
 
 (defun vc-cvs-make-version-backups-p (file)
   "Return non-nil if version backups should be made for FILE."
-  (vc-stay-local-p file 'CVS))
+  (vc-cvs-stay-local-p file))
 
 (defun vc-cvs-check-headers ()
   "Check if the current file has any headers in it."
@@ -757,8 +790,33 @@ and that it passes `vc-cvs-global-switches' to it before FLAGS."
            (append vc-cvs-global-switches
                    flags))))
 
-(defun vc-cvs-stay-local-p (file)  ;Back-compatibility.
-  (vc-stay-local-p file 'CVS))
+(defun vc-cvs-stay-local-p (file)
+  "Return non-nil if VC should stay local when handling FILE.
+If FILE is a list of files, return non-nil if any of them
+individually should stay local."
+  (if (listp file)
+      (delq nil (mapcar (lambda (arg) (vc-cvs-stay-local-p arg)) file))
+    (let ((stay-local vc-cvs-stay-local))
+      (if (symbolp stay-local) stay-local
+       (let ((dirname (if (file-directory-p file)
+                          (directory-file-name file)
+                        (file-name-directory file))))
+         (eq 'yes
+             (or (vc-file-getprop dirname 'vc-cvs-stay-local-p)
+                 (vc-file-setprop
+                  dirname 'vc-cvs-stay-local-p
+                  (let ((hostname (vc-cvs-repository-hostname dirname)))
+                    (if (not hostname)
+                        'no
+                      (let ((default t))
+                        (if (eq (car-safe stay-local) 'except)
+                            (setq default nil stay-local (cdr stay-local)))
+                        (when (consp stay-local)
+                          (setq stay-local
+                                (mapconcat 'identity stay-local "\\|")))
+                        (if (if (string-match stay-local hostname)
+                                default (not default))
+                            'yes 'no))))))))))))
 
 (defun vc-cvs-repository-hostname (dirname)
   "Hostname of the CVS server associated to workarea DIRNAME."
@@ -830,11 +888,11 @@ For an empty string, nil is returned (invalid CVS root)."
             (setq host uhost))
           ;; Remove empty HOST
           (and (equal host "")
-               (setq host))
+               (setq host nil))
           ;; Fix windows style CVS root `:local:C:\\project\\cvs\\some\\dir'
           (and host
                (equal method "local")
-               (setq root (concat host ":" root) host))
+               (setq root (concat host ":" root) host nil))
           ;; Normalize CVS root record
           (list method user host root)))))
 
@@ -847,11 +905,11 @@ For an empty string, nil is returned (invalid CVS root)."
 (defun vc-cvs-parse-status (&optional full)
   "Parse output of \"cvs status\" command in the current buffer.
 Set file properties accordingly.  Unless FULL is t, parse only
-essential information. Note that this can never set the 'ignored
+essential information. Note that this can never set the `ignored'
 state."
   (let (file status missing)
     (goto-char (point-min))
-    (while (looking-at "? \\(.*\\)")
+    (while (looking-at "\\? \\(.*\\)")
       (setq file (expand-file-name (match-string 1)))
       (vc-file-setprop file 'vc-state 'unregistered)
       (forward-line 1))
@@ -866,7 +924,7 @@ state."
 	(when (and full
 		   (re-search-forward
 		    "\\(RCS Version\\|RCS Revision\\|Repository revision\\):\
-\[\t ]+\\([0-9.]+\\)"
+[\t ]+\\([0-9.]+\\)"
 		    nil t))
 	    (vc-file-setprop file 'vc-latest-revision (match-string 2)))
 	(vc-file-setprop
@@ -874,7 +932,8 @@ state."
 	 (cond
 	  ((string-match "Up-to-date" status)
 	   (vc-file-setprop file 'vc-checkout-time
-			    (nth 5 (file-attributes file)))
+			    (file-attribute-modification-time
+			     (file-attributes file)))
 	   'up-to-date)
 	  ((string-match "Locally Modified" status)             'edited)
 	  ((string-match "Needs Merge" status)                  'needs-merge)
@@ -887,103 +946,32 @@ state."
 	  (t 'edited))))))))
 
 (defun vc-cvs-after-dir-status (update-function)
-  ;; Heavily inspired by vc-cvs-parse-status. AKA a quick hack.
-  ;; This needs a lot of testing.
-  (let ((status nil)
-	(status-str nil)
-	(file nil)
-	(result nil)
-	(missing nil)
-	(ignore-next nil)
-	(subdir default-directory))
+  (let ((result nil)
+        (translation '((?? . unregistered)
+                       (?A . added)
+                       (?C . conflict)
+                       (?M . edited)
+                       (?P . needs-merge)
+                       (?R . removed)
+                       (?U . needs-update))))
     (goto-char (point-min))
-    (while
-	;; Look for either a file entry, an unregistered file, or a
-	;; directory change.
-	(re-search-forward
-	 "\\(^=+\n\\([^=c?\n].*\n\\|\n\\)+\\)\\|\\(\\(^?? .*\n\\)+\\)\\|\\(^cvs status: \\(Examining\\|nothing\\) .*\n\\)"
-	 nil t)
-      ;; FIXME: get rid of narrowing here.
-      (narrow-to-region (match-beginning 0) (match-end 0))
-      (goto-char (point-min))
-      ;; The subdir
-      (when (looking-at "cvs status: Examining \\(.+\\)")
-	(setq subdir (expand-file-name (match-string 1))))
-      ;; Unregistered files
-      (while (looking-at "? \\(.*\\)")
-	(setq file (file-relative-name
-		    (expand-file-name (match-string 1) subdir)))
-	(push (list file 'unregistered) result)
-	(forward-line 1))
-      (when (looking-at "cvs status: nothing known about")
-	;; We asked about a non existent file.  The output looks like this:
-
-	;; cvs status: nothing known about `lisp/v.diff'
-	;; ===================================================================
-	;; File: no file v.diff            Status: Unknown
-	;;
-	;;    Working revision:    No entry for v.diff
-	;;    Repository revision: No revision control file
-	;;
-
-	;; Due to narrowing in this iteration we only see the "cvs
-	;; status:" line, so just set a flag so that we can ignore the
-	;; file in the next iteration.
-	(setq ignore-next t))
-      ;; A file entry.
-      (when (re-search-forward "^File: \\(no file \\)?\\(.*[^ \t]\\)[ \t]+Status: \\(.*\\)" nil t)
-	(setq missing (match-string 1))
-	(setq file (file-relative-name
-		    (expand-file-name (match-string 2) subdir)))
-	(setq status-str (match-string 3))
-	(setq status
-	      (cond
-	       ((string-match "Up-to-date" status-str) 'up-to-date)
-	       ((string-match "Locally Modified" status-str) 'edited)
-	       ((string-match "Needs Merge" status-str) 'needs-merge)
-	       ((string-match "Needs \\(Checkout\\|Patch\\)" status-str)
-		(if missing 'missing 'needs-update))
-	       ((string-match "Locally Added" status-str) 'added)
-	       ((string-match "Locally Removed" status-str) 'removed)
-	       ((string-match "File had conflicts " status-str) 'conflict)
-	       ((string-match "Unknown" status-str) 'unregistered)
-	       (t 'edited)))
-	(if ignore-next
-	    (setq ignore-next nil)
-	  (unless (eq status 'up-to-date)
-	    (push (list file status) result))))
-      (goto-char (point-max))
-      (widen))
-    (funcall update-function result))
-  ;; Alternative implementation: use the "update" command instead of
-  ;; the "status" command.
-  ;; (let ((result nil)
-  ;; 	(translation '((?? . unregistered)
-  ;; 		       (?A . added)
-  ;; 		       (?C . conflict)
-  ;; 		       (?M . edited)
-  ;; 		       (?P . needs-merge)
-  ;; 		       (?R . removed)
-  ;; 		       (?U . needs-update))))
-  ;;   (goto-char (point-min))
-  ;;   (while (not (eobp))
-  ;;     (if (looking-at "^[ACMPRU?] \\(.*\\)$")
-  ;; 	  (push (list (match-string 1)
-  ;; 		      (cdr (assoc (char-after) translation)))
-  ;; 		result)
-  ;; 	(cond
-  ;; 	 ((looking-at "cvs update: warning: \\(.*\\) was lost")
-  ;; 	  ;; Format is:
-  ;; 	  ;; cvs update: warning: FILENAME was lost
-  ;; 	  ;; U FILENAME
-  ;; 	  (push (list (match-string 1) 'missing) result)
-  ;; 	  ;; Skip the "U" line
-  ;; 	  (forward-line 1))
-  ;; 	 ((looking-at "cvs update: New directory `\\(.*\\)' -- ignored")
-  ;; 	  (push (list (match-string 1) 'unregistered) result))))
-  ;;     (forward-line 1))
-  ;;   (funcall update-function result)))
-  )
+    (while (not (eobp))
+      (if (looking-at "^[ACMPRU?] \\(.*\\)$")
+          (push (list (match-string 1)
+                      (cdr (assoc (char-after) translation)))
+                result)
+        (cond
+         ((looking-at "cvs update: warning: \\(.*\\) was lost")
+          ;; Format is:
+          ;; cvs update: warning: FILENAME was lost
+          ;; U FILENAME
+          (push (list (match-string 1) 'missing) result)
+          ;; Skip the "U" line
+          (forward-line 1))
+         ((looking-at "cvs update: New directory `\\(.*\\)' -- ignored")
+          (push (list (match-string 1) 'unregistered) result))))
+      (forward-line 1))
+    (funcall update-function result)))
 
 ;; Based on vc-cvs-dir-state-heuristic from Emacs 22.
 ;; FIXME does not mention unregistered files.
@@ -1015,26 +1003,17 @@ state."
     (if basedir result
       (funcall update-function result))))
 
-(defun vc-cvs-dir-status (dir update-function)
-  "Create a list of conses (file . state) for DIR."
-  ;; FIXME check all files in DIR instead?
-  (let ((local (vc-stay-local-p dir 'CVS)))
-    (if (and local (not (eq local 'only-file)))
-	(vc-cvs-dir-status-heuristic dir update-function)
-      (vc-cvs-command (current-buffer) 'async dir "-f" "status")
-      ;; Alternative implementation: use the "update" command instead of
-      ;; the "status" command.
-      ;; (vc-cvs-command (current-buffer) 'async
-      ;; 		  (file-relative-name dir)
-      ;; 		  "-f" "-n" "update" "-d" "-P")
-      (vc-run-delayed
-       (vc-cvs-after-dir-status update-function)))))
-
-(defun vc-cvs-dir-status-files (dir files _default-state update-function)
-  "Create a list of conses (file . state) for DIR."
-  (apply 'vc-cvs-command (current-buffer) 'async dir "-f" "status" files)
-  (vc-run-delayed
-   (vc-cvs-after-dir-status update-function)))
+(defun vc-cvs-dir-status-files (dir files update-function)
+  "Create a list of conses (file . state) for FILES in DIR.
+Query all files in DIR if files is nil."
+  (let ((local (vc-cvs-stay-local-p dir)))
+    (if (and (not files) local (not (eq local 'only-file)))
+        (vc-cvs-dir-status-heuristic dir update-function))
+    (vc-cvs-command (current-buffer) 'async
+                    files
+                    "-f" "-n" "-q" "update")
+    (vc-run-delayed
+      (vc-cvs-after-dir-status update-function))))
 
 (defun vc-cvs-file-to-string (file)
   "Read the content of FILE and return it as a string."
@@ -1107,7 +1086,7 @@ CVS/Entries should only be accessed through this function."
   ;; an uppercase or lowercase letter and can contain uppercase and
   ;; lowercase letters, digits, `-', and `_'.
   (and (string-match "^[a-zA-Z]" tag)
-       (not (string-match "[^a-z0-9A-Z-_]" tag))))
+       (not (string-match "[^a-z0-9A-Z_-]" tag))))
 
 (defun vc-cvs-valid-revision-number-p (tag)
   "Return non-nil if TAG is a valid revision number."
@@ -1197,16 +1176,15 @@ is non-nil."
     ;; (which is based on textual comparison), because there can be problems
     ;; generating a time string that looks exactly like the one from CVS.
     (let* ((time (match-string 2))
-           (mtime (nth 5 (file-attributes file)))
+           (mtime (file-attribute-modification-time (file-attributes file)))
            (parsed-time (progn (require 'parse-time)
                                (parse-time-string (concat time " +0000")))))
       (cond ((and (not (string-match "\\+" time))
-                  (car parsed-time)
+                  (decoded-time-second parsed-time)
                   ;; Compare just the seconds part of the file time,
                   ;; since CVS file time stamp resolution is just 1 second.
-                  (let ((ptime (apply 'encode-time parsed-time)))
-                    (and (eq (car mtime) (car ptime))
-                         (eq (cadr mtime) (cadr ptime)))))
+		  (= (time-convert mtime 'integer)
+		     (time-convert (encode-time parsed-time) 'integer)))
              (vc-file-setprop file 'vc-checkout-time mtime)
              (if set-state (vc-file-setprop file 'vc-state 'up-to-date)))
             (t

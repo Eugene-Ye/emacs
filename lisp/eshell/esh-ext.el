@@ -1,6 +1,6 @@
 ;;; esh-ext.el --- commands external to Eshell  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -31,14 +31,11 @@
 
 ;;; Code:
 
-(provide 'esh-ext)
-
 (require 'esh-util)
 
-(eval-when-compile
-  (require 'cl-lib)
-  (require 'esh-io)
-  (require 'esh-cmd))
+(eval-when-compile (require 'cl-lib))
+(require 'esh-io)
+(require 'esh-arg)
 (require 'esh-opt)
 
 (defgroup eshell-ext nil
@@ -60,14 +57,15 @@ loaded into memory, thus beginning a new process."
   :type '(repeat string)
   :group 'eshell-ext)
 
-(defcustom eshell-force-execution nil
-  "If non-nil, try to execute binary files regardless of permissions.
+(defcustom eshell-force-execution
+  (not (null (memq system-type '(windows-nt ms-dos))))
+  "If non-nil, try to execute files regardless of execute permissions.
 This can be useful on systems like Windows, where the operating system
-doesn't happen to honor the permission bits in certain cases; or in
-cases where you want to associate an interpreter with a particular
-kind of script file, but the language won't let you but a '#!'
-interpreter line in the file, and you don't want to make it executable
-since nothing else but Eshell will be able to understand
+doesn't support the execution bit for shell scripts; or in cases where
+you want to associate an interpreter with a particular kind of script
+file, but the language won't let you but a `#!' interpreter line in
+the file, and you don't want to make it executable since nothing else
+but Eshell will be able to understand
 `eshell-interpreter-alist'."
   :type 'boolean
   :group 'eshell-ext)
@@ -76,7 +74,7 @@ since nothing else but Eshell will be able to understand
   "Search the environment path for NAME."
   (if (file-name-absolute-p name)
       name
-    (let ((list (eshell-parse-colon-path eshell-path-env))
+    (let ((list (eshell-get-path))
 	  suffixes n1 n2 file)
       (while list
 	(setq n1 (concat (car list) name))
@@ -172,9 +170,9 @@ external version."
 
 ;;; Functions:
 
-(defun eshell-ext-initialize ()
+(defun eshell-ext-initialize ()     ;Called from `eshell-mode' via intern-soft!
   "Initialize the external command handling code."
-  (add-hook 'eshell-named-command-hook 'eshell-explicit-command nil t))
+  (add-hook 'eshell-named-command-hook #'eshell-explicit-command nil t))
 
 (defun eshell-explicit-command (command args)
   "If a command name begins with `*', call it externally always.
@@ -188,8 +186,6 @@ This bypasses all Lisp functions and aliases."
 	(error "%s: external command not found"
 	       (substring command 1))))))
 
-(autoload 'eshell-close-handles "esh-io")
-
 (defun eshell-remote-command (command args)
   "Insert output from a remote COMMAND, using ARGS.
 A remote command is something that executes on a different machine.
@@ -200,13 +196,13 @@ all the output from the remote command, and sends it all at once,
 causing the user to wonder if anything's really going on..."
   (let ((outbuf (generate-new-buffer " *eshell remote output*"))
 	(errbuf (generate-new-buffer " *eshell remote error*"))
-	(command (or (file-remote-p command 'localname) command))
+	(command (file-local-name command))
 	(exitcode 1))
     (unwind-protect
 	(progn
 	  (setq exitcode
 		(shell-command
-		 (mapconcat 'shell-quote-argument
+		 (mapconcat #'shell-quote-argument
 			    (append (list command) args) " ")
 		 outbuf errbuf))
 	  (eshell-print (with-current-buffer outbuf (buffer-string)))
@@ -217,7 +213,7 @@ causing the user to wonder if anything's really going on..."
 
 (defun eshell-external-command (command args)
   "Insert output from an external COMMAND, using ARGS."
-  (setq args (eshell-stringify-list (eshell-flatten-list args)))
+  (setq args (eshell-stringify-list (flatten-tree args)))
   (let ((interp (eshell-find-interpreter
 		 command
 		 args
@@ -230,6 +226,8 @@ causing the user to wonder if anything's really going on..."
     (cl-assert interp)
     (if (functionp (car interp))
 	(apply (car interp) (append (cdr interp) args))
+      (require 'esh-proc)
+      (declare-function eshell-gather-process-output "esh-proc" (command args))
       (eshell-gather-process-output
        (car interp) (append (cdr interp) args)))))
 
@@ -244,7 +242,7 @@ Adds the given PATH to $PATH.")
    (if args
        (progn
 	 (setq eshell-path-env (getenv "PATH")
-	       args (mapconcat 'identity args path-separator)
+	       args (mapconcat #'identity args path-separator)
 	       eshell-path-env
 	       (if prepend
 		   (concat args path-separator eshell-path-env)
@@ -254,6 +252,7 @@ Adds the given PATH to $PATH.")
        (eshell-printn dir)))))
 
 (put 'eshell/addpath 'eshell-no-numeric-conversions t)
+(put 'eshell/addpath 'eshell-filename-arguments t)
 
 (defun eshell-script-interpreter (file)
   "Extract the script to run from FILE, if it has #!<interp> in it.
@@ -296,6 +295,13 @@ line of the form #!<interp>."
       (let ((fullname (if (file-name-directory file) file
 			(eshell-search-path file)))
 	    (suffixes eshell-binary-suffixes))
+	(when (and fullname
+                   (not (file-remote-p fullname))
+                   (file-remote-p default-directory))
+          (setq fullname
+                (if (file-name-absolute-p fullname)
+                    (concat (file-remote-p default-directory) fullname)
+                  (expand-file-name fullname default-directory))))
 	(if (and fullname (not (or eshell-force-execution
 				   (file-executable-p fullname))))
 	    (while suffixes
@@ -323,4 +329,5 @@ line of the form #!<interp>."
 			    (cdr interp)))))
 	  (or interp (list fullname)))))))
 
+(provide 'esh-ext)
 ;;; esh-ext.el ends here

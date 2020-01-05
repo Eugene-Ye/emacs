@@ -1,6 +1,6 @@
-;;; iso-transl.el --- keyboard input definitions for ISO 8859-1  -*- coding: utf-8 -*-
+;;; iso-transl.el --- keyboard input for ISO 10646 chars -*- coding: utf-8 -*-
 
-;; Copyright (C) 1987, 1993-1999, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1987, 1993-1999, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Howard Gayle
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -35,6 +35,10 @@
 ;; once you have loaded the package.  It is nontrivial
 ;; to make all of the Alt keys autoload, and it is not clear
 ;; that the dead accent keys SHOULD autoload this package.
+
+;; This package supports all characters defined by ISO 8859-1, along
+;; with a few other ISO 10646 characters commonly used in English and
+;; basic math.
 
 ;;; Code:
 
@@ -173,6 +177,8 @@
     ("c"    . [?¢])
     ("*o"   . [?°])
     ("o"    . [?°])
+    ("Oe"   . [?œ])
+    ("OE"   . [?Œ])
     ("*u"   . [?µ])
     ("u"    . [?µ])
     ("*m"   . [?µ])
@@ -192,6 +198,31 @@
     ("~o"   . [?õ])
     ("~t"   . [?þ])
     ("~~"   . [?¬])
+    ("_h"   . [?‐])
+    ("_H"   . [?‑])
+    ("_f"   . [?‒])
+    ("_n"   . [?–])
+    ("_m"   . [?—])
+    ("_q"   . [?―])
+    ("["    . [?‘])
+    ("]"    . [?’])
+    ("{"    . [?“])
+    ("}"    . [?”])
+    ("1+"   . [?†])
+    ("2+"   . [?‡])
+    ("**"   . [?•])
+    ("*'"   . [?′])
+    ("*\""  . [?″])
+    ("*E"   . [?€])
+    ("No"   . [?№])
+    ("a<"   . [?←])
+    ("a>"   . [?→])
+    ("a="   . [?↔])
+    ("_-"   . [?−])
+    ("~="   . [?≈])
+    ("/="   . [?≠])
+    ("_<"   . [?≤])
+    ("_>"   . [?≥])
     ("' "   . "'")
     ("` "   . "`")
     ("\" "  . "\"")
@@ -205,18 +236,18 @@ sequence VECTOR.  (VECTOR is normally one character long.)")
 ;; Language-specific translation lists.
 (defvar iso-transl-language-alist
   '(("Esperanto"
-     ("C"  . [?Æ])
-     ("G"  . [?Ø])
-     ("H"  . [?¦])
-     ("J"  . [?¬])
-     ("S"  . [?Þ])
-     ("U"  . [?Ý])
-     ("c"  . [?æ])
-     ("g"  . [?ø])
-     ("h"  . [?¶])
-     ("j"  . [?¼])
-     ("s"  . [?þ])
-     ("u"  . [?ý]))
+     ("C"  . [?Ĉ])
+     ("G"  . [?Ĝ])
+     ("H"  . [?Ĥ])
+     ("J"  . [?Ĵ])
+     ("S"  . [?Ŝ])
+     ("U"  . [?Ŭ])
+     ("c"  . [?ĉ])
+     ("g"  . [?ĝ])
+     ("h"  . [?ĥ])
+     ("j"  . [?ĵ])
+     ("s"  . [?ŝ])
+     ("u"  . [?ŭ]))
     ("French"
      ("C"  . [?Ç])
      ("c"  . [?ç]))

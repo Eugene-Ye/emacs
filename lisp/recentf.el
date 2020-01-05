@@ -1,6 +1,6 @@
 ;;; recentf.el --- setup a menu of recently opened files
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: David Ponce <david@dponce.com>
 ;; Created: July 19 1999
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -67,7 +67,8 @@ You should define the options of your own filters in this group."
 A nil value means to save the whole list.
 See the command `recentf-save-list'."
   :group 'recentf
-  :type 'integer)
+  :type '(choice (integer :tag "Entries" :value 1)
+		 (const :tag "No Limit" nil)))
 
 (defcustom recentf-save-file (locate-user-emacs-file "recentf" ".recentf")
   "File to save the recent list into."
@@ -82,7 +83,7 @@ See the command `recentf-save-list'."
                 recentf-mode
                 (recentf-load-list)))))
 
-(defcustom recentf-save-file-modes 384 ;; 0600
+(defcustom recentf-save-file-modes #o600
   "Mode bits of recentf save file, as an integer, or nil.
 If non-nil, after writing `recentf-save-file', set its mode bits to
 this value.  By default give R/W access only to the user who owns that
@@ -228,10 +229,6 @@ This item will replace the \"More...\" item."
   :group 'recentf
   :type 'boolean)
 
-(define-obsolete-variable-alias 'recentf-menu-append-commands-p
-                                'recentf-menu-append-commands-flag
-                                "22.1")
-
 (defcustom recentf-menu-append-commands-flag t
   "Non-nil means to append command items to the menu."
   :group 'recentf
@@ -294,7 +291,7 @@ They are successively passed a file name to transform it."
             (function :tag "Other function")))))
 
 (defcustom recentf-show-file-shortcuts-flag t
-  "Whether to show ``[N]'' for the Nth item up to 10.
+  "Whether to show \"[N]\" for the Nth item up to 10.
 If non-nil, `recentf-open-files' will show labels for keys that can be
 used as shortcuts to open the Nth file."
   :group 'recentf
@@ -661,15 +658,17 @@ Return nil if file NAME is not one of the ten more recent."
 
 (defun recentf-show-menu ()
   "Show the menu of recently opened files."
-  (easy-menu-add-item
-   (recentf-menu-bar) recentf-menu-path
-   (list recentf-menu-title :filter 'recentf-make-menu-items)
-   recentf-menu-before))
+  (when (keymapp (recentf-menu-bar))
+    (easy-menu-add-item
+     (recentf-menu-bar) recentf-menu-path
+     (list recentf-menu-title :filter 'recentf-make-menu-items)
+     recentf-menu-before)))
 
 (defun recentf-hide-menu ()
   "Hide the menu of recently opened files."
-  (easy-menu-remove-item (recentf-menu-bar) recentf-menu-path
-                         recentf-menu-title))
+  (when (keymapp (recentf-menu-bar))
+    (easy-menu-remove-item (recentf-menu-bar) recentf-menu-path
+                           recentf-menu-title)))
 
 ;;; Predefined menu filters
 ;;
@@ -781,7 +780,7 @@ Filenames are relative to the `default-directory'."
     )
   "List of rules used by `recentf-arrange-by-rule' to build sub-menus.
 A rule is a pair (SUB-MENU-TITLE . MATCHER).  SUB-MENU-TITLE is the
-displayed title of the sub-menu where a '%d' `format' pattern is
+displayed title of the sub-menu where a `%d' `format' pattern is
 replaced by the number of items in the sub-menu.  MATCHER is a regexp
 or a list of regexps.  Items matching one of the regular expressions in
 MATCHER are added to the corresponding sub-menu.
@@ -798,7 +797,7 @@ may have been modified to match another rule."
   "Title of the `recentf-arrange-by-rule' sub-menu.
 This is for the menu where items that don't match any
 `recentf-arrange-rules' are displayed.  If nil these items are
-displayed in the main recent files menu.  A '%d' `format' pattern in
+displayed in the main recent files menu.  A `%d' `format' pattern in
 the title is replaced by the number of items in the sub-menu."
   :group 'recentf-filters
   :type '(choice (const  :tag "Main menu" nil)
@@ -1064,7 +1063,6 @@ Go to the beginning of buffer if not found."
     (define-key km "q" 'recentf-cancel-dialog)
     (define-key km "n" 'next-line)
     (define-key km "p" 'previous-line)
-    (define-key km [follow-link] "\C-m")
     km)
   "Keymap used in recentf dialogs.")
 
@@ -1125,8 +1123,9 @@ IGNORE arguments."
   (recentf-dialog (format "*%s - Edit list*" recentf-menu-title)
     (set (make-local-variable 'recentf-edit-list) nil)
     (widget-insert
-     "Click on OK to delete selected files from the recent list.
-Click on Cancel or type `q' to cancel.\n")
+     (format-message
+      "Click on OK to delete selected files from the recent list.
+Click on Cancel or type `q' to cancel.\n"))
     ;; Insert the list of files as checkboxes
     (dolist (item recentf-list)
       (widget-create 'checkbox
@@ -1224,7 +1223,7 @@ use for the dialog.  It defaults to \"*`recentf-menu-title'*\"."
                        ", or type the corresponding digit key,"
                      "")
                    " to open it.\n"
-                   "Click on Cancel or type `q' to cancel.\n")
+                   (format-message "Click on Cancel or type `q' to cancel.\n"))
     ;; Use a L&F that looks like the recentf menu.
     (tree-widget-set-theme "folder")
     (apply 'widget-create
@@ -1281,7 +1280,8 @@ Write data into the file specified by `recentf-save-file'."
       (with-temp-buffer
         (erase-buffer)
         (set-buffer-file-coding-system recentf-save-file-coding-system)
-        (insert (format recentf-save-file-header (current-time-string)))
+        (insert (format-message recentf-save-file-header
+				(current-time-string)))
         (recentf-dump-variable 'recentf-list recentf-max-saved-items)
         (recentf-dump-variable 'recentf-filter-changer-current)
         (insert "\n\n;; Local Variables:\n"
@@ -1300,7 +1300,9 @@ Read data from the file specified by `recentf-save-file'.
 When `recentf-initialize-file-name-history' is non-nil, initialize an
 empty `file-name-history' with the recent list."
   (interactive)
-  (let ((file (expand-file-name recentf-save-file)))
+  (let ((file (expand-file-name recentf-save-file))
+        ;; We do not want Tramp asking for passwords.
+        (non-essential t))
     (when (file-readable-p file)
       (load-file file)
       (and recentf-initialize-file-name-history
@@ -1340,13 +1342,10 @@ That is, remove duplicates, non-kept, and excluded files."
 ;;;###autoload
 (define-minor-mode recentf-mode
   "Toggle \"Open Recent\" menu (Recentf mode).
-With a prefix argument ARG, enable Recentf mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-Recentf mode if ARG is omitted or nil.
 
 When Recentf mode is enabled, a \"Open Recent\" submenu is
 displayed in the \"File\" menu, containing a list of files that
-were operated on recently."
+were operated on recently, in the most-recently-used order."
   :global t
   :group 'recentf
   :keymap recentf-mode-map

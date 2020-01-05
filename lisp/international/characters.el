@@ -1,6 +1,6 @@
 ;;; characters.el --- set syntax and category for multibyte characters
 
-;; Copyright (C) 1997, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 2000-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -141,13 +141,14 @@ with L, LRE, or LRO Unicode bidi character type.")
 ;; Chinese characters (Unicode)
 (modify-category-entry '(#x2E80 . #x312F) ?|)
 (modify-category-entry '(#x3190 . #x33FF) ?|)
-(modify-category-entry '(#x3400 . #x4DBF) ?C)
-(modify-category-entry '(#x4E00 . #x9FAF) ?C)
-(modify-category-entry '(#x3400 . #x9FAF) ?c)
-(modify-category-entry '(#x3400 . #x9FAF) ?|)
+(modify-category-entry '(#x3400 . #x4DB5) ?C)
+(modify-category-entry '(#x4E00 . #x9FD5) ?C)
+(modify-category-entry '(#x3400 . #x9FD5) ?c)
+(modify-category-entry '(#x3400 . #x9FD5) ?|)
 (modify-category-entry '(#xF900 . #xFAFF) ?C)
 (modify-category-entry '(#xF900 . #xFAFF) ?c)
 (modify-category-entry '(#xF900 . #xFAFF) ?|)
+(modify-category-entry '(#x1B170 . #x1B2FF) ?c)
 (modify-category-entry '(#x20000 . #x2FFFF) ?|)
 (modify-category-entry '(#x20000 . #x2FFFF) ?C)
 (modify-category-entry '(#x20000 . #x2FFFF) ?c)
@@ -194,6 +195,7 @@ with L, LRE, or LRO Unicode bidi character type.")
 
 (dolist (l '(katakana-jisx0201 japanese-jisx0208 japanese-jisx0212
 			       japanese-jisx0213-1 japanese-jisx0213-2
+                               japanese-jisx0213.2004-1
 			       cp932-2-byte))
   (map-charset-chars #'modify-category-entry l ?j))
 
@@ -219,6 +221,8 @@ with L, LRE, or LRO Unicode bidi character type.")
 (modify-category-entry #x309F ?\|)
 (modify-category-entry #x30A0 ?H)
 (modify-category-entry #x30FC ?H)
+
+(modify-category-entry '(#x1B000 . #x1B1FF) ?j)
 
 
 ;; JISX0208
@@ -290,6 +294,7 @@ with L, LRE, or LRO Unicode bidi character type.")
     (map-charset-chars #'modify-category-entry (car charsets) ?b)
     (setq charsets (cdr charsets))))
 (modify-category-entry '(#x600 . #x6ff) ?b)
+(modify-category-entry '(#x8a0 . #x8ff) ?b)
 (modify-category-entry '(#xfb50 . #xfdff) ?b)
 (modify-category-entry '(#xfe70 . #xfefe) ?b)
 
@@ -496,7 +501,7 @@ with L, LRE, or LRO Unicode bidi character type.")
 		    table)))
 
 ;; Load uni-mirrored.el and uni-brackets.el if available, so that they
-;; get dumped into Emacs.  This allows to start Emacs with
+;; get dumped into Emacs.  This allows starting Emacs with
 ;; force-load-messages in ~/.emacs, and avoid infinite recursion in
 ;; bidi_initialize, which needs to load uni-mirrored.el and
 ;; uni-brackets.el in order to display the "Loading" messages.
@@ -541,10 +546,6 @@ with L, LRE, or LRO Unicode bidi character type.")
   (set-case-syntax ?½ "_" tbl)
   (set-case-syntax ?¾ "_" tbl)
   (set-case-syntax ?¿ "." tbl)
-  (let ((c 192))
-    (while (<= c 222)
-      (set-case-syntax-pair c (+ c 32) tbl)
-      (setq c (1+ c))))
   (set-case-syntax ?× "_" tbl)
   (set-case-syntax ?ß "w" tbl)
   (set-case-syntax ?÷ "_" tbl)
@@ -556,182 +557,45 @@ with L, LRE, or LRO Unicode bidi character type.")
     (modify-category-entry c ?l)
     (setq c (1+ c)))
 
-  (let ((pair-ranges '((#x0100 . #x012F)
-		       (#x0132 . #x0137)
-		       (#x0139 . #x0148)
-		       (#x014a . #x0177)
-		       (#x0179 . #x017E)
-		       (#x0182 . #x0185)
-		       (#x0187 . #x0188)
-		       (#x018B . #x018C)
-		       (#x0191 . #x0192)
-		       (#x0198 . #x0199)
-		       (#x01A0 . #x01A5)
-		       (#x01A7 . #x01A8)
-		       (#x01AC . #x01AD)
-		       (#x01AF . #x01B0)
-		       (#x01B3 . #x01B6)
-		       (#x01B8 . #x01B9)
-		       (#x01BC . #x01BD)
-		       (#x01CD . #x01DC)
-		       (#x01DE . #x01EF)
-		       (#x01F4 . #x01F5)
-		       (#x01F8 . #x021F)
-		       (#x0222 . #x0233)
-		       (#x023B . #x023C)
-		       (#x0241 . #x0242)
-		       (#x0246 . #x024F))))
-    (dolist (elt pair-ranges)
-      (let ((from (car elt)) (to (cdr elt)))
-	(while (< from to)
-	  (set-case-syntax-pair from (1+ from) tbl)
-	  (setq from (+ from 2))))))
-
-  (set-case-syntax-pair ?Ÿ ?ÿ tbl)
-
-  ;; In some languages, such as Turkish, U+0049 LATIN CAPITAL LETTER I
-  ;; and U+0131 LATIN SMALL LETTER DOTLESS I make a case pair, and so
-  ;; do U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE and U+0069 LATIN
-  ;; SMALL LETTER I.
-
-  ;; We used to set up half of those correspondence unconditionally,
-  ;; but that makes searches slow.  So now we don't set up either half
-  ;; of these correspondences by default.
-
-  ;; (set-downcase-syntax  ?İ ?i tbl)
-  ;; (set-upcase-syntax    ?I ?ı tbl)
-
-  (set-case-syntax-pair ?Ɓ ?ɓ tbl)
-  (set-case-syntax-pair ?Ɔ ?ɔ tbl)
-  (set-case-syntax-pair ?Ɖ ?ɖ tbl)
-  (set-case-syntax-pair ?Ɗ ?ɗ tbl)
-  (set-case-syntax-pair ?Ǝ ?ǝ tbl)
-  (set-case-syntax-pair ?Ə ?ə tbl)
-  (set-case-syntax-pair ?Ɛ ?ɛ tbl)
-  (set-case-syntax-pair ?Ɠ ?ɠ tbl)
-  (set-case-syntax-pair ?Ɣ ?ɣ tbl)
-  (set-case-syntax-pair ?Ɩ ?ɩ tbl)
-  (set-case-syntax-pair ?Ɨ ?ɨ tbl)
-  (set-case-syntax-pair ?Ɯ ?ɯ tbl)
-  (set-case-syntax-pair ?Ɲ ?ɲ tbl)
-  (set-case-syntax-pair ?Ɵ ?ɵ tbl)
-  (set-case-syntax-pair ?Ʀ ?ʀ tbl)
-  (set-case-syntax-pair ?Ʃ ?ʃ tbl)
-  (set-case-syntax-pair ?Ʈ ?ʈ tbl)
-  (set-case-syntax-pair ?Ʊ ?ʊ tbl)
-  (set-case-syntax-pair ?Ʋ ?ʋ tbl)
-  (set-case-syntax-pair ?Ʒ ?ʒ tbl)
-  (set-case-syntax-pair ?Ǆ ?ǆ tbl)
-  (set-case-syntax-pair ?ǅ ?ǆ tbl)
-  (set-case-syntax-pair ?Ǉ ?ǉ tbl)
-  (set-case-syntax-pair ?ǈ ?ǉ tbl)
-  (set-case-syntax-pair ?Ǌ ?ǌ tbl)
-  (set-case-syntax-pair ?ǋ ?ǌ tbl)
-
-  ;; 01F0; F; 006A 030C; # LATIN SMALL LETTER J WITH CARON
-  (set-case-syntax-pair ?Ǳ ?ǳ tbl)
-  (set-case-syntax-pair ?ǲ ?ǳ tbl)
-  (set-case-syntax-pair ?Ƕ ?ƕ tbl)
-  (set-case-syntax-pair ?Ƿ ?ƿ tbl)
-  (set-case-syntax-pair ?Ⱥ ?ⱥ tbl)
-  (set-case-syntax-pair ?Ƚ ?ƚ tbl)
-  (set-case-syntax-pair ?Ⱦ ?ⱦ tbl)
-  (set-case-syntax-pair ?Ƀ ?ƀ tbl)
-  (set-case-syntax-pair ?Ʉ ?ʉ tbl)
-  (set-case-syntax-pair ?Ʌ ?ʌ tbl)
-
   ;; Latin Extended Additional
   (modify-category-entry '(#x1e00 . #x1ef9) ?l)
-  (setq c #x1e00)
-  (while (<= c #x1ef9)
-    (and (zerop (% c 2))
-	 (or (<= c #x1e94) (>= c #x1ea0))
-	 (set-case-syntax-pair c (1+ c) tbl))
+
+  ;; Latin Extended-C
+  (setq c #x2C60)
+  (while (<= c #x2C7F)
+    (modify-category-entry c ?l)
+    (setq c (1+ c)))
+
+  ;; Latin Extended-D
+  (setq c #xA720)
+  (while (<= c #xA7FF)
+    (modify-category-entry c ?l)
+    (setq c (1+ c)))
+
+  ;; Latin Extended-E
+  (setq c #xAB30)
+  (while (<= c #xAB64)
+    (modify-category-entry c ?l)
     (setq c (1+ c)))
 
   ;; Greek
   (modify-category-entry '(#x0370 . #x03ff) ?g)
-  (setq c #x0370)
-  (while (<= c #x03ff)
-    (if (or (and (>= c #x0391) (<= c #x03a1))
-	    (and (>= c #x03a3) (<= c #x03ab)))
-	(set-case-syntax-pair c (+ c 32) tbl))
-    (and (>= c #x03da)
-	 (<= c #x03ee)
-	 (zerop (% c 2))
-	 (set-case-syntax-pair c (1+ c) tbl))
-    (setq c (1+ c)))
-  (set-case-syntax-pair ?Ά ?ά tbl)
-  (set-case-syntax-pair ?Έ ?έ tbl)
-  (set-case-syntax-pair ?Ή ?ή tbl)
-  (set-case-syntax-pair ?Ί ?ί tbl)
-  (set-case-syntax-pair ?Ό ?ό tbl)
-  (set-case-syntax-pair ?Ύ ?ύ tbl)
-  (set-case-syntax-pair ?Ώ ?ώ tbl)
 
   ;; Armenian
   (setq c #x531)
-  (while (<= c #x556)
-    (set-case-syntax-pair c (+ c #x30) tbl)
-    (setq c (1+ c)))
 
   ;; Greek Extended
   (modify-category-entry '(#x1f00 . #x1fff) ?g)
-  (setq c #x1f00)
-  (while (<= c #x1fff)
-    (and (<= (logand c #x000f) 7)
-	 (<= c #x1fa7)
-	 (not (memq c '(#x1f16 #x1f17 #x1f56 #x1f57
-			       #x1f50 #x1f52 #x1f54 #x1f56)))
-	 (/= (logand c #x00f0) #x70)
-	 (set-case-syntax-pair (+ c 8) c tbl))
-    (setq c (1+ c)))
-  (set-case-syntax-pair ?Ᾰ ?ᾰ tbl)
-  (set-case-syntax-pair ?Ᾱ ?ᾱ tbl)
-  (set-case-syntax-pair ?Ὰ ?ὰ tbl)
-  (set-case-syntax-pair ?Ά ?ά tbl)
-  (set-case-syntax-pair ?ᾼ ?ᾳ tbl)
-  (set-case-syntax-pair ?Ὲ ?ὲ tbl)
-  (set-case-syntax-pair ?Έ ?έ tbl)
-  (set-case-syntax-pair ?Ὴ ?ὴ tbl)
-  (set-case-syntax-pair ?Ή ?ή tbl)
-  (set-case-syntax-pair ?ῌ ?ῃ tbl)
-  (set-case-syntax-pair ?Ῐ ?ῐ tbl)
-  (set-case-syntax-pair ?Ῑ ?ῑ tbl)
-  (set-case-syntax-pair ?Ὶ ?ὶ tbl)
-  (set-case-syntax-pair ?Ί ?ί tbl)
-  (set-case-syntax-pair ?Ῠ ?ῠ tbl)
-  (set-case-syntax-pair ?Ῡ ?ῡ tbl)
-  (set-case-syntax-pair ?Ὺ ?ὺ tbl)
-  (set-case-syntax-pair ?Ύ ?ύ tbl)
-  (set-case-syntax-pair ?Ῥ ?ῥ tbl)
-  (set-case-syntax-pair ?Ὸ ?ὸ tbl)
-  (set-case-syntax-pair ?Ό ?ό tbl)
-  (set-case-syntax-pair ?Ὼ ?ὼ tbl)
-  (set-case-syntax-pair ?Ώ ?ώ tbl)
-  (set-case-syntax-pair ?ῼ ?ῳ tbl)
 
   ;; cyrillic
   (modify-category-entry '(#x0400 . #x04FF) ?y)
-  (setq c #x0400)
-  (while (<= c #x04ff)
-    (and (>= c #x0400)
-	 (<= c #x040f)
-	 (set-case-syntax-pair c (+ c 80) tbl))
-    (and (>= c #x0410)
-	 (<= c #x042f)
-	 (set-case-syntax-pair c (+ c 32) tbl))
-    (and (zerop (% c 2))
-	 (or (and (>= c #x0460) (<= c #x0480))
-	     (and (>= c #x048c) (<= c #x04be))
-	     (and (>= c #x04d0) (<= c #x04f4)))
-	 (set-case-syntax-pair c (1+ c) tbl))
-    (setq c (1+ c)))
-  (set-case-syntax-pair ?Ӂ ?ӂ tbl)
-  (set-case-syntax-pair ?Ӄ ?ӄ tbl)
-  (set-case-syntax-pair ?Ӈ ?ӈ tbl)
-  (set-case-syntax-pair ?Ӌ ?ӌ tbl)
-  (set-case-syntax-pair ?Ӹ ?ӹ tbl)
+  (modify-category-entry '(#xA640 . #xA69F) ?y)
+
+  ;; Georgian
+  (setq c #x10A0)
+
+  ;; Cyrillic Extended-C
+  (modify-category-entry '(#x1C80 . #x1C8F) ?y)
 
   ;; general punctuation
   (setq c #x2000)
@@ -758,12 +622,6 @@ with L, LRE, or LRO Unicode bidi character type.")
     (set-case-syntax c "." tbl)
     (setq c (1+ c)))
 
-  ;; Roman numerals
-  (setq c #x2160)
-  (while (<= c #x216f)
-    (set-case-syntax-pair c (+ c #x10) tbl)
-    (setq c (1+ c)))
-
   ;; Fixme: The following blocks might be better as symbol rather than
   ;; punctuation.
   ;; Arrows
@@ -785,31 +643,40 @@ with L, LRE, or LRO Unicode bidi character type.")
     (setq c (1+ c)))
 
   ;; Circled Latin
-  (setq c #x24b6)
-  (while (<= c #x24cf)
-    (set-case-syntax-pair c (+ c 26) tbl)
+  (setq c #x24B6)
+  (while (<= c #x24CF)
     (modify-category-entry c ?l)
     (modify-category-entry (+ c 26) ?l)
     (setq c (1+ c)))
 
+  ;; Supplemental Mathematical Operators
+  (setq c #x2A00)
+  (while (<= c #x2AFF)
+    (set-case-syntax c "." tbl)
+    (setq c (1+ c)))
+
+  ;; Miscellaneous Symbols and Arrows
+  (setq c #x2B00)
+  (while (<= c #x2BFF)
+    (set-case-syntax c "." tbl)
+    (setq c (1+ c)))
+
   ;; Coptic
-  (let ((pair-ranges '((#x2C80 . #x2CE2)
-		       (#x2CEB . #x2CF2))))
-    (dolist (elt pair-ranges)
-      (let ((from (car elt)) (to (cdr elt)))
-	(while (< from to)
-	  (set-case-syntax-pair from (1+ from) tbl)
-	  (setq from (+ from 2))))))
   ;; There's no Coptic category.  However, Coptic letters that are
   ;; part of the Greek block above get the Greek category, and those
   ;; in this block are derived from Greek letters, so let's be
   ;; consistent about their category.
   (modify-category-entry '(#x2C80 . #x2CFF) ?g)
 
+  ;; Supplemental Punctuation
+  (setq c #x2E00)
+  (while (<= c #x2E7F)
+    (set-case-syntax c "." tbl)
+    (setq c (1+ c)))
+
   ;; Fullwidth Latin
   (setq c #xff21)
   (while (<= c #xff3a)
-    (set-case-syntax-pair c (+ c #x20) tbl)
     (modify-category-entry c ?l)
     (modify-category-entry (+ c #x20) ?l)
     (setq c (1+ c)))
@@ -818,6 +685,81 @@ with L, LRE, or LRO Unicode bidi character type.")
   (modify-category-entry '(#x300 . #x362) ?^)
   ;; Combining marks
   (modify-category-entry '(#x20d0 . #x20ff) ?^)
+
+  (let ((gc (unicode-property-table-internal 'general-category))
+        (syn-table (standard-syntax-table)))
+    ;; In early bootstrapping Unicode tables are not available so we need to
+    ;; skip this step in those cases.
+    (when gc
+      ;; Set all Letter, uppercase; Letter, lowercase and Letter,
+      ;; titlecase syntax to word.
+      (map-char-table
+       (lambda (ch cat)
+         (when (memq cat '(Lu Ll Lt))
+           (modify-syntax-entry ch "w   " syn-table)))
+       gc)
+      ;; Ⅰ through Ⅻ had word syntax in the past so set it here as well.
+      ;; The general category of those characters is Number, Letter.
+      (modify-syntax-entry '(#x2160 . #x216b) "w   " syn-table)
+
+      ;; ⓐ through ⓩ are symbols, other according to Unicode but Emacs set
+      ;; their syntax to word in the past so keep backwards compatibility.
+      (modify-syntax-entry '(#x24D0 . #x24E9) "w   " syn-table)
+
+      ;; Set downcase and upcase from Unicode properties
+
+      ;; In some languages, such as Turkish, U+0049 LATIN CAPITAL LETTER I and
+      ;; U+0131 LATIN SMALL LETTER DOTLESS I make a case pair, and so do U+0130
+      ;; LATIN CAPITAL LETTER I WITH DOT ABOVE and U+0069 LATIN SMALL LETTER I.
+
+      ;; We used to set up half of those correspondence unconditionally, but
+      ;; that makes searches slow.  So now we don't set up either half of these
+      ;; correspondences by default.
+
+      ;; (set-downcase-syntax  ?İ ?i tbl)
+      ;; (set-upcase-syntax    ?I ?ı tbl)
+
+      (let ((map-unicode-property
+             (lambda (property func)
+               (map-char-table
+                (lambda (ch cased)
+                  ;; ASCII characters skipped due to reasons outlined above.  As
+                  ;; of Unicode 9.0, this exception affects the following:
+                  ;;   lc(U+0130 İ) = i
+                  ;;   uc(U+0131 ı) = I
+                  ;;   uc(U+017F ſ) = S
+                  ;;   uc(U+212A K) = k
+                  (when (> cased 127)
+                    (let ((end (if (consp ch) (cdr ch) ch)))
+                      (setq ch (max 128 (if (consp ch) (car ch) ch)))
+                      (while (<= ch end)
+                        (funcall func ch cased)
+                        (setq ch (1+ ch))))))
+                (unicode-property-table-internal property))))
+            (down tbl)
+            (up (case-table-get-table tbl 'up)))
+
+        ;; This works on an assumption that if toUpper(x) != x then toLower(x)
+        ;; == x (and the opposite for toLower/toUpper).  This doesn’t hold for
+        ;; title case characters but those incorrect mappings will be
+        ;; overwritten later.
+        (funcall map-unicode-property 'uppercase
+                 (lambda (lc uc) (aset down lc lc) (aset up uc uc)))
+        (funcall map-unicode-property 'lowercase
+                 (lambda (uc lc) (aset down lc lc) (aset up uc uc)))
+
+        ;; Now deal with the actual mapping.  This will correctly assign casing
+        ;; for title-case characters.
+        (funcall map-unicode-property 'uppercase
+                 (lambda (lc uc) (aset up lc uc) (aset up uc uc)))
+        (funcall map-unicode-property 'lowercase
+                 (lambda (uc lc) (aset down uc lc) (aset down lc lc))))))
+
+  ;; Clear out the extra slots so that they will be recomputed from the main
+  ;; (downcase) table and upcase table.  Since we’re side-stepping the usual
+  ;; set-case-syntax-* functions, we need to do it explicitly.
+  (set-char-table-extra-slot tbl 1 nil)
+  (set-char-table-extra-slot tbl 2 nil)
 
   ;; Fixme: syntax for symbols &c
   )
@@ -960,9 +902,9 @@ with L, LRE, or LRO Unicode bidi character type.")
 	   (#x05C1 . #x05C2)
 	   (#x05C4 . #x05C5)
 	   (#x05C7 . #x05C7)
-	   (#x0600 . #x0603)
-	   (#x0610 . #x0615)
-	   (#x064B . #x065E)
+	   (#x0600 . #x0605)
+	   (#x0610 . #x061C)
+	   (#x064B . #x065F)
 	   (#x0670 . #x0670)
 	   (#x06D6 . #x06E4)
 	   (#x06E7 . #x06E8)
@@ -972,11 +914,15 @@ with L, LRE, or LRO Unicode bidi character type.")
 	   (#x0730 . #x074A)
 	   (#x07A6 . #x07B0)
 	   (#x07EB . #x07F3)
-	   (#x0901 . #x0902)
+	   (#x0816 . #x0823)
+	   (#x0825 . #x082D)
+	   (#x0859 . #x085B)
+	   (#x08D4 . #x0902)
+	   (#x093A . #x093A)
 	   (#x093C . #x093C)
 	   (#x0941 . #x0948)
 	   (#x094D . #x094D)
-	   (#x0951 . #x0954)
+	   (#x0951 . #x0957)
 	   (#x0962 . #x0963)
 	   (#x0981 . #x0981)
 	   (#x09BC . #x09BC)
@@ -986,7 +932,12 @@ with L, LRE, or LRO Unicode bidi character type.")
 	   (#x0A01 . #x0A02)
 	   (#x0A3C . #x0A3C)
 	   (#x0A41 . #x0A4D)
+	   (#x0A41 . #x0A42)
+	   (#x0A47 . #x0A48)
+	   (#x0A4B . #x0A4D)
+	   (#x0A51 . #x0A51)
 	   (#x0A70 . #x0A71)
+	   (#x0A75 . #x0A75)
 	   (#x0A81 . #x0A82)
 	   (#x0ABC . #x0ABC)
 	   (#x0AC1 . #x0AC8)
@@ -995,20 +946,24 @@ with L, LRE, or LRO Unicode bidi character type.")
 	   (#x0B01 . #x0B01)
 	   (#x0B3C . #x0B3C)
 	   (#x0B3F . #x0B3F)
-	   (#x0B41 . #x0B43)
+	   (#x0B41 . #x0B44)
 	   (#x0B4D . #x0B56)
+	   (#x0B62 . #x0B63)
 	   (#x0B82 . #x0B82)
 	   (#x0BC0 . #x0BC0)
 	   (#x0BCD . #x0BCD)
+	   (#x0C00 . #x0C00)
 	   (#x0C3E . #x0C40)
 	   (#x0C46 . #x0C56)
+	   (#x0C62 . #x0C63)
+	   (#x0C81 . #x0C81)
 	   (#x0CBC . #x0CBC)
-	   (#x0CBF . #x0CBF)
-	   (#x0CC6 . #x0CC6)
 	   (#x0CCC . #x0CCD)
 	   (#x0CE2 . #x0CE3)
-	   (#x0D41 . #x0D43)
+	   (#x0D01 . #x0D01)
+	   (#x0D41 . #x0D44)
 	   (#x0D4D . #x0D4D)
+	   (#x0D62 . #x0D63)
 	   (#x0DCA . #x0DCA)
 	   (#x0DD2 . #x0DD6)
 	   (#x0E31 . #x0E31)
@@ -1024,14 +979,21 @@ with L, LRE, or LRO Unicode bidi character type.")
 	   (#x0F71 . #x0F7E)
 	   (#x0F80 . #x0F84)
 	   (#x0F86 . #x0F87)
-	   (#x0F90 . #x0FBC)
+	   (#x0F8D . #x0FBC)
 	   (#x0FC6 . #x0FC6)
 	   (#x102D . #x1030)
 	   (#x1032 . #x1037)
-	   (#x1039 . #x1039)
+	   (#x1039 . #x103A)
+	   (#x103D . #x103E)
 	   (#x1058 . #x1059)
-	   (#x1160 . #x11FF)
-	   (#x135F . #x135F)
+	   (#x105E . #x1060)
+	   (#x1071 . #x1074)
+	   (#x1082 . #x1082)
+	   (#x1085 . #x1086)
+	   (#x108D . #x108D)
+	   (#x109D . #x109D)
+           (#x1160 . #x11FF)
+	   (#x135D . #x135F)
 	   (#x1712 . #x1714)
 	   (#x1732 . #x1734)
 	   (#x1752 . #x1753)
@@ -1041,55 +1003,272 @@ with L, LRE, or LRO Unicode bidi character type.")
 	   (#x17C6 . #x17C6)
 	   (#x17C9 . #x17D3)
 	   (#x17DD . #x17DD)
-	   (#x180B . #x180D)
+	   (#x180B . #x180E)
+	   (#x18A9 . #x18A9)
+	   (#x1885 . #x1886)
 	   (#x18A9 . #x18A9)
 	   (#x1920 . #x1922)
 	   (#x1927 . #x1928)
 	   (#x1932 . #x1932)
 	   (#x1939 . #x193B)
 	   (#x1A17 . #x1A18)
+	   (#x1A1B . #x1A1B)
+	   (#x1A56 . #x1A56)
+	   (#x1A58 . #x1A5E)
+	   (#x1A60 . #x1A60)
+	   (#x1A62 . #x1A62)
+	   (#x1A65 . #x1A6C)
+	   (#x1A73 . #x1A7C)
+	   (#x1A7F . #x1A7F)
+	   (#x1AB0 . #x1ABE)
 	   (#x1B00 . #x1B03)
 	   (#x1B34 . #x1B34)
 	   (#x1B36 . #x1B3A)
 	   (#x1B3C . #x1B3C)
 	   (#x1B42 . #x1B42)
 	   (#x1B6B . #x1B73)
+	   (#x1B80 . #x1B81)
+	   (#x1BA2 . #x1BA5)
+	   (#x1BA8 . #x1BA9)
+	   (#x1BAB . #x1BAD)
+	   (#x1BE6 . #x1BE6)
+	   (#x1BE8 . #x1BE9)
+	   (#x1BED . #x1BED)
+	   (#x1BEF . #x1BF1)
+	   (#x1C2C . #x1C33)
+	   (#x1C36 . #x1C37)
+	   (#x1CD0 . #x1CD2)
+	   (#x1CD4 . #x1CE0)
+	   (#x1CE2 . #x1CE8)
+	   (#x1CED . #x1CED)
+	   (#x1CF4 . #x1CF4)
+	   (#x1CF8 . #x1CF9)
 	   (#x1DC0 . #x1DFF)
 	   (#x200B . #x200F)
 	   (#x202A . #x202E)
 	   (#x2060 . #x206F)
-	   (#x20D0 . #x20EF)
-	   (#x302A . #x302F)
-	   (#x3099 . #x309A)
+	   (#x20D0 . #x20F0)
+	   (#x2CEF . #x2CF1)
+	   (#x2D7F . #x2D7F)
+	   (#x2DE0 . #x2DFF)
+	   (#xA66F . #xA672)
+	   (#xA674 . #xA69F)
+	   (#xA6F0 . #xA6F1)
+	   (#xA802 . #xA802)
 	   (#xA806 . #xA806)
 	   (#xA80B . #xA80B)
 	   (#xA825 . #xA826)
+	   (#xA8C4 . #xA8C5)
+	   (#xA8E0 . #xA8F1)
+	   (#xA926 . #xA92D)
+	   (#xA947 . #xA951)
+	   (#xA980 . #xA9B3)
+	   (#xA9B6 . #xA9B9)
+	   (#xA9BC . #xA9BC)
+	   (#xA9E5 . #xA9E5)
+	   (#xAA29 . #xAA2E)
+	   (#xAA31 . #xAA32)
+	   (#xAA35 . #xAA36)
+	   (#xAA43 . #xAA43)
+	   (#xAA4C . #xAA4C)
+	   (#xAA7C . #xAA7C)
+	   (#xAAB0 . #xAAB0)
+	   (#xAAB2 . #xAAB4)
+	   (#xAAB7 . #xAAB8)
+	   (#xAABE . #xAABF)
+	   (#xAAC1 . #xAAC1)
+	   (#xAAEC . #xAAED)
+	   (#xAAF6 . #xAAF6)
+	   (#xABE5 . #xABE5)
+	   (#xABE8 . #xABE8)
+	   (#xABED . #xABED)
+           (#xD7B0 . #xD7FB)
 	   (#xFB1E . #xFB1E)
 	   (#xFE00 . #xFE0F)
-	   (#xFE20 . #xFE23)
+	   (#xFE20 . #xFE2F)
 	   (#xFEFF . #xFEFF)
 	   (#xFFF9 . #xFFFB)
+	   (#x101FD . #x101FD)
+	   (#x102E0 . #x102E0)
+	   (#x10376 . #x1037A)
 	   (#x10A01 . #x10A0F)
 	   (#x10A38 . #x10A3F)
+	   (#x10AE5 . #x10AE6)
+	   (#x11001 . #x11001)
+	   (#x11038 . #x11046)
+	   (#x1107F . #x11081)
+	   (#x110B3 . #x110B6)
+	   (#x110B9 . #x110BA)
+	   (#x110BD . #x110BD)
+	   (#x11100 . #x11102)
+	   (#x11127 . #x1112B)
+	   (#x1112D . #x11134)
+	   (#x11173 . #x11173)
+	   (#x11180 . #x11181)
+	   (#x111B6 . #x111BE)
+	   (#x111CA . #x111CC)
+	   (#x1122F . #x11231)
+	   (#x11234 . #x11234)
+	   (#x11236 . #x11237)
+	   (#x1123E . #x1123E)
+	   (#x112DF . #x112DF)
+	   (#x112E3 . #x112EA)
+	   (#x11300 . #x11301)
+	   (#x1133C . #x1133C)
+	   (#x11340 . #x11340)
+	   (#x11366 . #x1136C)
+	   (#x11370 . #x11374)
+	   (#x11438 . #x1143F)
+	   (#x11442 . #x11444)
+	   (#x11446 . #x11446)
+	   (#x114B3 . #x114B8)
+	   (#x114BA . #x114C0)
+	   (#x114C2 . #x114C3)
+	   (#x115B2 . #x115B5)
+	   (#x115BC . #x115BD)
+	   (#x115BF . #x115C0)
+	   (#x115DC . #x115DD)
+	   (#x11633 . #x1163A)
+	   (#x1163D . #x1163D)
+	   (#x1163F . #x11640)
+	   (#x116AB . #x116AB)
+	   (#x116AD . #x116AD)
+	   (#x116B0 . #x116B5)
+	   (#x116B7 . #x116B7)
+	   (#x1171D . #x1171F)
+	   (#x11722 . #x11725)
+	   (#x11727 . #x1172B)
+	   (#x11C30 . #x11C36)
+	   (#x11C38 . #x11C3D)
+	   (#x11C92 . #x11CA7)
+	   (#x11CAA . #x11CB0)
+	   (#x11CB2 . #x11CB3)
+	   (#x11CB5 . #x11CB6)
+	   (#x16AF0 . #x16AF4)
+	   (#x16B30 . #x16B36)
+	   (#x16F8F . #x16F92)
+	   (#x1BC9D . #x1BC9E)
+	   (#x1BCA0 . #x1BCA3)
 	   (#x1D167 . #x1D169)
 	   (#x1D173 . #x1D182)
 	   (#x1D185 . #x1D18B)
 	   (#x1D1AA . #x1D1AD)
 	   (#x1D242 . #x1D244)
+	   (#x1DA00 . #x1DA36)
+	   (#x1DA3B . #x1DA6C)
+	   (#x1DA75 . #x1DA75)
+	   (#x1DA84 . #x1DA84)
+	   (#x1DA9B . #x1DA9F)
+	   (#x1DAA1 . #x1DAAF)
+	   (#x1E000 . #x1E006)
+	   (#x1E008 . #x1E018)
+	   (#x1E01B . #x1E021)
+	   (#x1E023 . #x1E024)
+	   (#x1E026 . #x1E02A)
+	   (#x1E8D0 . #x1E8D6)
+	   (#x1E944 . #x1E94A)
 	   (#xE0001 . #xE01EF))))
   (dolist (elt l)
     (set-char-table-range char-width-table elt 0)))
 
 ;; 2: East Asian Wide and Full-width characters.
 (let ((l '((#x1100 . #x115F)
+	   (#x231A . #x231B)
 	   (#x2329 . #x232A)
+	   (#x23E9 . #x23EC)
+	   (#x23F0 . #x23F0)
+	   (#x23F3 . #x23F3)
+	   (#x25FD . #x25FE)
+	   (#x2614 . #x2615)
+	   (#x2648 . #x2653)
+	   (#x267F . #x267F)
+	   (#x2693 . #x2693)
+	   (#x26A1 . #x26A1)
+	   (#x26AA . #x26AB)
+	   (#x26BD . #x26BE)
+	   (#x26C4 . #x26C5)
+	   (#x26CE . #x26CE)
+	   (#x26D4 . #x26D4)
+	   (#x26EA . #x26EA)
+	   (#x26F2 . #x26F3)
+	   (#x26F5 . #x26F5)
+	   (#x26FA . #x26FA)
+	   (#x26FD . #x26FD)
+	   (#x2705 . #x2705)
+	   (#x270A . #x270B)
+	   (#x2728 . #x2728)
+	   (#x274C . #x274C)
+	   (#x274E . #x274E)
+	   (#x2753 . #x2755)
+	   (#x2757 . #x2757)
+	   (#x2795 . #x2797)
+	   (#x27B0 . #x27B0)
+	   (#x27BF . #x27BF)
+	   (#x2B1B . #x2B1C)
+	   (#x2B50 . #x2B50)
+	   (#x2B55 . #x2B55)
 	   (#x2E80 . #x303E)
-	   (#x3040 . #xA4CF)
+	   (#x3040 . #x3247)
+	   (#x3250 . #x4DBF)
+	   (#x4E00 . #xA4CF)
+	   (#xA490 . #xA4C6)
+	   (#xA960 . #xA97F)
 	   (#xAC00 . #xD7A3)
 	   (#xF900 . #xFAFF)
+	   (#xFE10 . #xFE19)
 	   (#xFE30 . #xFE6F)
 	   (#xFF01 . #xFF60)
 	   (#xFFE0 . #xFFE6)
+	   (#x16FE0 . #x16FE3)
+	   (#x17000 . #x187F7)
+	   (#x18800 . #x18AF2)
+	   (#x1B000 . #x1B152)
+           (#x1B164 . #x1B167)
+           (#x1B170 . #x1B2FB)
+	   (#x1F004 . #x1F004)
+	   (#x1F0CF . #x1F0CF)
+	   (#x1F18E . #x1F18E)
+	   (#x1F191 . #x1F19A)
+	   (#x1F200 . #x1F320)
+	   (#x1F32D . #x1F335)
+	   (#x1F337 . #x1F37C)
+	   (#x1F37E . #x1F393)
+	   (#x1F3A0 . #x1F3CA)
+	   (#x1F3CF . #x1F3D3)
+	   (#x1F3E0 . #x1F3F0)
+	   (#x1F3F4 . #x1F3F4)
+	   (#x1F3F8 . #x1F3FA)
+	   (#x1F3FB . #x1F3FF)
+	   (#x1F400 . #x1F43E)
+	   (#x1F440 . #x1F440)
+	   (#x1F442 . #x1F4FC)
+	   (#x1F4FF . #x1F53D)
+	   (#x1F54B . #x1F54E)
+	   (#x1F550 . #x1F567)
+	   (#x1F57A . #x1F57A)
+	   (#x1F595 . #x1F596)
+	   (#x1F5A4 . #x1F5A4)
+	   (#x1F5FB . #x1F5FF)
+	   (#x1F600 . #x1F64F)
+	   (#x1F680 . #x1F6C5)
+	   (#x1F6CC . #x1F6CC)
+	   (#x1F6D0 . #x1F6D2)
+           (#x1F6D5 . #x1F6D5)
+	   (#x1F6EB . #x1F6EC)
+	   (#x1F6F4 . #x1F6FA)
+           (#x1F7E0 . #x1F7EB)
+	   (#x1F90D . #x1F971)
+	   (#x1F973 . #x1F976)
+	   (#x1F97A . #x1F9A2)
+           (#x1F9A5 . #x1F9AA)
+           (#x1F9AE . #x1F9CA)
+           (#x1F9CD . #x1F9FF)
+           (#x1FA00 . #x1FA53)
+           (#x1FA60 . #x1FA6D)
+           (#x1FA70 . #x1FA73)
+           (#x1FA78 . #x1FA7A)
+           (#x1FA80 . #x1FA82)
+           (#x1FA90 . #x1FA95)
 	   (#x20000 . #x2FFFF)
 	   (#x30000 . #x3FFFF))))
   (dolist (elt l)
@@ -1163,221 +1342,11 @@ Setup char-width-table appropriate for non-CJK language environment."
 
 
 ;; Setting char-script-table.
-
-;; The data is compiled from Blocks.txt and Scripts.txt in the
-;; "Unicode Character Database", simplified to lump together all the
-;; blocks belonging to the same language.  E.g., "Basic Latin",
-;; "Latin-1 Supplement", "Latin Extended-A", etc. are all lumped
-;; together under "latin".
-;;
-;; The Unicode blocks actually extend past some of these ranges with
-;; undefined codepoints.
-(let ((script-list nil))
-  (dolist
-      (elt
-       '((#x0000 #x007F latin)
-	 (#x00A0 #x024F latin)
-	 (#x0250 #x02AF phonetic)	; IPA Extensions
-	 (#x02B0 #x036F latin)		; Spacing Modifiers and Diacriticals
-	 (#x0370 #x03E1 greek)
-	 (#x03E2 #x03EF coptic)
-	 (#x03F0 #x03F3 greek)
-	 (#x0400 #x052F cyrillic)
-	 (#x0530 #x058F armenian)
-	 (#x0590 #x05FF hebrew)
-	 (#x0600 #x06FF arabic)
-	 (#x0700 #x074F syriac)
-	 (#x0750 #x077F arabic)		; Arabic Supplement
-	 (#x0780 #x07BF thaana)
-	 (#x07C0 #x07FF nko)
-	 (#x0800 #x083F samaritan)
-	 (#x0840 #x085F mandaic)
-	 (#x08A0 #x08FF arabic)		; Arabic Extended-A
-	 (#x0900 #x097F devanagari)
-	 (#x0980 #x09FF bengali)
-	 (#x0A00 #x0A7F gurmukhi)
-	 (#x0A80 #x0AFF gujarati)
-	 (#x0B00 #x0B7F oriya)
-	 (#x0B80 #x0BFF tamil)
-	 (#x0C00 #x0C7F telugu)
-	 (#x0C80 #x0CFF kannada)
-	 (#x0D00 #x0D7F malayalam)
-	 (#x0D80 #x0DFF sinhala)
-	 (#x0E00 #x0E7F thai)
-	 (#x0E80 #x0EFF lao)
-	 (#x0F00 #x0FFF tibetan)
-	 (#x1000 #x109F burmese)	; Myanmar
-	 (#x10A0 #x10FF georgian)
-	 (#x1100 #x11FF hangul)
-	 (#x1200 #x139F ethiopic)	; Ethiopic and Ethiopic Supplement
-	 (#x13A0 #x13FF cherokee)
-	 (#x1400 #x167F canadian-aboriginal)
-	 (#x1680 #x169F ogham)
-	 (#x16A0 #x16FF runic)
-	 (#x1700 #x171F tagalog)
-	 (#x1720 #x173F hanunoo)
-	 (#x1740 #x175F buhid)
-	 (#x1760 #x177F tagbanwa)
-	 (#x1780 #x17FF khmer)
-	 (#x1800 #x18AF mongolian)
-	 (#x18B0 #x18FF canadian-aboriginal) ; Canadian Aboriginal Syllabics Extended
-	 (#x1900 #x194F limbu)
-	 (#x1950 #x197F tai-le)
-	 (#x1980 #x19DF tai-lue)	; New Tai Lue
-	 (#x19E0 #x19FF khmer)		; Khmer Symbols
-	 (#x1A00 #x1A00 buginese)
-	 (#x1A20 #x1AAF tai-tham)
-	 (#x1AB0 #x1AFF latin)		; Combining Diacritical Marks Extended
-	 (#x1B00 #x1B7F balinese)
-	 (#x1B80 #x1BBF sundanese)
-	 (#x1BC0 #x1BFF batak)
-	 (#x1C00 #x1C4F lepcha)
-	 (#x1C50 #x1C7F ol-chiki)
-	 (#x1CC0 #x1CCF sundanese)
-	 (#x1CD0 #x1CFF vedic)
-	 (#x1D00 #x1DBF phonetic)	; Phonetic Extensions & Supplement
-	 (#x1DC0 #x1EFF latin)		; Latin Extended Additional
-	 (#x1F00 #x1FFF greek)		; Greek Extended
-	 (#x2000 #x27FF symbol)
-	 (#x2800 #x28FF braille)
-	 (#x2900 #x2BFF symbol)
-	 (#x2C00 #x2C5F glagolitic)
-	 (#x2C60 #x2C7F latin)		; Latin Extended-C
-	 (#x2C80 #x2CFF coptic)
-	 (#x2D00 #x2D2F georgian)	; Georgian Supplement
-	 (#x2D30 #x2D7F tifinagh)
-	 (#x2D80 #x2DDF ethiopic)	; Ethiopic Extended
-	 (#x2DE0 #x2DFF cyrillic)	; Cyrillic Extended-A
-	 (#x2E00 #x2E7F symbol)
-	 (#x2E80 #x2FDF han)
-	 (#x2FF0 #x2FFF ideographic-description)
-	 (#x3000 #x303F cjk-misc)
-	 (#x3040 #x30FF kana)		; Hiragana and Katakana
-	 (#x3100 #x312F bopomofo)
-	 (#x3130 #x318F hangul)		; Hangul Compatibility Jamo
-	 (#x3190 #x319F kanbun)
-	 (#x31A0 #x31BF bopomofo)	; Bopomofo Extended
-	 (#x31C0 #x31EF cjk-misc)	; CJK Strokes
-	 (#x31F0 #x31FF kana)		; Katakana Phonetic Extensions
-	 (#x3200 #x9FAF han)
-	 (#xA000 #xA4CF yi)
-	 (#xA4D0 #xA4FF lisu)
-	 (#xA500 #xA63F vai)
-	 (#xA640 #xA69F cyrillic)	; Cyrillic Extended-B
-	 (#xA6A0 #xA6FF bamum)
-	 (#xA700 #xA7FF latin)
-	 (#xA800 #xA82F syloti-nagri)
-	 (#xA830 #xA83F north-indic-number)
-	 (#xA840 #xA87F phags-pa)
-	 (#xA880 #xA8DF saurashtra)
-	 (#xA8E0 #xA8FF devanagari)	; Devanagari Extended
-	 (#xA900 #xA92F kayah-li)
-	 (#xA930 #xA95F rejang)
-	 (#xA960 #xA97F hangul)		; Hangul Jamo Extended
-	 (#xA980 #xA9DF javanese)
-	 (#xA9E0 #xA9FF burmese)	; Myanmar Extended-B
-	 (#xAA00 #xAA5F cham)
-	 (#xAA60 #xAA7F burmese)	; Myanmar Extended-A
-	 (#xAA80 #xAADF tai-viet)
-	 (#xAAE0 #xAAFF meetei-mayek)	; Meetei Mayek Extensions
-	 (#xAB00 #xAB2F ethiopic)	; Ethiopic Extended-A
-	 (#xAB30 #xAB6F latin)		; Latin Extended-E
-	 (#xABC0 #xABFF meetei-mayek)
-	 (#xAC00 #xD7FF hangul)
-	 (#xF900 #xFAFF han)
-	 (#xFB00 #xFB06 latin)	        ; Latin ligatures
-	 (#xFB13 #xFB17 armenian)	; Armenian ligatures
-	 (#xFB1D #xFB4F hebrew)	        ; Alphabetic Presentation Forms
-	 (#xFB50 #xFDFF arabic)		; Arabic Presentation Forms-A
-	 (#xFE20 #xFE2F latin)		; Combining Half Marks
-	 (#xFE30 #xFE4F han)
-	 (#xFE70 #xFEFF arabic)		; Arabic Presentation Forms-B
-	 (#xFF00 #xFF5F cjk-misc)
-	 (#xFF61 #xFF9F kana)
-	 (#xFFE0 #xFFE6 cjk-misc)
-	 (#x10000 #x100FF linear-b)
-	 (#x10100 #x1013F aegean-number)
-	 (#x10140 #x1018F ancient-greek-number)
-	 (#x10190 #x101CF ancient-symbol)
-	 (#x101D0 #x101FF phaistos-disc)
-	 (#x10280 #x1029F lycian)
-	 (#x102A0 #x102DF carian)
-	 (#x102E0 #x102FF coptic)	; Coptic Epact Numbers
-	 (#x10300 #x1032F olt-italic)
-	 (#x10330 #x1034F gothic)
-	 (#x10350 #x1037F old-permic)
-	 (#x10380 #x1039F ugaritic)
-	 (#x103A0 #x103DF old-persian)
-	 (#x10400 #x1044F deseret)
-	 (#x10450 #x1047F shavian)
-	 (#x10480 #x104AF osmanya)
-	 (#x10500 #x1052F elbasan)
-	 (#x10530 #x1056F caucasian-albanian)
-	 (#x10600 #x106BF linear-a)
-	 (#x10800 #x1083F cypriot-syllabary)
-	 (#x10840 #x1085F aramaic)
-	 (#x10860 #x1087F palmyrene)
-	 (#x10880 #x108AF nabataean)
-	 (#x10900 #x1091F phoenician)
-	 (#x10920 #x1093F lydian)
-	 (#x10980 #x109FF meroitic)
-	 (#x10A00 #x10A5F kharoshthi)
-	 (#x10A60 #x10A7F old-south-arabian)
-	 (#x10A80 #x10A9F old-north-arabian)
-	 (#x10AC0 #x10AFF manichaean)
-	 (#x10B00 #x10B3F avestan)
-	 (#x10B40 #x10B5F inscriptional-parthian)
-	 (#x10B60 #x10B7F inscriptional-pahlavi)
-	 (#x10B80 #x10BAF psalter-pahlavi)
-	 (#x10C00 #x10C4F old-turkic)
-	 (#x10E60 #x10E7F rumi-number)
-	 (#x11000 #x1107F brahmi)
-	 (#x11080 #x110CF kaithi)
-	 (#x110D0 #x110FF sora-sompeng)
-	 (#x11100 #x1114F chakma)
-	 (#x11150 #x1117F mahajani)
-	 (#x11180 #x111DF sharada)
-	 (#x111E0 #x111FF sinhala-archaic-number)
-	 (#x11200 #x1124F khojki)
-	 (#x112B0 #x112FF khudawadi)
-	 (#x11300 #x1137F grantha)
-	 (#x11480 #x114DF tirhuta)
-	 (#x11580 #x115FF siddham)
-	 (#x11600 #x1165F modi)
-	 (#x11680 #x116CF takri)
-	 (#x118A0 #x118FF warang-citi)
-	 (#x11AC0 #x11AFF pau-cin-hau)
-	 (#x12000 #x123FF cuneiform)
-	 (#x12400 #x1247F cuneiform-numbers-and-punctuation)
-	 (#x13000 #x1342F egyptian)
-	 (#x16800 #x16A3F bamum)
-	 (#x16A40 #x16A6F mro)
-	 (#x16AD0 #x16AFF bassa-vah)
-	 (#x16B00 #x16B8F pahawh-hmong)
-	 (#x16F00 #x16F9F miao)
-	 (#x1B000 #x1B0FF kana)		; Kana Supplement
-	 (#x1BC00 #x1BCAF duployan-shorthand)
-	 (#x1D000 #x1D0FF byzantine-musical-symbol)
-	 (#x1D100 #x1D1FF musical-symbol)
-	 (#x1D200 #x1D24F ancient-greek-musical-notation)
-	 (#x1D300 #x1D35F tai-xuan-jing-symbol)
-	 (#x1D360 #x1D37F counting-rod-numeral)
-	 (#x1D400 #x1D7FF mathematical)
-	 (#x1E800 #x1E8DF mende-kikakui)
-	 (#x1EE00 #x1EEFF arabic)	; Arabic Mathematical Alphabetic Symbols
-	 (#x1F000 #x1F02F mahjong-tile)
-	 (#x1F030 #x1F09F domino-tile)
-	 (#x1F0A0 #x1F0FF playing-cards)
-	 (#x1F100 #x1F1FF symbol)	; Enclosed Alphanumeric Supplement
-	 (#x1F200 #x1F2FF han)		; Enclosed Ideographic Supplement
-	 (#x1F300 #x1F8FF symbol)
-	 (#x20000 #x2B81F han)
-	 (#x2F800 #x2FFFF han)))
-    (set-char-table-range char-script-table
-			  (cons (car elt) (nth 1 elt)) (nth 2 elt))
-    (or (memq (nth 2 elt) script-list)
-	(setq script-list (cons (nth 2 elt) script-list))))
-  (set-char-table-extra-slot char-script-table 0 (nreverse script-list)))
+(if dump-mode
+    ;; While dumping, we can't use require, and international is not
+    ;; in load-path.
+    (load "international/charscript")
+  (require 'charscript))
 
 (map-charset-chars
  #'(lambda (range _ignore)
@@ -1416,10 +1385,10 @@ Setup char-width-table appropriate for non-CJK language environment."
     (aset char-acronym-table i (car c0-acronyms))
     (setq c0-acronyms (cdr c0-acronyms))))
 
-(let ((c1-acronyms '("XXX" "XXX" "BPH" "NBH" "IND" "NEL" "SSA" "ESA"
+(let ((c1-acronyms '("PAD" "HOP" "BPH" "NBH" "IND" "NEL" "SSA" "ESA"
 		     "HTS" "HTJ" "VTS" "PLD" "PLU" "R1"  "SS2" "SS1"
 		     "DCS" "PU1" "PU2" "STS" "CCH" "MW"  "SPA" "EPA"
-		     "SOS" "XXX" "SC1" "CSI" "ST"  "OSC" "PM"  "APC")))
+		     "SOS" "SGCI" "SC1" "CSI" "ST"  "OSC" "PM"  "APC")))
   (dotimes (i 32)
     (aset char-acronym-table (+ #x0080 i) (car c1-acronyms))
     (setq c1-acronyms (cdr c1-acronyms))))
@@ -1463,7 +1432,9 @@ Setup char-width-table appropriate for non-CJK language environment."
 
 (defun update-glyphless-char-display (&optional variable value)
   "Make the setting of `glyphless-char-display-control' take effect.
-This function updates the char-table `glyphless-char-display'."
+This function updates the char-table `glyphless-char-display',
+and is intended to be used in the `:set' attribute of the
+option `glyphless-char-display'."
   (when value
     (set-default variable value))
   (dolist (elt value)

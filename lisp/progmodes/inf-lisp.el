@@ -1,6 +1,6 @@
 ;;; inf-lisp.el --- an inferior-lisp mode
 
-;; Copyright (C) 1988, 1993-1994, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1988, 1993-1994, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Olin Shivers <shivers@cs.cmu.edu>
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -108,8 +108,8 @@ mode.  Default is whitespace followed by 0 or 1 single-letter colon-keyword
 
 ;;; These commands augment Lisp mode, so you can process Lisp code in
 ;;; the source files.
-(define-key lisp-mode-map "\M-\C-x"  'lisp-eval-defun)     ; Gnu convention
-(define-key lisp-mode-map "\C-x\C-e" 'lisp-eval-last-sexp) ; Gnu convention
+(define-key lisp-mode-map "\M-\C-x"  'lisp-eval-defun)     ; GNU convention
+(define-key lisp-mode-map "\C-x\C-e" 'lisp-eval-last-sexp) ; GNU convention
 (define-key lisp-mode-map "\C-c\C-e" 'lisp-eval-defun)
 (define-key lisp-mode-map "\C-c\C-r" 'lisp-eval-region)
 (define-key lisp-mode-map "\C-c\C-n" 'lisp-eval-form-and-next)
@@ -126,7 +126,7 @@ mode.  Default is whitespace followed by 0 or 1 single-letter colon-keyword
 
 ;;; This function exists for backwards compatibility.
 ;;; Previous versions of this package bound commands to C-c <letter>
-;;; bindings, which is not allowed by the gnumacs standard.
+;;; bindings, which is not allowed by the Emacs standard.
 
 ;;;  "This function binds many inferior-lisp commands to C-c <letter> bindings,
 ;;;where they are more accessible. C-c <letter> bindings are reserved for the
@@ -287,7 +287,7 @@ to continue it."
       (buffer-substring (point) end))))
 
 (defun lisp-input-filter (str)
-  "t if STR does not match `inferior-lisp-filter-regexp'."
+  "Return t if STR does not match `inferior-lisp-filter-regexp'."
   (not (string-match inferior-lisp-filter-regexp str)))
 
 ;;;###autoload
@@ -345,8 +345,11 @@ The actually processing is done by `do-string' and `do-region'
  which determine whether the code is compiled before evaluation.
 DEFVAR forms reset the variables to the init values."
   (save-excursion
-    (end-of-defun)
-    (skip-chars-backward " \t\n\r\f") ;  Makes allegro happy
+    ;; Find the end of the defun this way to avoid having the region
+    ;; possibly end with a comment (it there'a a comment after the
+    ;; final parenthesis).
+    (beginning-of-defun)
+    (forward-sexp)
     (let ((end (point)) (case-fold-search t))
       (beginning-of-defun)
       (if (looking-at "(defvar")
@@ -510,7 +513,7 @@ Used by these commands to determine defaults."
 				     (file-name-nondirectory file-name)))
   (comint-send-string (inferior-lisp-proc) (concat "(compile-file \""
 						   file-name
-						   "\"\)\n"))
+						   "\")\n"))
   (switch-to-lisp t))
 
 
@@ -561,7 +564,7 @@ Used by these commands to determine defaults."
 
 ;;; Adapted from function-called-at-point in help.el.
 (defun lisp-fn-called-at-pt ()
-  "Returns the name of the function called in the current call.
+  "Return the name of the function called in the current call.
 The value is nil if it can't find one."
   (condition-case nil
       (save-excursion
@@ -662,7 +665,7 @@ See variable `lisp-describe-sym-command'."
 ;;; Changed all keybindings of the form C-c <letter>. These are
 ;;; supposed to be reserved for the user to bind. This affected
 ;;; mainly the compile/eval-defun/region[-and-go] commands.
-;;; This was painful, but necessary to adhere to the gnumacs standard.
+;;; This was painful, but necessary to adhere to the Emacs standard.
 ;;; For some backwards compatibility, see the
 ;;;     cmulisp-install-letter-bindings
 ;;; function.

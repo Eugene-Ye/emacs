@@ -1,6 +1,6 @@
 ;;; hangul.el --- Korean Hangul input method
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Jihyun Cho <jihyun.jo@gmail.com>
 ;; Keywords: multilingual, input method, Korean, Hangul
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -351,7 +351,7 @@ Other parts are the same as a `hangul3-input-method-cho'."
     (aset hangul-queue i 0))
   (if (notzerop (apply '+ (append hangul-queue nil)))
       (hangul-insert-character hangul-queue)
-    (delete-backward-char 1)))
+    (delete-char -1)))
 
 (defun hangul-to-hanja-conversion ()
   "Convert the previous hangul character to the corresponding hanja character.
@@ -363,7 +363,7 @@ When a Korean input method is off, convert the following hangul character."
     (if (and (overlayp quail-overlay) (overlay-start quail-overlay))
         (progn
 	  (setq hanja-character (hangul-to-hanja-char (preceding-char)))
-	  (setq delete-func (lambda () (delete-backward-char 1))))
+	  (setq delete-func (lambda () (delete-char -1))))
       (setq hanja-character (hangul-to-hanja-char (following-char)))
       (setq delete-func (lambda () (delete-char 1))))
     (when hanja-character
@@ -410,7 +410,9 @@ When a Korean input method is off, convert the following hangul character."
 		      ((commandp cmd)
 		       (call-interactively cmd))
 		      (t
-		       (setq unread-command-events (listify-key-sequence seq))
+		       (setq unread-command-events
+                             (nconc (listify-key-sequence seq)
+                                    unread-command-events))
 		       (throw 'exit-input-loop nil))))))
 	(quail-delete-overlays)))))
 
@@ -454,7 +456,9 @@ When a Korean input method is off, convert the following hangul character."
 		      ((commandp cmd)
 		       (call-interactively cmd))
 		      (t
-		       (setq unread-command-events (listify-key-sequence seq))
+		       (setq unread-command-events
+                             (nconc (listify-key-sequence seq)
+                                    unread-command-events))
 		       (throw 'exit-input-loop nil))))))
 	(quail-delete-overlays)))))
 
@@ -499,7 +503,9 @@ When a Korean input method is off, convert the following hangul character."
 		      ((commandp cmd)
 		       (call-interactively cmd))
 		      (t
-		       (setq unread-command-events (listify-key-sequence seq))
+		       (setq unread-command-events
+                             (nconc (listify-key-sequence seq)
+                                    unread-command-events))
 		       (throw 'exit-input-loop nil))))))
 	(quail-delete-overlays)))))
 

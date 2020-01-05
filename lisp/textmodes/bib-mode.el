@@ -1,6 +1,6 @@
 ;;; bib-mode.el --- major mode for editing bib files
 
-;; Copyright (C) 1989, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1989, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Henry Kautz
 ;; (according to authors.el)
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -35,7 +35,7 @@
   "Major mode for editing bib files."
   :prefix "bib-"
   :group 'external
-  :group 'wp)
+  :group 'text)
 
 (defcustom bib-file "~/my-bibliography.bib"
   "Default name of file used by `addbib'."
@@ -82,8 +82,8 @@ A uthor		T itle		D ate  		J ournal
 V olume		N umber		P age		K eywords
 B in book or proceedings	E ditor		C ity & state
 I nstitution, school, or publisher
-R eport number or 'phd thesis' or 'masters thesis' or 'draft' or
-     'unnumbered' or 'unpublished'
+R eport number or `phd thesis' or `masters thesis' or `draft' or
+     `unnumbered' or `unpublished'
 W here can be found locally (login name, or ailib, etc.)
 X comments (not used in indexing)
 
@@ -181,7 +181,7 @@ with the cdr.")
    (re-search-backward "^ *$" nil 2)
    (re-search-forward "^%")
    (beginning-of-line nil)
-   (push-mark (point))
+   (push-mark)
    (re-search-forward "^ *$" nil 2)
    (forward-line 1)
    (beginning-of-line nil))
@@ -198,7 +198,7 @@ named by variable `unread-bib-file'."
 
 (defvar bib-capitalize-title-stop-words
    (concat
-      "the\\|and\\|of\\|is\\|a\\|an\\|of\\|for\\|in\\|to\\|in\\|on\\|at\\|"
+      "the\\|and\\|of\\|is\\|a\\|an\\|for\\|in\\|to\\|on\\|at\\|"
       "by\\|with\\|that\\|its")
    "Words not to be capitalized in a title (unless the first word).")
 

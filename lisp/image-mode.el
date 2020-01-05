@@ -1,6 +1,6 @@
 ;;; image-mode.el --- support for visiting image files  -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2005-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Richard Stallman <rms@gnu.org>
 ;; Keywords: multimedia
@@ -19,13 +19,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;; Defines a major mode for visiting image files
-;; that allows conversion between viewing the text of the file
-;; and viewing the file as an image.  Viewing the image
+;; that allows conversion between viewing the text of the file,
+;; hex of the file and viewing the file as an image.  Viewing the image
 ;; works by putting a `display' text-property on the
 ;; image data, with the image-data still present underneath; if the
 ;; resulting buffer file is saved to another name it will correctly save
@@ -39,18 +39,22 @@
 ;;; Code:
 
 (require 'image)
+(require 'exif)
 (eval-when-compile (require 'cl-lib))
 
 ;;; Image mode window-info management.
 
-(defvar-local image-mode-winprops-alist t)
+(defvar-local image-mode-winprops-alist t
+  "Alist of windows to window properties.
+Each element has the form (WINDOW . ALIST).
+See `image-mode-winprops'.")
 
 (defvar image-mode-new-window-functions nil
   "Special hook run when image data is requested in a new window.
 It is called with one argument, the initial WINPROPS.")
 
 ;; FIXME this doesn't seem mature yet. Document in manual when it is.
-(defvar image-transform-resize nil
+(defvar-local image-transform-resize nil
   "The image resize operation.
 Its value should be one of the following:
  - nil, meaning no resizing.
@@ -58,10 +62,10 @@ Its value should be one of the following:
  - `fit-width', meaning to fit the image to the window width.
  - A number, which is a scale factor (the default size is 1).")
 
-(defvar image-transform-scale 1.0
+(defvar-local image-transform-scale 1.0
   "The scale factor of the image being displayed.")
 
-(defvar image-transform-rotation 0.0
+(defvar-local image-transform-rotation 0.0
   "Rotation angle for the image in the current Image mode buffer.")
 
 (defvar image-transform-right-angle-fudge 0.0001
@@ -117,7 +121,7 @@ otherwise it defaults to t, used for times when the buffer is not displayed."
 
 (defun image-set-window-vscroll (vscroll)
   (setf (image-mode-window-get 'vscroll) vscroll)
-  (set-window-vscroll (selected-window) vscroll))
+  (set-window-vscroll (selected-window) vscroll t))
 
 (defun image-set-window-hscroll (ncol)
   (setf (image-mode-window-get 'hscroll) ncol)
@@ -135,14 +139,14 @@ otherwise it defaults to t, used for times when the buffer is not displayed."
            (vscroll (image-mode-window-get 'vscroll winprops)))
       (when (image-get-display-property) ;Only do it if we display an image!
 	(if hscroll (set-window-hscroll (selected-window) hscroll))
-	(if vscroll (set-window-vscroll (selected-window) vscroll))))))
+	(if vscroll (set-window-vscroll (selected-window) vscroll t))))))
 
 (defun image-mode-setup-winprops ()
   ;; Record current scroll settings.
   (unless (listp image-mode-winprops-alist)
     (setq image-mode-winprops-alist nil))
   (add-hook 'window-configuration-change-hook
- 	    'image-mode-reapply-winprops nil t))
+	    #'image-mode-reapply-winprops nil t))
 
 ;;; Image scrolling functions
 
@@ -153,6 +157,8 @@ otherwise it defaults to t, used for times when the buffer is not displayed."
                          (selected-window))))
 
 (declare-function image-size "image.c" (spec &optional pixels frame))
+(declare-function xwidget-info "xwidget.c" (xwidget))
+(declare-function xwidget-at "xwidget.el" (pos))
 
 (defun image-display-size (spec &optional pixels frame)
   "Wrapper around `image-size', handling slice display properties.
@@ -160,24 +166,29 @@ Like `image-size', the return value is (WIDTH . HEIGHT).
 WIDTH and HEIGHT are in canonical character units if PIXELS is
 nil, and in pixel units if PIXELS is non-nil.
 
-If SPEC is an image display property, this function is equivalent
-to `image-size'.  If SPEC is a list of properties containing
-`image' and `slice' properties, return the display size taking
-the slice property into account.  If the list contains `image'
-but not `slice', return the `image-size' of the specified image."
-  (if (eq (car spec) 'image)
-      (image-size spec pixels frame)
-    (let ((image (assoc 'image spec))
-	  (slice (assoc 'slice spec)))
-      (cond ((and image slice)
-	     (if pixels
-		 (cons (nth 3 slice) (nth 4 slice))
-	       (cons (/ (float (nth 3 slice)) (frame-char-width frame))
-		     (/ (float (nth 4 slice)) (frame-char-height frame)))))
-	    (image
-	     (image-size image pixels frame))
-	    (t
-	     (error "Invalid image specification: %s" spec))))))
+If SPEC is an image display property, this function is equivalent to
+`image-size'.  If SPEC represents an xwidget object, defer to `xwidget-info'.
+If SPEC is a list of properties containing `image' and `slice' properties,
+return the display size taking the slice property into account.  If the list
+contains `image' but not `slice', return the `image-size' of the specified
+image."
+  (cond ((eq (car spec) 'xwidget)
+         (let ((xwi (xwidget-info (xwidget-at (point-min)))))
+           (cons (aref xwi 2) (aref xwi 3))))
+        ((eq (car spec) 'image)
+         (image-size spec pixels frame))
+        (t (let ((image (assoc 'image spec))
+                 (slice (assoc 'slice spec)))
+             (cond ((and image slice)
+                    (if pixels
+                        (cons (nth 3 slice) (nth 4 slice))
+                      (cons (/ (float (nth 3 slice)) (frame-char-width frame))
+                            (/ (float (nth 4 slice))
+                               (frame-char-height frame)))))
+                   (image
+                    (image-size image pixels frame))
+                   (t
+                    (error "Invalid image specification: %s" spec)))))))
 
 (defun image-forward-hscroll (&optional n)
   "Scroll image in current window to the left by N character widths.
@@ -204,16 +215,18 @@ Stop if the left edge of the image is reached."
   "Scroll image in current window upward by N lines.
 Stop if the bottom edge of the image is reached."
   (interactive "p")
+  ;; Convert N to pixels.
+  (setq n (* n (frame-char-height)))
   (cond ((= n 0) nil)
 	((< n 0)
-	 (image-set-window-vscroll (max 0 (+ (window-vscroll) n))))
+	 (image-set-window-vscroll (max 0 (+ (window-vscroll nil t) n))))
 	(t
 	 (let* ((image (image-get-display-property))
-		(edges (window-inside-edges))
+		(edges (window-edges nil t t))
 		(win-height (- (nth 3 edges) (nth 1 edges)))
-		(img-height (ceiling (cdr (image-display-size image)))))
+		(img-height (ceiling (cdr (image-display-size image t)))))
 	   (image-set-window-vscroll (min (max 0 (- img-height win-height))
-					  (+ n (window-vscroll))))))))
+					  (+ n (window-vscroll nil t))))))))
 
 (defun image-previous-line (&optional n)
   "Scroll image in current window downward by N lines.
@@ -263,6 +276,48 @@ When calling from a program, supply as argument a number, nil, or `-'."
 	    (max 0 (- win-height next-screen-context-lines)))))
 	(t (image-next-line (- (prefix-numeric-value n))))))
 
+(defun image-scroll-left (&optional n)
+  "Scroll image in current window leftward by N character widths.
+Stop if the right edge of the image is reached.
+If ARG is omitted or nil, scroll leftward by a near full screen.
+A near full screen is 2 columns less than a full screen.
+Negative ARG means scroll rightward.
+If ARG is the atom `-', scroll rightward by nearly full screen.
+When calling from a program, supply as argument a number, nil, or `-'."
+  (interactive "P")
+  (cond ((null n)
+	 (let* ((edges (window-inside-edges))
+		(win-width (- (nth 2 edges) (nth 0 edges))))
+	   (image-forward-hscroll
+	    (max 0 (- win-width 2)))))
+	((eq n '-)
+	 (let* ((edges (window-inside-edges))
+		(win-width (- (nth 2 edges) (nth 0 edges))))
+	   (image-forward-hscroll
+	    (min 0 (- 2 win-width)))))
+	(t (image-forward-hscroll (prefix-numeric-value n)))))
+
+(defun image-scroll-right (&optional n)
+  "Scroll image in current window rightward by N character widths.
+Stop if the left edge of the image is reached.
+If ARG is omitted or nil, scroll downward by a near full screen.
+A near full screen is 2 less than a full screen.
+Negative ARG means scroll leftward.
+If ARG is the atom `-', scroll leftward by nearly full screen.
+When calling from a program, supply as argument a number, nil, or `-'."
+  (interactive "P")
+  (cond ((null n)
+	 (let* ((edges (window-inside-edges))
+		(win-width (- (nth 2 edges) (nth 0 edges))))
+	   (image-forward-hscroll
+	    (min 0 (- 2 win-width)))))
+	((eq n '-)
+	 (let* ((edges (window-inside-edges))
+		(win-width (- (nth 2 edges) (nth 0 edges))))
+	   (image-forward-hscroll
+	    (max 0 (- win-width 2)))))
+	(t (image-forward-hscroll (- (prefix-numeric-value n))))))
+
 (defun image-bol (arg)
   "Scroll horizontally to the left edge of the image in the current window.
 With argument ARG not nil or 1, move forward ARG - 1 lines first,
@@ -298,10 +353,11 @@ stopping if the top or bottom edge of the image is reached."
   (interactive)
   (let* ((image (image-get-display-property))
 	 (edges (window-inside-edges))
+	 (pixel-edges (window-edges nil t t))
 	 (win-width (- (nth 2 edges) (nth 0 edges)))
 	 (img-width (ceiling (car (image-display-size image))))
-	 (win-height (- (nth 3 edges) (nth 1 edges)))
-	 (img-height (ceiling (cdr (image-display-size image)))))
+	 (win-height (- (nth 3 pixel-edges) (nth 1 pixel-edges)))
+	 (img-height (ceiling (cdr (image-display-size image t)))))
     (image-set-window-hscroll (max 0 (- img-width win-width)))
     (image-set-window-vscroll (max 0 (- img-height win-height)))))
 
@@ -360,13 +416,10 @@ call."
 (defvar-local image-multi-frame nil
   "Non-nil if image for the current Image mode buffer has multiple frames.")
 
-(defvar image-mode-previous-major-mode nil
-  "Internal variable to keep the previous non-image major mode.")
-
 (defvar image-mode-map
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map special-mode-map)
     (define-key map "\C-c\C-c" 'image-toggle-display)
+    (define-key map "\C-c\C-x" 'image-toggle-hex-display)
     (define-key map (kbd "SPC")       'image-scroll-up)
     (define-key map (kbd "S-SPC")     'image-scroll-down)
     (define-key map (kbd "DEL")       'image-scroll-down)
@@ -380,6 +433,9 @@ call."
     (define-key map "a-" 'image-decrease-speed)
     (define-key map "a0" 'image-reset-speed)
     (define-key map "ar" 'image-reverse-speed)
+    (define-key map "w" 'image-mode-copy-file-name-as-kill)
+    (define-key map "m" 'image-mode-mark-file)
+    (define-key map "u" 'image-mode-unmark-file)
     (define-key map [remap forward-char] 'image-forward-hscroll)
     (define-key map [remap backward-char] 'image-backward-hscroll)
     (define-key map [remap right-char] 'image-forward-hscroll)
@@ -390,6 +446,8 @@ call."
     (define-key map [remap scroll-down] 'image-scroll-down)
     (define-key map [remap scroll-up-command] 'image-scroll-up)
     (define-key map [remap scroll-down-command] 'image-scroll-down)
+    (define-key map [remap scroll-left] 'image-scroll-left)
+    (define-key map [remap scroll-right] 'image-scroll-right)
     (define-key map [remap move-beginning-of-line] 'image-bol)
     (define-key map [remap move-end-of-line] 'image-eol)
     (define-key map [remap beginning-of-buffer] 'image-bob)
@@ -398,6 +456,8 @@ call."
       '("Image"
 	["Show as Text" image-toggle-display :active t
 	 :help "Show image as text"]
+    ["Show as Hex" image-toggle-hex-display :active t
+     :help "Show image as hex"]
 	"--"
 	["Fit to Window Height" image-transform-fit-to-height
 	 :visible (eq image-type 'imagemagick)
@@ -422,6 +482,9 @@ call."
          :help "Move to next image in this directory"]
 	["Previous Image" image-previous-file :active buffer-file-name
          :help "Move to previous image in this directory"]
+	["Copy File Name" image-mode-copy-file-name-as-kill
+         :active buffer-file-name
+         :help "Copy the current file name to the kill ring"]
 	"--"
 	["Fit Frame to Image" image-mode-fit-frame :active t
 	 :help "Resize frame to match image"]
@@ -466,12 +529,13 @@ call."
 	["Goto Frame..." image-goto-frame :active image-multi-frame
 	 :help "Show a specific frame of this image"]
 	))
-    map)
+    (make-composed-keymap (list map image-map) special-mode-map))
   "Mode keymap for `image-mode'.")
 
 (defvar image-minor-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "\C-c\C-c" 'image-toggle-display)
+    (define-key map "\C-c\C-x" 'image-toggle-hex-display)
     map)
   "Mode keymap for `image-minor-mode'.")
 
@@ -482,89 +546,94 @@ call."
 ;;;###autoload
 (defun image-mode ()
   "Major mode for image files.
-You can use \\<image-mode-map>\\[image-toggle-display]
-to toggle between display as an image and display as text.
+You can use \\<image-mode-map>\\[image-toggle-display] or \\<image-mode-map>\\[image-toggle-hex-display]
+to toggle between display as an image and display as text or hex.
 
 Key bindings:
 \\{image-mode-map}"
   (interactive)
-  (condition-case err
+  (unless (display-images-p)
+    (error "Display does not support images"))
+
+  (major-mode-suspend)
+  (setq major-mode 'image-mode)
+
+  (if (not (image-get-display-property))
       (progn
-	(unless (display-images-p)
-	  (error "Display does not support images"))
+        (when (condition-case err
+                (progn
+	          (image-toggle-display-image)
+                  t)
+              (unknown-image-type
+               (image-mode-as-text)
+               (funcall
+                (if (called-interactively-p 'any) 'error 'message)
+                "Unknown image type; consider switching `image-use-external-converter' on")
+               nil)
+              (error
+               (image-mode-as-text)
+               (funcall
+                (if (called-interactively-p 'any) 'error 'message)
+                "Cannot display image: %s" (cdr err))
+               nil))
+	  ;; If attempt to display the image fails.
+	  (if (not (image-get-display-property))
+	      (error "Invalid image"))
+          (image-mode--setup-mode)))
+    ;; Set next vars when image is already displayed but local
+    ;; variables were cleared by kill-all-local-variables
+    (setq cursor-type nil truncate-lines t
+	  image-type (plist-get (cdr (image-get-display-property)) :type))
+    (image-mode--setup-mode)))
 
-	(kill-all-local-variables)
-	(setq major-mode 'image-mode)
+(defun image-mode--setup-mode ()
+  (setq mode-name (if image-type (format "Image[%s]" image-type) "Image"))
+  (use-local-map image-mode-map)
 
-	(if (not (image-get-display-property))
-	    (progn
-	      (image-toggle-display-image)
-	      ;; If attempt to display the image fails.
-	      (if (not (image-get-display-property))
-		  (error "Invalid image")))
-	  ;; Set next vars when image is already displayed but local
-	  ;; variables were cleared by kill-all-local-variables
-	  (setq cursor-type nil truncate-lines t
-		image-type (plist-get (cdr (image-get-display-property)) :type)))
+  ;; Use our own bookmarking function for images.
+  (setq-local bookmark-make-record-function
+              #'image-bookmark-make-record)
 
-	(setq mode-name (if image-type (format "Image[%s]" image-type) "Image"))
-	(use-local-map image-mode-map)
+  ;; Keep track of [vh]scroll when switching buffers
+  (image-mode-setup-winprops)
 
-	;; Use our own bookmarking function for images.
-	(setq-local bookmark-make-record-function
-                    #'image-bookmark-make-record)
+  (add-hook 'change-major-mode-hook #'image-toggle-display-text nil t)
+  (add-hook 'after-revert-hook #'image-after-revert-hook nil t)
+  (add-hook 'window-state-change-functions #'image--window-state-change nil t)
 
-	;; Keep track of [vh]scroll when switching buffers
-	(image-mode-setup-winprops)
-
-	(add-hook 'change-major-mode-hook 'image-toggle-display-text nil t)
-	(add-hook 'after-revert-hook 'image-after-revert-hook nil t)
-	(run-mode-hooks 'image-mode-hook)
-	(let ((image (image-get-display-property))
-	      (msg1 (substitute-command-keys
-		     "Type \\[image-toggle-display] to view the image as "))
-	      animated)
-	  (cond
-	   ((null image)
-	    (message "%s" (concat msg1 "an image.")))
-	   ((setq animated (image-multi-frame-p image))
-	    (setq image-multi-frame t
-		  mode-line-process
-		  `(:eval
-		    (concat " "
-			    (propertize
-			     (format "[%s/%s]"
-				     (1+ (image-current-frame ',image))
-				     ,(car animated))
-			     'help-echo "Frames
-mouse-1: Next frame
-mouse-3: Previous frame"
-			     'mouse-face 'mode-line-highlight
-			     'local-map
-			     '(keymap
-			       (mode-line
-				keymap
-				(down-mouse-1 . image-next-frame)
-				(down-mouse-3 . image-previous-frame)))))))
-	    (message "%s"
-		     (concat msg1 "text.  This image has multiple frames.")))
-;;;			     (substitute-command-keys
-;;;			      "\\[image-toggle-animation] to animate."))))
-	   (t
-	    (message "%s" (concat msg1 "text."))))))
-
-    (error
-     (image-mode-as-text)
-     (funcall
-      (if (called-interactively-p 'any) 'error 'message)
-      "Cannot display image: %s" (cdr err)))))
+  (run-mode-hooks 'image-mode-hook)
+  (let ((image (image-get-display-property))
+	(msg1 (substitute-command-keys
+               "Type \\[image-toggle-display] or \\[image-toggle-hex-display] to view the image as "))
+	animated)
+    (cond
+     ((null image)
+      (message "%s" (concat msg1 "an image.")))
+     ((setq animated (image-multi-frame-p image))
+      (setq image-multi-frame t
+	    mode-line-process
+	    `(:eval
+	      (concat " "
+		      (propertize
+		       (format "[%s/%s]"
+			       (1+ (image-current-frame ',image))
+			       ,(car animated))
+		       'help-echo "Frames\nmouse-1: Next frame\nmouse-3: Previous frame"
+		       'mouse-face 'mode-line-highlight
+		       'local-map
+		       '(keymap
+			 (mode-line
+			  keymap
+			  (down-mouse-1 . image-next-frame)
+			  (down-mouse-3 . image-previous-frame)))))))
+      (message "%s"
+	       (concat msg1 "text.  This image has multiple frames.")))
+     (t
+      (message "%s" (concat msg1 "text or hex."))))))
 
 ;;;###autoload
 (define-minor-mode image-minor-mode
   "Toggle Image minor mode in this buffer.
-With a prefix argument ARG, enable Image minor mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 Image minor mode provides the key \\<image-mode-map>\\[image-toggle-display],
 to switch back to `image-mode' and display an image file as the
@@ -577,6 +646,42 @@ actual image."
       (add-hook 'change-major-mode-hook (lambda () (image-minor-mode -1)) nil t)))
 
 ;;;###autoload
+(defun image-mode-to-text ()
+  "Set a non-image mode as major mode in combination with image minor mode.
+A non-mage major mode found from `auto-mode-alist' or fundamental mode
+displays an image file as text."
+  ;; image-mode-as-text = normal-mode + image-minor-mode
+  (let ((previous-image-type image-type)) ; preserve `image-type'
+    (major-mode-restore '(image-mode image-mode-maybe image-mode-as-text))
+    ;; Restore `image-type' after `kill-all-local-variables' in `normal-mode'.
+    (setq image-type previous-image-type)
+    ;; Enable image minor mode with `C-c C-c'.
+    (image-minor-mode 1)
+    ;; Show the image file as text.
+    (image-toggle-display-text)))
+
+(defun image-mode-as-hex ()
+  "Set a non-image mode as major mode in combination with image minor mode.
+A non-mage major mode found from `auto-mode-alist' or fundamental mode
+displays an image file as hex.  `image-minor-mode' provides the key
+\\<image-mode-map>\\[image-toggle-hex-display] to switch back to `image-mode'
+to display an image file as the actual image.
+
+You can use `image-mode-as-hex' in `auto-mode-alist' when you want to
+display an image file as hex initially.
+
+See commands `image-mode' and `image-minor-mode' for more information
+on these modes."
+  (interactive)
+  (image-mode-to-text)
+  ;; Turn on hexl-mode
+  (hexl-mode)
+  (message "%s" (concat
+                 (substitute-command-keys
+                  "Type \\[image-toggle-hex-display] or \\[image-toggle-display] to view the image as ")
+                 (if (image-get-display-property)
+                     "hex" "an image or text") ".")))
+
 (defun image-mode-as-text ()
   "Set a non-image mode as major mode in combination with image minor mode.
 A non-image major mode found from `auto-mode-alist' or Fundamental mode
@@ -590,39 +695,12 @@ to display an image file as text initially.
 See commands `image-mode' and `image-minor-mode' for more information
 on these modes."
   (interactive)
-  ;; image-mode-as-text = normal-mode + image-minor-mode
-  (let ((previous-image-type image-type)) ; preserve `image-type'
-    (if image-mode-previous-major-mode
-	;; Restore previous major mode that was already found by this
-	;; function and cached in `image-mode-previous-major-mode'
-	(funcall image-mode-previous-major-mode)
-      (let ((auto-mode-alist
-	     (delq nil (mapcar
-			(lambda (elt)
-			  (unless (memq (or (car-safe (cdr elt)) (cdr elt))
-					'(image-mode image-mode-maybe image-mode-as-text))
-			    elt))
-			auto-mode-alist)))
-	    (magic-fallback-mode-alist
-	     (delq nil (mapcar
-			(lambda (elt)
-			  (unless (memq (or (car-safe (cdr elt)) (cdr elt))
-					'(image-mode image-mode-maybe image-mode-as-text))
-			    elt))
-			magic-fallback-mode-alist))))
-	(normal-mode)
-	(setq-local image-mode-previous-major-mode major-mode)))
-    ;; Restore `image-type' after `kill-all-local-variables' in `normal-mode'.
-    (setq image-type previous-image-type)
-    ;; Enable image minor mode with `C-c C-c'.
-    (image-minor-mode 1)
-    ;; Show the image file as text.
-    (image-toggle-display-text)
-    (message "%s" (concat
-		   (substitute-command-keys
-		    "Type \\[image-toggle-display] to view the image as ")
-		   (if (image-get-display-property)
-		       "text" "an image") "."))))
+  (image-mode-to-text)
+  (message "%s" (concat
+                 (substitute-command-keys
+                  "Type \\[image-toggle-display] or \\[image-toggle-hex-display] to view the image as ")
+                 (if (image-get-display-property)
+                     "text" "an image or hex") ".")))
 
 (define-obsolete-function-alias 'image-mode-maybe 'image-mode "23.2")
 
@@ -631,6 +709,7 @@ on these modes."
 Remove text properties that display the image."
   (let ((inhibit-read-only t)
 	(buffer-undo-list t)
+	(create-lockfiles nil) ; avoid changing dir mtime by lock_file
 	(modified (buffer-modified-p)))
     (remove-list-of-text-properties (point-min) (point-max)
 				    '(display read-nonsticky ;; intangible
@@ -657,28 +736,50 @@ was inserted."
 			   (not (and (boundp 'archive-superior-buffer)
 				     archive-superior-buffer))
 			   (not (and (boundp 'tar-superior-buffer)
-				     tar-superior-buffer)))))
-	 (file-or-data (if data-p
-			   (string-make-unibyte
-			    (buffer-substring-no-properties (point-min) (point-max)))
-			 filename))
+				     tar-superior-buffer))
+                           ;; This means the buffer holds the contents
+                           ;; of a file uncompressed by jka-compr.el.
+                           (not (and (local-variable-p
+                                      'jka-compr-really-do-compress)
+                                     jka-compr-really-do-compress))
+                           ;; This means the buffer holds the
+                           ;; decrypted content (bug#21870).
+                           (not (local-variable-p
+                                 'epa-file-encrypt-to)))))
+	 (file-or-data
+          (if data-p
+	      (let ((str
+		     (buffer-substring-no-properties (point-min) (point-max))))
+                (if enable-multibyte-characters
+                    (encode-coding-string str buffer-file-coding-system)
+                  str))
+	    filename))
 	 ;; If we have a `fit-width' or a `fit-height', don't limit
 	 ;; the size of the image to the window size.
 	 (edges (and (null image-transform-resize)
-		     (window-inside-pixel-edges
-		      (get-buffer-window (current-buffer)))))
-	 (type (if (fboundp 'imagemagick-types)
+		     (window-inside-pixel-edges (get-buffer-window))))
+	 (type (if (image--imagemagick-wanted-p filename)
 		   'imagemagick
 		 (image-type file-or-data nil data-p)))
-	 (image (if (not edges)
-		    (create-image file-or-data type data-p)
-		  (create-image file-or-data type data-p
-				:max-width (- (nth 2 edges) (nth 0 edges))
-				:max-height (- (nth 3 edges) (nth 1 edges)))))
 	 (inhibit-read-only t)
 	 (buffer-undo-list t)
 	 (modified (buffer-modified-p))
-	 props)
+	 props image)
+
+    ;; Get the rotation data from the file, if any.
+    (setq image-transform-rotation
+          (or (exif-orientation
+               (ignore-error exif-error
+                 (exif-parse-buffer)))
+              0.0))
+
+    ;; :scale 1: If we do not set this, create-image will apply
+    ;; default scaling based on font size.
+    (setq image (if (not edges)
+		    (create-image file-or-data type data-p :scale 1)
+		  (create-image file-or-data type data-p :scale 1
+				:max-width (- (nth 2 edges) (nth 0 edges))
+				:max-height (- (nth 3 edges) (nth 1 edges)))))
 
     ;; Discard any stale image data before looking it up again.
     (image-flush image)
@@ -689,7 +790,7 @@ was inserted."
 		    rear-nonsticky (display) ;; intangible
 		    read-only t front-sticky (read-only)))
 
-    (let ((buffer-file-truename nil)) ; avoid changing dir mtime by lock_file
+    (let ((create-lockfiles nil)) ; avoid changing dir mtime by lock_file
       (add-text-properties (point-min) (point-max) props)
       (restore-buffer-modified-p modified))
     ;; Inhibit the cursor when the buffer contains only an image,
@@ -712,23 +813,76 @@ was inserted."
     (if (called-interactively-p 'any)
 	(message "Repeat this command to go back to displaying the file as text"))))
 
+(defun image--imagemagick-wanted-p (filename)
+  (and (fboundp 'imagemagick-types)
+       (not (eq imagemagick-types-inhibit t))
+       (not (and filename (file-name-extension filename)
+                 (memq (intern (upcase (file-name-extension filename)) obarray)
+                       imagemagick-types-inhibit)))))
+
+(defun image-toggle-hex-display ()
+  "Toggle between image and hex display."
+  (interactive)
+  (if (image-get-display-property)
+      (image-mode-as-hex)
+    (if (eq major-mode 'fundamental-mode)
+        (image-mode-as-hex)
+      (image-mode))))
+
 (defun image-toggle-display ()
   "Toggle between image and text display.
+
 If the current buffer is displaying an image file as an image,
-call `image-mode-as-text' to switch to text.  Otherwise, display
-the image by calling `image-mode'."
+call `image-mode-as-text' to switch to text or hex display.
+Otherwise, display the image by calling `image-mode'."
   (interactive)
   (if (image-get-display-property)
       (image-mode-as-text)
-    (image-mode)))
+    (if (eq major-mode 'hexl-mode)
+        (image-mode-as-text)
+      (image-mode))))
+
+(defun image-kill-buffer ()
+  "Kill the current buffer."
+  (interactive)
+  (kill-buffer (current-buffer)))
 
 (defun image-after-revert-hook ()
+  ;; Fixes bug#21598
+  (when (not (image-get-display-property))
+    (image-toggle-display-image))
   (when (image-get-display-property)
     (image-toggle-display-text)
     ;; Update image display.
     (mapc (lambda (window) (redraw-frame (window-frame window)))
           (get-buffer-window-list (current-buffer) 'nomini 'visible))
     (image-toggle-display-image)))
+
+(defun image--window-state-change (window)
+  ;; Wait for a bit of idle-time before actually performing the change,
+  ;; so as to batch together sequences of closely consecutive size changes.
+  ;; `image-fit-to-window' just changes one value in a plist.  The actual
+  ;; image resizing happens later during redisplay.  So if those
+  ;; consecutive calls happen without any redisplay between them,
+  ;; the costly operation of image resizing should happen only once.
+  (run-with-idle-timer 1 nil #'image-fit-to-window window))
+
+(defun image-fit-to-window (window)
+  "Adjust size of image to display it exactly in WINDOW boundaries."
+  (when (window-live-p window)
+    (with-current-buffer (window-buffer window)
+      (when (derived-mode-p 'image-mode)
+        (let ((spec (image-get-display-property)))
+          (when (eq (car-safe spec) 'image)
+            (let* ((image-width  (plist-get (cdr spec) :max-width))
+                   (image-height (plist-get (cdr spec) :max-height))
+                   (edges (window-inside-pixel-edges window))
+                   (window-width  (- (nth 2 edges) (nth 0 edges)))
+                   (window-height (- (nth 3 edges) (nth 1 edges))))
+              (when (and image-width image-height
+                         (or (not (= image-width  window-width))
+                             (not (= image-height window-height))))
+                (image-toggle-display-image)))))))))
 
 
 ;;; Animated images
@@ -862,7 +1016,19 @@ replacing the current Image mode buffer."
 	    (throw 'image-visit-next-file (1+ idx)))
 	(setq idx (1+ idx))))
     (setq idx (mod (+ idx (or n 1)) (length images)))
-    (find-alternate-file (nth idx images))))
+    (let ((image (nth idx images))
+          (dir (file-name-directory buffer-file-name)))
+      (find-alternate-file image)
+      ;; If we have dired buffer(s) open to where this image is, then
+      ;; place point on it.
+      (dolist (buffer (buffer-list))
+	(with-current-buffer buffer
+	  (when (and (derived-mode-p 'dired-mode)
+	             (equal (file-truename dir)
+		            (file-truename default-directory)))
+            (save-window-excursion
+              (switch-to-buffer (current-buffer) t t)
+              (dired-goto-file (expand-file-name image dir)))))))))
 
 (defun image-previous-file (&optional n)
   "Visit the preceding image in the same directory as the current file.
@@ -873,6 +1039,68 @@ This command visits the specified file via `find-alternate-file',
 replacing the current Image mode buffer."
   (interactive "p")
   (image-next-file (- n)))
+
+(defun image-mode-copy-file-name-as-kill ()
+  "Push the currently visited file name onto the kill ring."
+  (interactive)
+  (unless buffer-file-name
+    (error "The current buffer doesn't visit a file"))
+  (kill-new buffer-file-name)
+  (message "Copied %s" buffer-file-name))
+
+(defun image-mode-mark-file ()
+  "Mark the current file in the appropriate dired buffer(s).
+Any dired buffer that's opened to the current file's directory
+will have the line where the image appears (if any) marked.
+
+If no such buffer exists, it will be opened."
+  (interactive)
+  (unless buffer-file-name
+    (error "The current buffer doesn't visit a file."))
+  (image-mode--mark-file buffer-file-name #'dired-mark "marked"))
+
+(defun image-mode-unmark-file ()
+  "Unmark the current file in the appropriate dired buffer(s).
+Any dired buffer that's opened to the current file's directory
+will remove the mark from the line where the image appears (if
+any).
+
+If no such buffer exists, it will be opened."
+  (interactive)
+  (unless buffer-file-name
+    (error "The current buffer doesn't visit a file."))
+  (image-mode--mark-file buffer-file-name #'dired-unmark "unmarked"))
+
+(declare-function dired-mark "dired" (arg &optional interactive))
+(declare-function dired-unmark "dired" (arg &optional interactive))
+(declare-function dired-goto-file "dired" (file))
+
+(defun image-mode--mark-file (file function message)
+  (require 'dired)
+  (let* ((dir (file-name-directory file))
+	 (buffers
+          (cl-loop for buffer in (buffer-list)
+		   when (with-current-buffer buffer
+			  (and (eq major-mode 'dired-mode)
+			       (equal (file-truename dir)
+				      (file-truename default-directory))))
+		   collect buffer))
+         results)
+    (unless buffers
+      (save-excursion
+        (setq buffers (list (find-file-noselect dir)))))
+    (dolist (buffer buffers)
+      (with-current-buffer buffer
+	(if (not (dired-goto-file file))
+            (push (format "couldn't find in %s" (directory-file-name dir))
+                  results)
+	  (funcall function 1)
+          (push (format "%s in %s" message (directory-file-name dir))
+                results))))
+    ;; Capitalize first character.
+    (let ((string (mapconcat #'identity results "; ")))
+      (message "%s%s" (capitalize (substring string 0 1))
+               (substring string 1)))))
 
 (defun image-mode--images-in-directory (file)
   (let* ((dir (file-name-directory buffer-file-name))
@@ -1050,6 +1278,7 @@ compiled with ImageMagick support."
     ;; Note: `image-size' looks up and thus caches the untransformed
     ;; image.  There's no easy way to prevent that.
     (let* ((size (image-size spec t))
+           (edges (window-inside-pixel-edges (get-buffer-window)))
 	   (resized
 	    (cond
 	     ((numberp image-transform-resize)
@@ -1059,13 +1288,11 @@ compiled with ImageMagick support."
 	     ((eq image-transform-resize 'fit-width)
 	      (image-transform-fit-width
 	       (car size) (cdr size)
-	       (- (nth 2 (window-inside-pixel-edges))
-		  (nth 0 (window-inside-pixel-edges)))))
+	       (- (nth 2 edges) (nth 0 edges))))
 	     ((eq image-transform-resize 'fit-height)
 	      (let ((res (image-transform-fit-width
 			  (cdr size) (car size)
-			  (- (nth 3 (window-inside-pixel-edges))
-			     (nth 1 (window-inside-pixel-edges))))))
+			  (- (nth 3 edges) (nth 1 edges)))))
 		(cons (cdr res) (car res)))))))
       `(,@(when (car resized)
 	    (list :width (car resized)))

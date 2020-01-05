@@ -1,6 +1,6 @@
 ;;; dirtrack.el --- Directory Tracking by watching the prompt
 
-;; Copyright (C) 1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Peter Breton <pbreton@cs.umb.edu>
 ;; Created: Sun Nov 17 1996
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -51,7 +51,7 @@
 ;; which matches your prompt up to and including the pathname part.
 ;; The second is a number which tells which regular expression group to
 ;; match to extract only the pathname.  If you use a multi-line prompt,
-;; add 't' as a third element.  Note that some of the functions in
+;; add t as a third element.  Note that some of the functions in
 ;; 'comint.el' assume a single-line prompt (eg, comint-bol).
 ;;
 ;; Determining this information may take some experimentation.  Using
@@ -179,14 +179,9 @@ and ends with a forward slash."
     dir))
 
 
-(define-obsolete-function-alias 'dirtrack-toggle 'dirtrack-mode "23.1")
-(define-obsolete-variable-alias 'dirtrackp 'dirtrack-mode "23.1")
 ;;;###autoload
 (define-minor-mode dirtrack-mode
   "Toggle directory tracking in shell buffers (Dirtrack mode).
-With a prefix argument ARG, enable Dirtrack mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 This method requires that your shell prompt contain the current
 working directory at all times, and that you set the variable
@@ -205,10 +200,7 @@ directory."
   "23.1")
 (define-obsolete-variable-alias 'dirtrack-debug 'dirtrack-debug-mode "23.1")
 (define-minor-mode dirtrack-debug-mode
-  "Toggle Dirtrack debugging.
-With a prefix argument ARG, enable Dirtrack debugging if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil."
+  "Toggle Dirtrack debugging."
   nil nil nil
   (if dirtrack-debug-mode
       (display-buffer (get-buffer-create dirtrack-debug-buffer))))
@@ -218,7 +210,7 @@ the mode if ARG is omitted or nil."
   (when dirtrack-debug-mode
     (with-current-buffer (get-buffer-create dirtrack-debug-buffer)
       (goto-char (point-max))
-      (insert msg1 msg2 "\n"))))
+      (insert (substitute-command-keys msg1) msg2 "\n"))))
 
 (declare-function shell-prefixed-directory-name "shell" (dir))
 (declare-function shell-process-cd "shell" (arg))

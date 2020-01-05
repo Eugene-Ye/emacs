@@ -1,13 +1,13 @@
 /* Input event support for Emacs on the Microsoft Windows API.
-   Copyright (C) 1992-1993, 1995, 2001-2014 Free Software Foundation,
+   Copyright (C) 1992-1993, 1995, 2001-2020 Free Software Foundation,
    Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /*
    Drew Bliss                   01-Oct-93
@@ -37,14 +37,11 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "lisp.h"
 #include "keyboard.h"
 #include "frame.h"
-#include "dispextern.h"
-#include "window.h"
 #include "blockinput.h"
-#include "termhooks.h"
-#include "termchar.h"
-#include "w32heap.h"
+#include "termchar.h"	/* for Mouse_HLInfo, tty_display_info */
 #include "w32term.h"
 #include "w32inevt.h"
+#include "w32common.h"
 
 /* stdin, from w32console.c */
 extern HANDLE keyboard_handle;
@@ -152,10 +149,12 @@ key_event (KEY_EVENT_RECORD *event, struct input_event *emacs_ev, int *isdead)
       switch (event->wVirtualKeyCode)
 	{
 	case VK_LWIN:
-	  mod_key_state &= ~LEFT_WIN_PRESSED;
+          if (!w32_kbdhook_active)
+            mod_key_state &= ~LEFT_WIN_PRESSED;
 	  break;
 	case VK_RWIN:
-	  mod_key_state &= ~RIGHT_WIN_PRESSED;
+          if (!w32_kbdhook_active)
+            mod_key_state &= ~RIGHT_WIN_PRESSED;
 	  break;
 	case VK_APPS:
 	  mod_key_state &= ~APPS_PRESSED;
@@ -182,14 +181,15 @@ key_event (KEY_EVENT_RECORD *event, struct input_event *emacs_ev, int *isdead)
 	     Space which we will ignore.  */
 	  if ((mod_key_state & LEFT_WIN_PRESSED) == 0)
 	    {
-	      if (NUMBERP (Vw32_phantom_key_code))
-		faked_key = XUINT (Vw32_phantom_key_code) & 255;
+	      if (FIXNUMP (Vw32_phantom_key_code))
+		faked_key = XUFIXNUM (Vw32_phantom_key_code) & 255;
 	      else
 		faked_key = VK_SPACE;
 	      keybd_event (faked_key, (BYTE) MapVirtualKey (faked_key, 0), 0, 0);
 	    }
 	}
-      mod_key_state |= LEFT_WIN_PRESSED;
+      if (!w32_kbdhook_active)
+        mod_key_state |= LEFT_WIN_PRESSED;
       if (!NILP (Vw32_lwindow_modifier))
 	return 0;
       break;
@@ -198,14 +198,15 @@ key_event (KEY_EVENT_RECORD *event, struct input_event *emacs_ev, int *isdead)
 	{
 	  if ((mod_key_state & RIGHT_WIN_PRESSED) == 0)
 	    {
-	      if (NUMBERP (Vw32_phantom_key_code))
-		faked_key = XUINT (Vw32_phantom_key_code) & 255;
+	      if (FIXNUMP (Vw32_phantom_key_code))
+		faked_key = XUFIXNUM (Vw32_phantom_key_code) & 255;
 	      else
 		faked_key = VK_SPACE;
 	      keybd_event (faked_key, (BYTE) MapVirtualKey (faked_key, 0), 0, 0);
 	    }
 	}
-      mod_key_state |= RIGHT_WIN_PRESSED;
+      if (!w32_kbdhook_active)
+        mod_key_state |= RIGHT_WIN_PRESSED;
       if (!NILP (Vw32_rwindow_modifier))
 	return 0;
       break;
@@ -271,6 +272,13 @@ key_event (KEY_EVENT_RECORD *event, struct input_event *emacs_ev, int *isdead)
 
   /* Recognize state of Windows and Apps keys.  */
   event->dwControlKeyState |= mod_key_state;
+  if (w32_kbdhook_active)
+    {
+      if (check_w32_winkey_state (VK_LWIN))
+        event->dwControlKeyState |= LEFT_WIN_PRESSED;
+      if (check_w32_winkey_state (VK_RWIN))
+        event->dwControlKeyState |= RIGHT_WIN_PRESSED;
+    }
 
   /* Distinguish numeric keypad keys from extended keys.  */
   event->wVirtualKeyCode =
@@ -484,7 +492,7 @@ do_mouse_event (MOUSE_EVENT_RECORD *event,
 	    if (!NILP (Vmouse_autoselect_window))
 	      {
 		Lisp_Object mouse_window = window_from_coordinates (f, mx, my,
-								    0, 0);
+								    0, 0, 0);
 		/* A window will be selected only when it is not
 		   selected now, and the last mouse movement event was
 		   not in it.  A minibuffer window will be selected iff
@@ -518,7 +526,7 @@ do_mouse_event (MOUSE_EVENT_RECORD *event,
 			      help_echo_window, help_echo_object,
 			      help_echo_pos);
 	  }
-	/* We already called kbd_buffer_store_event, so indicate the
+	/* We already called kbd_buffer_store_event, so indicate to
 	   the caller it shouldn't.  */
 	return 0;
       }
@@ -526,6 +534,12 @@ do_mouse_event (MOUSE_EVENT_RECORD *event,
     case MOUSE_HWHEELED:
       {
 	struct frame *f = get_frame ();
+	/* Mouse positions in console wheel events are reported to
+	   ReadConsoleInput relative to the display's top-left
+	   corner(!), not relative to the origin of the console screen
+	   buffer.  This makes these coordinates unusable; e.g.,
+	   scrolling the tab-line in general doesn't work.
+	   FIXME (but how?).  */
 	int mx = event->dwMousePosition.X, my = event->dwMousePosition.Y;
 	bool down_p = (event->dwButtonState & 0x10000000) != 0;
 
@@ -551,8 +565,6 @@ do_mouse_event (MOUSE_EVENT_RECORD *event,
       if (event->dwButtonState == button_state)
 	return 0;
 
-      emacs_ev->kind = MOUSE_CLICK_EVENT;
-
       /* Find out what button has changed state since the last button
 	 event.  */
       but_change = button_state ^ event->dwButtonState;
@@ -568,15 +580,24 @@ do_mouse_event (MOUSE_EVENT_RECORD *event,
 	  }
 
       button_state = event->dwButtonState;
-      emacs_ev->modifiers =
-	w32_kbd_mods_to_emacs (event->dwControlKeyState, 0)
-	| ((event->dwButtonState & mask) ? down_modifier : up_modifier);
-
-      XSETFASTINT (emacs_ev->x, event->dwMousePosition.X);
-      XSETFASTINT (emacs_ev->y, event->dwMousePosition.Y);
-      XSETFRAME (emacs_ev->frame_or_window, get_frame ());
-      emacs_ev->arg = Qnil;
+      emacs_ev->modifiers = w32_kbd_mods_to_emacs (event->dwControlKeyState, 0);
       emacs_ev->timestamp = GetTickCount ();
+
+      int x = event->dwMousePosition.X;
+      int y = event->dwMousePosition.Y;
+      struct frame *f = get_frame ();
+      if (tty_handle_tab_bar_click (f, x, y, (button_state & mask) != 0,
+				    emacs_ev))
+	return 0;	/* tty_handle_tab_bar_click adds the event to queue */
+
+      emacs_ev->modifiers |= ((button_state & mask)
+			      ? down_modifier : up_modifier);
+
+      emacs_ev->kind = MOUSE_CLICK_EVENT;
+      XSETFASTINT (emacs_ev->x, x);
+      XSETFASTINT (emacs_ev->y, y);
+      XSETFRAME (emacs_ev->frame_or_window, f);
+      emacs_ev->arg = Qnil;
 
       return 1;
     }
@@ -588,7 +609,8 @@ resize_event (WINDOW_BUFFER_SIZE_RECORD *event)
   struct frame *f = get_frame ();
 
   change_frame_size (f, event->dwSize.X, event->dwSize.Y
-		     - FRAME_MENU_BAR_LINES (f), 0, 1, 0, 0);
+		     - FRAME_MENU_BAR_LINES (f)
+		     - FRAME_TAB_BAR_LINES (f), 0, 1, 0, 0);
   SET_FRAME_GARBAGED (f);
 }
 
@@ -605,75 +627,97 @@ maybe_generate_resize_event (void)
   change_frame_size (f,
 		     1 + info.srWindow.Right - info.srWindow.Left,
 		     1 + info.srWindow.Bottom - info.srWindow.Top
-		     - FRAME_MENU_BAR_LINES (f), 0, 1, 0, 0);
+		     - FRAME_MENU_BAR_LINES (f)
+		     - FRAME_TAB_BAR_LINES (f), 0, 1, 0, 0);
 }
 
 #if HAVE_W32NOTIFY
 int
 handle_file_notifications (struct input_event *hold_quit)
 {
-  BYTE *p = file_notifications;
-  FILE_NOTIFY_INFORMATION *fni = (PFILE_NOTIFY_INFORMATION)p;
-  const DWORD min_size
-    = offsetof (FILE_NOTIFY_INFORMATION, FileName) + sizeof(wchar_t);
-  struct input_event inev;
+  struct notifications_set *ns = NULL;
   int nevents = 0;
+  int done = 0;
 
   /* We cannot process notification before Emacs is fully initialized,
      since we need the UTF-16LE coding-system to be set up.  */
   if (!initialized)
     {
-      notification_buffer_in_use = 0;
       return nevents;
     }
 
-  enter_crit ();
-  if (notification_buffer_in_use)
+  while (!done)
     {
-      DWORD info_size = notifications_size;
-      Lisp_Object cs = intern ("utf-16le");
-      Lisp_Object obj = w32_get_watch_object (notifications_desc);
+      ns = NULL;
 
-      /* notifications_size could be zero when the buffer of
-	 notifications overflowed on the OS level, or when the
-	 directory being watched was itself deleted.  Do nothing in
-	 that case.  */
-      if (info_size
-	  && !NILP (obj) && CONSP (obj))
+      /* Find out if there is a record available in the linked list of
+	 notifications sets.  If so, unlink te set from the linked list.
+	 Use the critical section.  */
+      enter_crit ();
+      if (notifications_set_head->next != notifications_set_head)
 	{
-	  Lisp_Object callback = XCDR (obj);
-
-	  EVENT_INIT (inev);
-
-	  while (info_size >= min_size)
-	    {
-	      Lisp_Object utf_16_fn
-		= make_unibyte_string ((char *)fni->FileName,
-				       fni->FileNameLength);
-	      /* Note: mule-conf is preloaded, so utf-16le must
-		 already be defined at this point.  */
-	      Lisp_Object fname
-		= code_convert_string_norecord (utf_16_fn, cs, 0);
-	      Lisp_Object action = lispy_file_action (fni->Action);
-
-	      inev.kind = FILE_NOTIFY_EVENT;
-	      inev.code = (ptrdiff_t)XINT (XIL ((EMACS_INT)notifications_desc));
-	      inev.timestamp = GetTickCount ();
-	      inev.modifiers = 0;
-	      inev.frame_or_window = callback;
-	      inev.arg = Fcons (action, fname);
-	      kbd_buffer_store_event_hold (&inev, hold_quit);
-
-	      if (!fni->NextEntryOffset)
-		break;
-	      p += fni->NextEntryOffset;
-	      fni = (PFILE_NOTIFY_INFORMATION)p;
-	      info_size -= fni->NextEntryOffset;
-	    }
+	  ns = notifications_set_head->next;
+	  ns->prev->next = ns->next;
+	  ns->next->prev = ns->prev;
 	}
-      notification_buffer_in_use = 0;
+      else
+	done = 1;
+      leave_crit();
+
+      if (ns)
+	{
+	  BYTE *p = ns->notifications;
+	  FILE_NOTIFY_INFORMATION *fni = (PFILE_NOTIFY_INFORMATION)p;
+	  const DWORD min_size
+	    = offsetof (FILE_NOTIFY_INFORMATION, FileName) + sizeof(wchar_t);
+	  struct input_event inev;
+	  DWORD info_size = ns->size;
+	  Lisp_Object cs = Qutf_16le;
+	  Lisp_Object obj = w32_get_watch_object (ns->desc);
+
+	  /* notifications size could be zero when the buffer of
+	     notifications overflowed on the OS level, or when the
+	     directory being watched was itself deleted.  Do nothing in
+	     that case.  */
+	  if (info_size
+	      && !NILP (obj) && CONSP (obj))
+	    {
+	      Lisp_Object callback = XCDR (obj);
+
+	      EVENT_INIT (inev);
+
+	      while (info_size >= min_size)
+		{
+		  Lisp_Object utf_16_fn
+		    = make_unibyte_string ((char *)fni->FileName,
+					   fni->FileNameLength);
+		  /* Note: mule-conf is preloaded, so utf-16le must
+		     already be defined at this point.  */
+		  Lisp_Object fname
+		    = code_convert_string_norecord (utf_16_fn, cs, 0);
+		  Lisp_Object action = w32_lispy_file_action (fni->Action);
+
+		  inev.kind = FILE_NOTIFY_EVENT;
+		  inev.timestamp = GetTickCount ();
+		  inev.modifiers = 0;
+		  inev.frame_or_window = callback;
+		  inev.arg = Fcons (action, fname);
+		  inev.arg = list3 (make_pointer_integer (ns->desc),
+				    action, fname);
+		  kbd_buffer_store_event_hold (&inev, hold_quit);
+		  nevents++;
+		  if (!fni->NextEntryOffset)
+		    break;
+		  p += fni->NextEntryOffset;
+		  fni = (PFILE_NOTIFY_INFORMATION)p;
+		  info_size -= fni->NextEntryOffset;
+		}
+	    }
+	  /* Free this notification set.  */
+	  free (ns->notifications);
+	  free (ns);
+	}
     }
-  leave_crit ();
   return nevents;
 }
 #else  /* !HAVE_W32NOTIFY */

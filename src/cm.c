@@ -1,13 +1,13 @@
 /* Cursor motion subroutines for GNU Emacs.
-   Copyright (C) 1985, 1995, 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 1985, 1995, 2001-2020 Free Software Foundation, Inc.
     based primarily on public domain code written by Chris Torek
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,16 +15,14 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 #include <config.h>
-#include <stdio.h>
 
 #include "lisp.h"
-#include "frame.h"
 #include "cm.h"
-#include "termhooks.h"
+#include "sysstdio.h"
 #include "termchar.h"
 #include "tparam.h"
 
@@ -32,7 +30,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 int cost;		/* sums up costs */
 
-/* ARGSUSED */
 int
 evalcost (int c)
 {
@@ -207,7 +204,7 @@ calccost (struct tty_display_info *tty,
 	p = tty->Wcm->cm_down, c = tty->Wcm->cc_down;
     if (c == BIG) {		/* caint get thar from here */
 	if (doit)
-	    printf ("OOPS");
+	  fputs ("OOPS", stdout);
 	return c;
     }
     totalcost = c * deltay;
@@ -290,7 +287,7 @@ dodelta:
     if (c == BIG) {		/* caint get thar from here */
 fail:
 	if (doit)
-	    printf ("OOPS");
+	  fputs ("OOPS", stdout);
 	return BIG;
     }
     totalcost += c * deltax;
@@ -323,7 +320,7 @@ cmgoto (struct tty_display_info *tty, int row, int col)
             llcost,
             relcost,
             directcost;
-    int     use IF_LINT (= 0);
+    int use UNINIT;
     char *p;
     const char *dcm;
 

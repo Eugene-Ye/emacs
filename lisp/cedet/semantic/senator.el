@@ -1,6 +1,6 @@
 ;;; semantic/senator.el --- SEmantic NAvigaTOR
 
-;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: David Ponce <david@dponce.com>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -36,6 +36,7 @@
 (require 'semantic/ctxt)
 (require 'semantic/decorate)
 (require 'semantic/format)
+(require 'semantic/analyze)
 
 (eval-when-compile (require 'semantic/find))
 
@@ -43,7 +44,6 @@
 
 (declare-function semantic-analyze-tag-references "semantic/analyze/refs")
 (declare-function semantic-analyze-refs-impl "semantic/analyze/refs")
-(declare-function semantic-analyze-find-tag "semantic/analyze")
 (declare-function semantic-analyze-tag-type "semantic/analyze/fcn")
 (declare-function semantic-tag-external-class "semantic/sort")
 (declare-function imenu--mouse-menu "imenu")
@@ -148,14 +148,14 @@ Return nil otherwise."
   "Return the tag before POS or one of its parent where to step."
   (let (ol tag)
     (while (and pos (> pos (point-min)) (not tag))
-      (setq pos (semantic-overlay-previous-change pos))
+      (setq pos (previous-overlay-change pos))
       (when pos
         ;; Get overlays at position
-        (setq ol (semantic-overlays-at pos))
+        (setq ol (overlays-at pos))
         ;; find the overlay that belongs to semantic
         ;; and STARTS or ENDS at the found position.
         (while (and ol (not tag))
-          (setq tag (semantic-overlay-get (car ol) 'semantic))
+          (setq tag (overlay-get (car ol) 'semantic))
           (unless (and tag (semantic-tag-p tag)
                        (or (= (semantic-tag-start tag) pos)
                            (= (semantic-tag-end   tag) pos)))
@@ -198,7 +198,7 @@ Tags of those classes are excluded from search."
 
 (defun senator-search-default-tag-filter (tag)
   "Default function that filters searched tags.
-Ignore tags of classes in `senator-search-ignore-tag-classes'"
+Ignore tags of classes in `senator-search-ignore-tag-classes'."
   (not (memq (semantic-tag-class tag)
              senator-search-ignore-tag-classes)))
 
@@ -507,7 +507,7 @@ filters in `senator-search-tag-filter-functions' remain active."
 (define-overloadable-function semantic-up-reference (tag)
   "Return a tag that is referred to by TAG.
 A \"reference\" could be any interesting feature of TAG.
-In C++, a function may have a 'parent' which is non-local.
+In C++, a function may have a `parent' which is non-local.
 If that parent which is only a reference in the function tag
 is found, we can jump to it.
 Some tags such as includes have other reference features.")
@@ -516,7 +516,7 @@ Some tags such as includes have other reference features.")
 (defun senator-go-to-up-reference (&optional tag)
   "Move up one reference from the current TAG.
 A \"reference\" could be any interesting feature of TAG.
-In C++, a function may have a 'parent' which is non-local.
+In C++, a function may have a `parent' which is non-local.
 If that parent which is only a reference in the function tag
 is found, we can jump to it.
 Some tags such as includes have other reference features."
@@ -526,15 +526,17 @@ Some tags such as includes have other reference features."
     (if (not result)
         (error "No up reference found")
       (push-mark)
+      (when (fboundp 'xref-push-marker-stack)
+        (xref-push-marker-stack))
       (cond
        ;; A tag
        ((semantic-tag-p result)
 	(semantic-go-to-tag result)
-	(switch-to-buffer (current-buffer))
+        (pop-to-buffer-same-window (current-buffer))
 	(semantic-momentary-highlight-tag result))
        ;; Buffers
        ((bufferp result)
-	(switch-to-buffer result)
+        (pop-to-buffer-same-window result)
 	(pulse-momentary-highlight-one-line (point)))
        ;; Files
        ((and (stringp result) (file-exists-p result))
@@ -594,7 +596,6 @@ Makes C/C++ language like assumptions."
 
 	;; Get the data type, and try to find that.
         ((semantic-tag-type tag)
-	 (require 'semantic/analyze)
 	 (let ((scope (semantic-calculate-scope (point))))
 	   (semantic-analyze-tag-type tag scope))
 	 )
@@ -659,7 +660,7 @@ Use semantic tags to navigate."
         (end    (progn (senator-end-of-defun) (point)))
         (start  (progn (senator-beginning-of-defun) (point))))
     (goto-char origin)
-    (push-mark (point))
+    (push-mark)
     (goto-char end) ;; end-of-defun
     (push-mark (point) nil t)
     (goto-char start) ;; beginning-of-defun
@@ -718,6 +719,22 @@ yanked to."
             (message "Use C-y to recover the yank the text of %s."
                      (semantic-tag-name ft))))))
 
+(cl-defstruct (senator-register
+               (:constructor nil)
+               (:constructor senator-make-register (foreign-tag)))
+  foreign-tag)
+
+(cl-defmethod register-val-jump-to ((data senator-register) _arg)
+  (let ((ft (senator-register-foreign-tag data)))
+    (switch-to-buffer (semantic-tag-buffer ft))
+    (goto-char (semantic-tag-start ft))))
+
+(cl-defmethod register-val-describe ((data senator-register) _verbose)
+  (cl-prin1-to-string (senator-register-foreign-tag data)))
+
+(cl-defmethod register-val-insert ((data senator-register))
+  (semantic-insert-foreign-tag (senator-register-foreign-tag data)))
+
 ;;;###autoload
 (defun senator-copy-tag-to-register (register &optional kill-flag)
   "Copy the current tag into REGISTER.
@@ -733,13 +750,7 @@ if available."
   (semantic-fetch-tags)
   (let ((ft (semantic-obtain-foreign-tag)))
     (when ft
-      (set-register
-       register (registerv-make
-                 ft
-                 :insert-func #'semantic-insert-foreign-tag
-                 :jump-func (lambda (v)
-                              (switch-to-buffer (semantic-tag-buffer v))
-                              (goto-char (semantic-tag-start v)))))
+      (set-register register (senator-make-register ft))
       (if kill-flag
           (kill-region (semantic-tag-start ft)
                        (semantic-tag-end ft))))))
@@ -803,7 +814,7 @@ if available."
   (setq isearch-adjusted t)
   (isearch-update))
 
-;; Recent versions of GNU Emacs allow to override the isearch search
+;; Recent versions of GNU Emacs allow overriding the isearch search
 ;; function for special needs, and avoid to advice the built-in search
 ;; function :-)
 (defun senator-isearch-search-fun ()
@@ -813,7 +824,7 @@ Use a senator search function when semantic isearch mode is enabled."
    (concat (if senator-isearch-semantic-mode
                "senator-"
              "")
-           (cond (isearch-word "word-")
+           (cond (isearch-regexp-function "word-")
                  (isearch-regexp "re-")
                  (t ""))
            "search-"

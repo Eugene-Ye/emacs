@@ -1,6 +1,6 @@
 ;;; admin.el --- utilities for Emacs administration
 
-;; Copyright (C) 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -15,7 +15,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -28,12 +28,9 @@
 
 (defvar add-log-time-format)		; in add-log
 
-;; Does this information need to be in every ChangeLog, as opposed to
-;; just the top-level one?  Only if you allow changes the same
-;; day as the release.
-;; http://lists.gnu.org/archive/html/emacs-devel/2013-03/msg00161.html
 (defun add-release-logs (root version &optional date)
   "Add \"Version VERSION released.\" change log entries in ROOT.
+Also update the etc/HISTORY file.
 Root must be the root of an Emacs source tree.
 Optional argument DATE is the release date, default today."
   (interactive (list (read-directory-name "Emacs root directory: ")
@@ -42,14 +39,25 @@ Optional argument DATE is the release date, default today."
 					  emacs-minor-version))
 		     (read-string "Release date: "
 				  (progn (require 'add-log)
-					 (let ((add-log-time-zone-rule t))
-					   (funcall add-log-time-format))))))
+                                         (funcall add-log-time-format nil t)))))
   (setq root (expand-file-name root))
   (unless (file-exists-p (expand-file-name "src/emacs.c" root))
     (user-error "%s doesn't seem to be the root of an Emacs source tree" root))
+  (let ((clog (expand-file-name "ChangeLog" root)))
+    (if (file-exists-p clog)
+        ;; Basic check that a ChangeLog that exists is not your personal one.
+        ;; TODO Perhaps we should move any existing file and unconditionally
+        ;; call make ChangeLog?  Or make ChangeLog CHANGELOG=temp and compare
+        ;; with the existing?
+        (with-temp-buffer
+          (insert-file-contents clog)
+          (or (re-search-forward "^[ \t]*Copyright.*Free Software" nil t)
+              (user-error "ChangeLog looks like a personal one - remove it?")))
+      (or
+       (zerop (call-process "make" nil nil nil "-C" root "ChangeLog"))
+       (error "Problem generating ChangeLog"))))
   (require 'add-log)
-  (or date (setq date (let ((add-log-time-zone-rule t))
-			(funcall add-log-time-format))))
+  (or date (setq date (funcall add-log-time-format nil t)))
   (let* ((logs (process-lines "find" root "-name" "ChangeLog"))
 	 (entry (format "%s  %s  <%s>\n\n\t* Version %s released.\n\n"
 			date
@@ -59,7 +67,14 @@ Optional argument DATE is the release date, default today."
     (dolist (log logs)
       (find-file log)
       (goto-char (point-min))
-      (insert entry))))
+      (insert entry)))
+  (let ((histfile (expand-file-name "etc/HISTORY" root)))
+    (unless (file-exists-p histfile)
+      (error "%s not present" histfile))
+    (find-file histfile)
+    (goto-char (point-max))
+    (search-backward "")
+    (insert (format "GNU Emacs %s (%s) emacs-%s\n\n" version date version))))
 
 (defun set-version-in-file (root file version rx)
   "Subroutine of `set-version' and `set-copyright'."
@@ -78,9 +93,7 @@ Optional argument DATE is the release date, default today."
 Root must be the root of an Emacs source tree."
   (interactive (list
 		(read-directory-name "Emacs root directory: " source-directory)
-		(read-string "Version number: "
-			     (replace-regexp-in-string "\\.[0-9]+\\'" ""
-						       emacs-version))))
+		(read-string "Version number: " emacs-version)))
   (unless (file-exists-p (expand-file-name "src/emacs.c" root))
     (user-error "%s doesn't seem to be the root of an Emacs source tree" root))
   (message "Setting version numbers...")
@@ -94,30 +107,105 @@ Root must be the root of an Emacs source tree."
 		       (rx (and "AC_INIT" (1+ (not (in ?,)))
                                 ?, (0+ space)
                                 (submatch (1+ (in "0-9."))))))
-  ;; No longer used, broken in multiple ways, updating version seems pointless.
-  (set-version-in-file root "nt/config.nt" version
-		       (rx (and bol "#" (0+ blank) "define" (1+ blank)
-				"VERSION" (1+ blank) "\""
+  (set-version-in-file root "nt/README.W32" version
+		       (rx (and "version" (1+ space)
 				(submatch (1+ (in "0-9."))))))
   ;; TODO: msdos could easily extract the version number from
   ;; configure.ac with sed, rather than duplicating the information.
   (set-version-in-file root "msdos/sed2v2.inp" version
 		       (rx (and bol "/^#undef " (1+ not-newline)
-				"define VERSION" (1+ space) "\""
-				(submatch (1+ (in "0-9."))))))
-  ;; No longer used, broken in multiple ways, updating version seems pointless.
-  (set-version-in-file root "nt/makefile.w32-in" version
-		       (rx (and "VERSION" (0+ space) "=" (0+ space)
+				"define PACKAGE_VERSION" (1+ space) "\""
 				(submatch (1+ (in "0-9."))))))
   ;; Major version only.
   (when (string-match "\\([0-9]\\{2,\\}\\)" version)
-    (setq version (match-string 1 version))
-    (set-version-in-file root "src/msdos.c" version
-			 (rx (and "Vwindow_system_version" (1+ not-newline)
-				  ?\( (submatch (1+ (in "0-9"))) ?\))))
-    (set-version-in-file root "etc/refcards/ru-refcard.tex" version
-			 "\\\\newcommand{\\\\versionemacs}\\[0\\]\
-{\\([0-9]\\{2,\\}\\)}.+%.+version of Emacs"))
+    (let ((newmajor (match-string 1 version)))
+      (set-version-in-file root "src/msdos.c" newmajor
+                           (rx (and "Vwindow_system_version" (1+ not-newline)
+                                    ?\( (submatch (1+ (in "0-9"))) ?\))))
+      (set-version-in-file root "etc/refcards/ru-refcard.tex" newmajor
+                           "\\\\newcommand{\\\\versionemacs}\\[0\\]\
+{\\([0-9]\\{2,\\}\\)}.+%.+version of Emacs")))
+  (let* ((oldversion
+          (with-temp-buffer
+            (insert-file-contents (expand-file-name "README" root))
+            (if (re-search-forward "version \\([0-9.]*\\)" nil t)
+                (version-to-list (match-string 1)))))
+         (oldmajor (if oldversion (car oldversion)))
+         (newversion (version-to-list version))
+         (newmajor (car newversion))
+         (newshort (format "%s.%s" newmajor
+                           (+ (cadr newversion)
+                              (if (eq 2 (length newversion)) 0 1))))
+         (majorbump (and oldversion (not (equal oldmajor newmajor))))
+         (minorbump (and oldversion (not majorbump)
+                         (or (not (equal (cadr oldversion) (cadr newversion)))
+                             ;; Eg 26.2 -> 26.2.50.
+                             (and (> (length newversion)
+                                     (length oldversion))))))
+         (newsfile (expand-file-name "etc/NEWS" root))
+         (oldnewsfile (expand-file-name (format "etc/NEWS.%s" oldmajor) root)))
+    (unless (> (length newversion) 2)   ; pretest or release candidate?
+      (with-temp-buffer
+        (insert-file-contents newsfile)
+        (when (re-search-forward "^\\* [^\n]*\n+" nil t)
+          (display-warning 'admin
+                           "NEWS file contains empty sections - remove them?"))
+        (goto-char (point-min))
+        (if (re-search-forward "^\\(\\+\\+\\+ *\\|--- *\\)$" nil t)
+            (display-warning 'admin
+                             "NEWS file still contains temporary markup.
+Documentation changes might not have been completed!"))))
+    (when (and majorbump
+               (not (file-exists-p oldnewsfile)))
+      (rename-file newsfile oldnewsfile)
+      (find-file oldnewsfile)           ; to prompt you to commit it
+      (copy-file oldnewsfile newsfile)
+      (with-temp-buffer
+        (insert-file-contents newsfile)
+        (re-search-forward "is about changes in Emacs version \\([0-9]+\\)")
+        (replace-match (number-to-string newmajor) nil nil nil 1)
+        (re-search-forward "^See files \\(NEWS\\)")
+        (unless (save-match-data
+                  (when (looking-at "\\(\\..*\\), \\(\\.\\.\\.\\|…\\)")
+                    (replace-match
+                     (format ".%s, NEWS.%s" oldmajor (1- oldmajor))
+                     nil nil nil 1)
+                    t))
+          (replace-match (format "NEWS.%s, NEWS" oldmajor) nil nil nil 1)
+          (let ((start (line-beginning-position)))
+            (search-forward "in older Emacs versions")
+            (or (equal start (line-beginning-position))
+                (fill-region start (line-beginning-position 2)))))
+        (re-search-forward "^$")
+        (forward-line -1)
+        (let ((start (point)))
+          (goto-char (point-max))
+          (re-search-backward "^$" nil nil 2)
+          (delete-region start (line-beginning-position 0)))
+        (write-region nil nil newsfile)))
+    (when (or majorbump minorbump)
+      (find-file newsfile)
+      (goto-char (point-min))
+      (if (re-search-forward (format "^\\* .*in Emacs %s" newshort) nil t)
+          (progn
+            (kill-buffer)
+            (message "No need to update etc/NEWS"))
+        (goto-char (point-min))
+        (re-search-forward "^$")
+        (forward-line -1)
+        (dolist (s '("Installation Changes" "Startup Changes" "Changes"
+                     "Editing Changes"
+                     "Changes in Specialized Modes and Packages"
+                          "New Modes and Packages"
+                          "Incompatible Lisp Changes"
+                          "Lisp Changes"))
+          (insert (format "\n\n* %s in Emacs %s\n" s newshort)))
+        (insert (format "\n\n* Changes in Emacs %s on \
+Non-Free Operating Systems\n" newshort)))
+      ;; Because we skip "bump version" commits when merging between branches.
+      ;; Probably doesn't matter in practice, because NEWS changes
+      ;; will only happen on master anyway.
+      (message "Commit any NEWS changes separately")))
   (message "Setting version numbers...done"))
 
 ;; Note this makes some assumptions about form of short copyright.
@@ -139,10 +227,6 @@ Root must be the root of an Emacs source tree."
   (set-version-in-file root "msdos/sed2v2.inp" copyright
 		       (rx (and bol "/^#undef " (1+ not-newline)
 				"define COPYRIGHT" (1+ space)
-				?\" (submatch (1+ (not (in ?\")))) ?\")))
-  (set-version-in-file root "nt/config.nt" copyright
-		       (rx (and bol "#" (0+ blank) "define" (1+ blank)
-				"COPYRIGHT" (1+ blank)
 				?\" (submatch (1+ (not (in ?\")))) ?\")))
   (set-version-in-file root "lib-src/rcs2log" copyright
         	       (rx (and "Copyright" (0+ space) ?= (0+ space)
@@ -184,8 +268,12 @@ ROOT should be the root of an Emacs source tree."
 ROOT should be the root of an Emacs source tree.
 Interactively with a prefix argument, prompt for TYPE.
 Optional argument TYPE is type of output (nil means all)."
-  (interactive (let ((root (read-directory-name "Emacs root directory: "
-						source-directory nil t)))
+  (interactive (let ((root
+                      (if noninteractive
+                          (or (pop command-line-args-left)
+                              default-directory)
+                        (read-directory-name "Emacs root directory: "
+                                             source-directory nil t))))
 		 (list root
 		       (if current-prefix-arg
 			   (completing-read
@@ -203,6 +291,7 @@ Optional argument TYPE is type of output (nil means all)."
 	 (ps-dir (expand-file-name "ps" dest))
 	 (pdf-dir (expand-file-name "pdf" dest))
 	 (emacs (expand-file-name "doc/emacs/emacs.texi" root))
+	 (emacs-xtra (expand-file-name "doc/emacs/emacs-xtra.texi" root))
 	 (elisp (expand-file-name "doc/lispref/elisp.texi" root))
 	 (eintr (expand-file-name "doc/lispintro/emacs-lisp-intro.texi" root))
 	 (misc (manual-misc-manuals root)))
@@ -216,10 +305,14 @@ Optional argument TYPE is type of output (nil means all)."
 	(manual-html-node emacs (expand-file-name "emacs" html-node-dir)))
     (if (member type '(nil "emacs" "emacs-mono"))
 	(manual-html-mono emacs (expand-file-name "emacs.html" html-mono-dir)))
-    (if (member type '(nil "emacs" "emacs-pdf" "pdf"))
-	(manual-pdf emacs (expand-file-name "emacs.pdf" pdf-dir)))
-    (if (member type '(nil "emacs" "emacs-ps" "ps"))
-	(manual-ps emacs (expand-file-name "emacs.ps" ps-dir)))
+    (when (member type '(nil "emacs" "emacs-pdf" "pdf"))
+      (manual-pdf emacs (expand-file-name "emacs.pdf" pdf-dir))
+      ;; emacs-xtra exists only in pdf/ps format.
+      ;; In other formats it is included in the Emacs manual.
+      (manual-pdf emacs-xtra (expand-file-name "emacs-xtra.pdf" pdf-dir)))
+    (when (member type '(nil "emacs" "emacs-ps" "ps"))
+      (manual-ps emacs (expand-file-name "emacs.ps" ps-dir))
+      (manual-ps emacs-xtra (expand-file-name "emacs-xtra.ps" ps-dir)))
     (if (member type '(nil "elisp" "elisp-node"))
 	(manual-html-node elisp (expand-file-name "elisp" html-node-dir)))
     (if (member type '(nil "elisp" "elisp-mono"))
@@ -244,11 +337,11 @@ Optional argument TYPE is type of output (nil means all)."
 
 (defconst manual-doctype-string
   "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\"
-\"http://www.w3.org/TR/html4/loose.dtd\">\n\n")
+\"https://www.w3.org/TR/html4/loose.dtd\">\n\n")
 
 (defconst manual-meta-string
   "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">
-<link rev=\"made\" href=\"mailto:webmasters@gnu.org\">
+<link rev=\"made\" href=\"mailto:bug-gnu-emacs@gnu.org\">
 <link rel=\"icon\" type=\"image/png\" href=\"/graphics/gnu-head-mini.png\">
 <meta name=\"ICBM\" content=\"42.256233,-71.006581\">
 <meta name=\"DC.title\" content=\"gnu.org\">\n\n")
@@ -266,13 +359,22 @@ Optional argument TYPE is type of output (nil means all)."
     (manual-html-mono texi (expand-file-name (concat name ".html")
 					     html-mono-dir))))
 
+(defvar manual-makeinfo (or (getenv "MAKEINFO") "makeinfo")
+  "The `makeinfo' program to use.")
+
+(defvar manual-texi2pdf (or (getenv "TEXI2PDF") "texi2pdf")
+  "The `texi2pdf' program to use.")
+
+(defvar manual-texi2dvi (or (getenv "TEXI2DVI") "texi2dvi")
+  "The `texi2dvi' program to use.")
+
 (defun manual-html-mono (texi-file dest)
   "Run Makeinfo on TEXI-FILE, emitting mono HTML output to DEST.
 This function also edits the HTML files so that they validate as
 HTML 4.01 Transitional, and pulls in the gnu.org stylesheet using
 the @import directive."
   (make-directory (or (file-name-directory dest) ".") t)
-  (call-process "makeinfo" nil nil nil
+  (call-process manual-makeinfo nil nil nil
 		"-D" "WWW_GNU_ORG"
 		"-I" (expand-file-name "../emacs"
 				       (file-name-directory texi-file))
@@ -300,7 +402,7 @@ the @import directive."
   (unless (file-exists-p texi-file)
     (user-error "Manual file %s not found" texi-file))
   (make-directory dir t)
-  (call-process "makeinfo" nil nil nil
+  (call-process manual-makeinfo nil nil nil
 		"-D" "WWW_GNU_ORG"
 		"-I" (expand-file-name "../emacs"
 				       (file-name-directory texi-file))
@@ -339,7 +441,7 @@ the @import directive."
   "Run texi2pdf on TEXI-FILE, emitting PDF output to DEST."
   (make-directory (or (file-name-directory dest) ".") t)
   (let ((default-directory (file-name-directory texi-file)))
-    (call-process "texi2pdf" nil nil nil
+    (call-process manual-texi2pdf nil nil nil
 		  "-I" "../emacs" "-I" "../misc"
 		  texi-file "-o" dest)))
 
@@ -349,7 +451,7 @@ the @import directive."
   (let ((dvi-dest (concat (file-name-sans-extension dest) ".dvi"))
 	(default-directory (file-name-directory texi-file)))
     ;; FIXME: Use `texi2dvi --ps'?  --xfq
-    (call-process "texi2dvi" nil nil nil
+    (call-process manual-texi2dvi nil nil nil
 		  "-I" "../emacs" "-I" "../misc"
 		  texi-file "-o" dvi-dest)
     (call-process "dvips" nil nil nil dvi-dest "-o" dest)
@@ -562,7 +664,7 @@ style=\"text-align:left\">")
 
 
 (defconst make-manuals-dist-output-variables
-  `(("@\\(top_\\)?srcdir@" . ".")	; top_srcdir is wrong, but not used
+  '(("@\\(top_\\)?srcdir@" . ".")	; top_srcdir is wrong, but not used
     ("^\\(\\(?:texinfo\\|buildinfo\\|emacs\\)dir *=\\).*" . "\\1 .")
     ("^\\(clean:.*\\)" . "\\1 infoclean")
     ("@MAKEINFO@" . "makeinfo")
@@ -579,7 +681,10 @@ style=\"text-align:left\">")
     ("@GZIP_PROG@" . "gzip")
     ("@INSTALL@" . "install -c")
     ("@INSTALL_DATA@" . "${INSTALL} -m 644")
-    ("@configure_input@" . ""))
+    ("@configure_input@" . "")
+    ("@AM_DEFAULT_VERBOSITY@" . "0")
+    ("@AM_V@" . "${V}")
+    ("@AM_DEFAULT_V@" . "${AM_DEFAULT_VERBOSITY}"))
   "Alist of (REGEXP . REPLACEMENT) pairs for `make-manuals-dist'.")
 
 (defun make-manuals-dist--1 (root type)
@@ -598,10 +703,13 @@ style=\"text-align:left\">")
     (if (file-directory-p stem)
 	(delete-directory stem t))
     (make-directory stem)
+    (setq stem (file-name-as-directory stem))
     (copy-file "../doc/misc/texinfo.tex" stem)
-    (or (equal type "emacs") (copy-file "../doc/emacs/emacsver.texi" stem))
+    (unless (equal type "emacs")
+      (copy-file "../doc/emacs/emacsver.texi" stem)
+      (copy-file "../doc/emacs/docstyle.texi" stem))
     (dolist (file (directory-files (format "../doc/%s" type) t))
-      (if (or (string-match-p "\\(\\.texi\\'\\|/ChangeLog\\|/README\\'\\)" file)
+      (if (or (string-match-p "\\(\\.texi\\'\\|/README\\'\\)" file)
 	      (and (equal type "lispintro")
 		   (string-match-p "\\.\\(eps\\|pdf\\)\\'" file)))
 	  (copy-file file stem)))
@@ -618,7 +726,7 @@ style=\"text-align:left\">")
 	  (setq ats t)
 	  (message "Unexpanded: %s" (match-string 0)))
 	(if ats (error "Unexpanded configure variables in Makefile?")))
-      (write-region nil nil (expand-file-name (format "%s/Makefile" stem))
+      (write-region nil nil (expand-file-name (format "%sMakefile" stem))
 		    nil 'silent))
     (call-process "tar" nil nil nil "-cf" tarfile stem)
     (delete-directory stem t)
@@ -630,8 +738,12 @@ style=\"text-align:left\">")
 ROOT should be the root of an Emacs source tree.
 Interactively with a prefix argument, prompt for TYPE.
 Optional argument TYPE is type of output (nil means all)."
-  (interactive (let ((root (read-directory-name "Emacs root directory: "
-						source-directory nil t)))
+  (interactive (let ((root
+                      (if noninteractive
+                          (or (pop command-line-args-left)
+                              default-directory)
+                        (read-directory-name "Emacs root directory: "
+                                             source-directory nil t))))
 		 (list root
 		       (if current-prefix-arg
 			   (completing-read
@@ -688,8 +800,8 @@ If optional argument OLD is non-nil, also scan for `defvar's."
 	      (and (not old)
 		   (equal "custom" (match-string 2))
 		   (not (memq :type form))
-		   (display-warning 'custom
-				    (format "Missing type in: `%s'" form)))
+		   (display-warning
+                    'custom (format-message "Missing type in: `%s'" form)))
 	      (setq ver (car (cdr-safe (memq :version form))))
 	      (if (equal "group" (match-string 2))
 		  ;; Group :version could be old.
@@ -703,7 +815,7 @@ If optional argument OLD is non-nil, also scan for `defvar's."
 		       (setq grp (car (cdr-safe grp))) ; (quote foo) -> foo
 		       (setq ver (assq grp glist))))
 		(setq alist (cons (cons var ver) alist))))
-          (if form (message "Malformed defcustom: `%s'" form)))))
+          (if form (format-message "Malformed defcustom: `%s'" form)))))
     (message "%sdone" m)
     alist))
 
@@ -795,7 +907,8 @@ changes (in a non-trivial way).  This function does not check for that."
 	(message "No missing :version tags")
       (pop-to-buffer "*cusver*")
       (erase-buffer)
-      (insert "These `defcustom's might be missing :version tags:\n\n")
+      (insert (substitute-command-keys
+               "These `defcustom's might be missing :version tags:\n\n"))
       (dolist (elem result)
 	(let* ((str (file-relative-name (car elem) newdir))
 	       (strlen (length str)))
@@ -811,3 +924,7 @@ changes (in a non-trivial way).  This function does not check for that."
 (provide 'admin)
 
 ;;; admin.el ends here
+
+;; Local Variables:
+;; coding: utf-8
+;; End:

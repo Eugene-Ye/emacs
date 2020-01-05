@@ -1,6 +1,6 @@
 ;;; w32-vars.el --- MS-Windows specific user options
 
-;; Copyright (C) 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Jason Rumney <jasonr@gnu.org>
 ;; Keywords: internal
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -34,15 +34,18 @@
 
 ;; Redefine the font selection to use the standard W32 dialog
 (defcustom w32-use-w32-font-dialog t
-  "Use the standard font dialog.
+  "If non-nil, use the standard Windows font dialog for font selection.
 If nil, pop up a menu of a fixed set of fonts including fontsets, like
-X does.  See `w32-fixed-font-alist' for the font menu definition."
-  :type 'boolean
-  :group 'w32)
+X does.  See `w32-fixed-font-alist' for the fonts to appear in the menu.
 
-(defvar w32-list-proportional-fonts nil
-  "Include proportional fonts in the default font dialog.")
-(make-obsolete-variable 'w32-list-proportional-fonts "no longer used." "23.1")
+Setting this variable directly does not have any effect;
+use either \\[customize] or set `mouse-appearance-menu-map' to nil
+after changing the value of this variable."
+  :type 'boolean
+  :set (lambda (symbol value)
+	 (set symbol value)
+	 (setq mouse-appearance-menu-map nil))
+  :group 'w32)
 
 (unless (eq system-type 'cygwin)
   (defcustom w32-allow-system-shell nil
@@ -104,11 +107,11 @@ X does.  See `w32-fixed-font-alist' for the font menu definition."
       "-*-Lucida Sans Typewriter-semibold-r-*-*-16-*-*-*-c-*-iso8859-1"))
     ("Courier"
      ("Courier 10x8"
-      "-*-Courier-*normal-r-*-*-*-97-*-*-c-80-iso8859-1")
+      "-*-Courier New-normal-r-*-*-*-97-*-*-c-80-iso8859-1")
      ("Courier 12x9"
-      "-*-Courier-*normal-r-*-*-*-120-*-*-c-90-iso8859-1")
+      "-*-Courier New-normal-r-*-*-*-120-*-*-c-90-iso8859-1")
      ("Courier 15x12"
-      "-*-Courier-*normal-r-*-*-*-150-*-*-c-120-iso8859-1")
+      "-*-Courier New-normal-r-*-*-*-150-*-*-c-120-iso8859-1")
      ;; For these, we specify the point height.
      ("")
      ("8" "-*-Courier New-normal-r-*-*-11-*-*-*-c-*-iso8859-1")

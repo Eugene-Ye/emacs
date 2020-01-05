@@ -1,6 +1,6 @@
 ;;; cl-extra.el --- Common Lisp features, part 2  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Dave Gillespie <daveg@synaptics.com>
 ;; Keywords: extensions
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 
 ;;; Type coercion.
 
@@ -48,6 +49,8 @@ TYPE is a Common Lisp type specifier.
 \n(fn OBJECT TYPE)"
   (cond ((eq type 'list) (if (listp x) x (append x nil)))
 	((eq type 'vector) (if (vectorp x) x (vconcat x)))
+	((eq type 'bool-vector)
+         (if (bool-vector-p x) x (apply #'bool-vector (cl-coerce x 'list))))
 	((eq type 'string) (if (stringp x) x (concat x)))
 	((eq type 'array) (if (arrayp x) x (vconcat x)))
 	((and (eq type 'character) (stringp x) (= (length x) 1)) (aref x 0))
@@ -89,7 +92,7 @@ strings case-insensitively."
 ;;; Control structures.
 
 ;;;###autoload
-(defun cl--mapcar-many (cl-func cl-seqs)
+(defun cl--mapcar-many (cl-func cl-seqs &optional acc)
   (if (cdr (cdr cl-seqs))
       (let* ((cl-res nil)
 	     (cl-n (apply 'min (mapcar 'length cl-seqs)))
@@ -106,20 +109,23 @@ strings case-insensitively."
 			  (setcar cl-p1 (cdr (car cl-p1))))
 		      (aref (car cl-p1) cl-i)))
 	    (setq cl-p1 (cdr cl-p1) cl-p2 (cdr cl-p2)))
-	  (push (apply cl-func cl-args) cl-res)
+	  (if acc
+	      (push (apply cl-func cl-args) cl-res)
+	    (apply cl-func cl-args))
 	  (setq cl-i (1+ cl-i)))
-	(nreverse cl-res))
+	(and acc (nreverse cl-res)))
     (let ((cl-res nil)
 	  (cl-x (car cl-seqs))
 	  (cl-y (nth 1 cl-seqs)))
       (let ((cl-n (min (length cl-x) (length cl-y)))
 	    (cl-i -1))
 	(while (< (setq cl-i (1+ cl-i)) cl-n)
-	  (push (funcall cl-func
-                         (if (consp cl-x) (pop cl-x) (aref cl-x cl-i))
-                         (if (consp cl-y) (pop cl-y) (aref cl-y cl-i)))
-                cl-res)))
-      (nreverse cl-res))))
+	  (let ((val (funcall cl-func
+			      (if (consp cl-x) (pop cl-x) (aref cl-x cl-i))
+			      (if (consp cl-y) (pop cl-y) (aref cl-y cl-i)))))
+	    (when acc
+	      (push val cl-res)))))
+	(and acc (nreverse cl-res)))))
 
 ;;;###autoload
 (defun cl-map (cl-type cl-func cl-seq &rest cl-rest)
@@ -142,7 +148,7 @@ the elements themselves.
 	(while (not (memq nil cl-args))
 	  (push (apply cl-func cl-args) cl-res)
 	  (setq cl-p cl-args)
-	  (while cl-p (setcar cl-p (cdr (pop cl-p)) )))
+	  (while cl-p (setcar cl-p (cdr (pop cl-p)))))
 	(nreverse cl-res))
     (let ((cl-res nil))
       (while cl-list
@@ -155,8 +161,14 @@ the elements themselves.
   "Like `cl-mapcar', but does not accumulate values returned by the function.
 \n(fn FUNCTION SEQUENCE...)"
   (if cl-rest
-      (progn (apply 'cl-map nil cl-func cl-seq cl-rest)
-	     cl-seq)
+      (if (or (cdr cl-rest) (nlistp cl-seq) (nlistp (car cl-rest)))
+          (progn
+            (cl--mapcar-many cl-func (cons cl-seq cl-rest))
+            cl-seq)
+        (let ((cl-x cl-seq) (cl-y (car cl-rest)))
+          (while (and cl-x cl-y)
+            (funcall cl-func (pop cl-x) (pop cl-y)))
+          cl-seq))
     (mapc cl-func cl-seq)))
 
 ;;;###autoload
@@ -164,7 +176,12 @@ the elements themselves.
   "Like `cl-maplist', but does not accumulate values returned by the function.
 \n(fn FUNCTION LIST...)"
   (if cl-rest
-      (apply 'cl-maplist cl-func cl-list cl-rest)
+      (let ((cl-args (cons cl-list (copy-sequence cl-rest)))
+	    cl-p)
+	(while (not (memq nil cl-args))
+          (apply cl-func cl-args)
+	  (setq cl-p cl-args)
+	  (while cl-p (setcar cl-p (cdr (pop cl-p))))))
     (let ((cl-p cl-list))
       (while cl-p (funcall cl-func cl-p) (setq cl-p (cdr cl-p)))))
   cl-list)
@@ -173,7 +190,9 @@ the elements themselves.
 (defun cl-mapcan (cl-func cl-seq &rest cl-rest)
   "Like `cl-mapcar', but nconc's together the values returned by the function.
 \n(fn FUNCTION SEQUENCE...)"
-  (apply 'nconc (apply 'cl-mapcar cl-func cl-seq cl-rest)))
+  (if cl-rest
+      (apply 'nconc (apply 'cl-mapcar cl-func cl-seq cl-rest))
+    (mapcan cl-func cl-seq)))
 
 ;;;###autoload
 (defun cl-mapcon (cl-func cl-list &rest cl-rest)
@@ -298,29 +317,27 @@ If so, return the true (non-nil) value returned by PREDICATE.
 ;;;###autoload
 (defun cl-gcd (&rest args)
   "Return the greatest common divisor of the arguments."
-  (let ((a (abs (or (pop args) 0))))
-    (while args
-      (let ((b (abs (pop args))))
-	(while (> b 0) (setq b (% a (setq a b))))))
-    a))
+  (let ((a (or (pop args) 0)))
+    (dolist (b args)
+      (while (/= b 0)
+        (setq b (% a (setq a b)))))
+    (abs a)))
 
 ;;;###autoload
 (defun cl-lcm (&rest args)
   "Return the least common multiple of the arguments."
   (if (memq 0 args)
       0
-    (let ((a (abs (or (pop args) 1))))
-      (while args
-	(let ((b (abs (pop args))))
-	  (setq a (* (/ a (cl-gcd a b)) b))))
-      a)))
+    (let ((a (or (pop args) 1)))
+      (dolist (b args)
+        (setq a (* (/ a (cl-gcd a b)) b)))
+      (abs a))))
 
 ;;;###autoload
 (defun cl-isqrt (x)
-  "Return the integer square root of the argument."
+  "Return the integer square root of the (integer) argument."
   (if (and (integerp x) (> x 0))
-      (let ((g (cond ((<= x 100) 10) ((<= x 10000) 100)
-		     ((<= x 1000000) 1000) (t x)))
+      (let ((g (ash 2 (/ (logb x) 2)))
 	    g2)
 	(while (< (setq g2 (/ (+ g (/ x g)) 2)) g)
 	  (setq g g2))
@@ -422,26 +439,40 @@ as an integer unless JUNK-ALLOWED is non-nil."
 
 ;; Random numbers.
 
+(defun cl--random-time ()
+  (car (time-convert nil t)))
+
+;;;###autoload (autoload 'cl-random-state-p "cl-extra")
+(cl-defstruct (cl--random-state
+               (:copier nil)
+               (:predicate cl-random-state-p)
+               (:constructor nil)
+               (:constructor cl--make-random-state (vec)))
+  (i -1) (j 30) vec)
+
+(defvar cl--random-state (cl--make-random-state (cl--random-time)))
+
 ;;;###autoload
 (defun cl-random (lim &optional state)
   "Return a random nonnegative number less than LIM, an integer or float.
 Optional second arg STATE is a random-state object."
   (or state (setq state cl--random-state))
   ;; Inspired by "ran3" from Numerical Recipes.  Additive congruential method.
-  (let ((vec (aref state 3)))
+  (let ((vec (cl--random-state-vec state)))
     (if (integerp vec)
-	(let ((i 0) (j (- 1357335 (% (abs vec) 1357333))) (k 1))
-	  (aset state 3 (setq vec (make-vector 55 nil)))
+	(let ((i 0) (j (- 1357335 (abs (% vec 1357333)))) (k 1))
+	  (setf (cl--random-state-vec state)
+                (setq vec (make-vector 55 nil)))
 	  (aset vec 0 j)
 	  (while (> (setq i (% (+ i 21) 55)) 0)
 	    (aset vec i (setq j (prog1 k (setq k (- j k))))))
 	  (while (< (setq i (1+ i)) 200) (cl-random 2 state))))
-    (let* ((i (aset state 1 (% (1+ (aref state 1)) 55)))
-	   (j (aset state 2 (% (1+ (aref state 2)) 55)))
-	   (n (logand 8388607 (aset vec i (- (aref vec i) (aref vec j))))))
+    (let* ((i (cl-callf (lambda (x) (% (1+ x) 55)) (cl--random-state-i state)))
+	   (j (cl-callf (lambda (x) (% (1+ x) 55)) (cl--random-state-j state)))
+	   (n (aset vec i (logand 8388607 (- (aref vec i) (aref vec j))))))
       (if (integerp lim)
 	  (if (<= lim 512) (% n lim)
-	    (if (> lim 8388607) (setq n (+ (lsh n 9) (cl-random 512 state))))
+	    (if (> lim 8388607) (setq n (+ (ash n 9) (cl-random 512 state))))
 	    (let ((mask 1023))
 	      (while (< mask (1- lim)) (setq mask (1+ (+ mask mask))))
 	      (if (< (setq n (logand n mask)) lim) n (cl-random lim state))))
@@ -451,17 +482,10 @@ Optional second arg STATE is a random-state object."
 (defun cl-make-random-state (&optional state)
   "Return a copy of random-state STATE, or of the internal state if omitted.
 If STATE is t, return a new state object seeded from the time of day."
-  (cond ((null state) (cl-make-random-state cl--random-state))
-	((vectorp state) (copy-tree state t))
-	((integerp state) (vector 'cl--random-state-tag -1 30 state))
-	(t (cl-make-random-state (cl--random-time)))))
-
-;;;###autoload
-(defun cl-random-state-p (object)
-  "Return t if OBJECT is a random-state object."
-  (and (vectorp object) (= (length object) 4)
-       (eq (aref object 0) 'cl--random-state-tag)))
-
+  (unless state (setq state cl--random-state))
+  (if (cl-random-state-p state)
+      (copy-sequence state)
+    (cl--make-random-state (if (integerp state) state (cl--random-time)))))
 
 ;; Implementation limits.
 
@@ -498,7 +522,7 @@ This sets the values of: `cl-most-positive-float', `cl-most-negative-float',
 	(setq cl-least-positive-normalized-float y
 	      cl-least-negative-normalized-float (- y))
 	;; Divide down until value underflows to zero.
-	(setq x (/ 1 z) y x)
+	(setq x (/ z) y x)
 	(while (condition-case _ (> (/ x 2) 0) (arith-error nil))
 	  (setq x (/ x 2)))
 	(setq cl-least-positive-float x
@@ -518,41 +542,25 @@ This sets the values of: `cl-most-positive-float', `cl-most-negative-float',
 (defun cl-subseq (seq start &optional end)
   "Return the subsequence of SEQ from START to END.
 If END is omitted, it defaults to the length of the sequence.
-If START or END is negative, it counts from the end."
+If START or END is negative, it counts from the end.
+Signal an error if START or END are outside of the sequence (i.e
+too large if positive or too small if negative)."
   (declare (gv-setter
             (lambda (new)
-              `(progn (cl-replace ,seq ,new :start1 ,start :end1 ,end)
-                      ,new))))
-  (if (stringp seq) (substring seq start end)
-    (let (len)
-      (and end (< end 0) (setq end (+ end (setq len (length seq)))))
-      (if (< start 0) (setq start (+ start (or len (setq len (length seq))))))
-      (cond ((listp seq)
-	     (if (> start 0) (setq seq (nthcdr start seq)))
-	     (if end
-		 (let ((res nil))
-		   (while (>= (setq end (1- end)) start)
-		     (push (pop seq) res))
-		   (nreverse res))
-	       (copy-sequence seq)))
-	    (t
-	     (or end (setq end (or len (length seq))))
-	     (let ((res (make-vector (max (- end start) 0) nil))
-		   (i 0))
-	       (while (< start end)
-		 (aset res i (aref seq start))
-		 (setq i (1+ i) start (1+ start)))
-	       res))))))
+              (macroexp-let2 nil new new
+		`(progn (cl-replace ,seq ,new :start1 ,start :end1 ,end)
+			,new)))))
+  (seq-subseq seq start end))
 
 ;;;###autoload
-(defun cl-concatenate (type &rest seqs)
+(defun cl-concatenate (type &rest sequences)
   "Concatenate, into a sequence of type TYPE, the argument SEQUENCEs.
 \n(fn TYPE SEQUENCE...)"
-  (cond ((eq type 'vector) (apply 'vconcat seqs))
-	((eq type 'string) (apply 'concat seqs))
-	((eq type 'list) (apply 'append (append seqs '(nil))))
-	(t (error "Not a sequence type name: %s" type))))
-
+  (pcase type
+    ('vector (apply #'vconcat sequences))
+    ('string (apply #'concat sequences))
+    ('list (apply #'append (append sequences '(nil))))
+    (_ (error "Not a sequence type name: %S" type))))
 
 ;;; List functions.
 
@@ -569,10 +577,10 @@ If START or END is negative, it counts from the end."
 ;;;###autoload
 (defun cl-list-length (x)
   "Return the length of list X.  Return nil if list is circular."
-  (let ((n 0) (fast x) (slow x))
-    (while (and (cdr fast) (not (and (eq fast slow) (> n 0))))
-      (setq n (+ n 2) fast (cdr (cdr fast)) slow (cdr slow)))
-    (if fast (if (cdr fast) nil (1+ n)) n)))
+  (cl-check-type x list)
+  (condition-case nil
+      (length x)
+    (circular-list)))
 
 ;;;###autoload
 (defun cl-tailp (sublist list)
@@ -589,13 +597,7 @@ If START or END is negative, it counts from the end."
 \n(fn SYMBOL PROPNAME &optional DEFAULT)"
   (declare (compiler-macro cl--compiler-macro-get)
            (gv-setter (lambda (store) (ignore def) `(put ,sym ,tag ,store))))
-  (or (get sym tag)
-      (and def
-           ;; Make sure `def' is really absent as opposed to set to nil.
-	   (let ((plist (symbol-plist sym)))
-	     (while (and plist (not (eq (car plist) tag)))
-	       (setq plist (cdr (cdr plist))))
-	     (if plist (car (cdr plist)) def)))))
+  (cl-getf (symbol-plist sym) tag def))
 (autoload 'cl--compiler-macro-get "cl-macs")
 
 ;;;###autoload
@@ -606,35 +608,28 @@ PROPLIST is a list of the sort returned by `symbol-plist'.
   (declare (gv-expander
             (lambda (do)
               (gv-letplace (getter setter) plist
-                (macroexp-let2 nil k tag
-                  (macroexp-let2 nil d def
-                    (funcall do `(cl-getf ,getter ,k ,d)
-                             (lambda (v)
-                               (macroexp-let2 nil val v
-                                 `(progn
-                                    ,(funcall setter
-                                              `(cl--set-getf ,getter ,k ,val))
-                                    ,val))))))))))
-  (setplist '--cl-getf-symbol-- plist)
-  (or (get '--cl-getf-symbol-- tag)
-      ;; Originally we called cl-get here,
-      ;; but that fails, because cl-get has a compiler macro
-      ;; definition that uses getf!
-      (when def
-        ;; Make sure `def' is really absent as opposed to set to nil.
-	(while (and plist (not (eq (car plist) tag)))
-	  (setq plist (cdr (cdr plist))))
-	(if plist (car (cdr plist)) def))))
+                (macroexp-let2* nil ((k tag) (d def))
+                  (funcall do `(cl-getf ,getter ,k ,d)
+			   (lambda (v)
+			     (macroexp-let2 nil val v
+			       `(progn
+				  ,(funcall setter
+					    `(cl--set-getf ,getter ,k ,val))
+				  ,val)))))))))
+  (let ((val-tail (cdr-safe (plist-member plist tag))))
+    (if val-tail (car val-tail) def)))
 
 ;;;###autoload
 (defun cl--set-getf (plist tag val)
-  (let ((p plist))
-    (while (and p (not (eq (car p) tag))) (setq p (cdr (cdr p))))
-    (if p (progn (setcar (cdr p) val) plist) (cl-list* tag val plist))))
+  (let ((val-tail (cdr-safe (plist-member plist tag))))
+    (if val-tail (progn (setcar val-tail val) plist)
+      (cl-list* tag val plist))))
 
 ;;;###autoload
 (defun cl--do-remf (plist tag)
   (let ((p (cdr plist)))
+    ;; Can't use `plist-member' here because it goes to the cons-cell
+    ;; of TAG and we need the one before.
     (while (and (cdr p) (not (eq (car (cdr p)) tag))) (setq p (cdr (cdr p))))
     (and (cdr p) (progn (setcdr p (cdr (cdr (cdr p)))) t))))
 
@@ -698,25 +693,232 @@ PROPLIST is a list of the sort returned by `symbol-plist'.
     (forward-sexp)))
 
 ;;;###autoload
-(defun cl-prettyexpand (form &optional full)
-  "Expand macros in FORM and insert the pretty-printed result.
-Optional argument FULL non-nil means to expand all macros,
-including `cl-block' and `cl-eval-when'."
+(defun cl-prettyexpand (form &optional _full)
+  "Expand macros in FORM and insert the pretty-printed result."
+  (declare (advertised-calling-convention (form) "27.1"))
   (message "Expanding...")
-  (let ((cl--compiling-file full)
-	(byte-compile-macro-environment nil))
-    (setq form (macroexpand-all form
-                                (and (not full) '((cl-block) (cl-eval-when)))))
+  (let ((byte-compile-macro-environment nil))
+    (setq form (macroexpand-all form))
     (message "Formatting...")
-    (prog1 (cl-prettyprint form)
+    (prog1
+        (cl-prettyprint form)
       (message ""))))
 
+;;; Integration into the online help system.
+
+(eval-when-compile (require 'cl-macs))  ;Explicitly, for cl--find-class.
+(require 'help-mode)
+
+;; FIXME: We could go crazy and add another entry so describe-symbol can be
+;; used with the slot names of CL structs (and/or EIEIO objects).
+(add-to-list 'describe-symbol-backends
+             `(nil ,#'cl-find-class ,(lambda (s _b _f) (cl-describe-type s))))
+
+(defconst cl--typedef-regexp
+  (concat "(" (regexp-opt '("defclass" "defstruct" "cl-defstruct"
+                            "cl-deftype" "deftype"))
+          "[ \t\r\n]+%s[ \t\r\n]+"))
+(with-eval-after-load 'find-func
+  (defvar find-function-regexp-alist)
+  (add-to-list 'find-function-regexp-alist
+               '(define-type . cl--typedef-regexp)))
+
+(define-button-type 'cl-help-type
+  :supertype 'help-function-def
+  'help-function #'cl-describe-type
+  'help-echo (purecopy "mouse-2, RET: describe this type"))
+
+(define-button-type 'cl-type-definition
+  :supertype 'help-function-def
+  'help-echo (purecopy "mouse-2, RET: find type definition"))
+
+(declare-function help-fns-short-filename "help-fns" (filename))
+
+;;;###autoload
+(defun cl-find-class (type) (cl--find-class type))
+
+;;;###autoload
+(defun cl-describe-type (type)
+  "Display the documentation for type TYPE (a symbol)."
+  (interactive
+   (let ((str (completing-read "Describe type: " obarray #'cl-find-class t)))
+     (if (<= (length str) 0)
+         (user-error "Abort!")
+       (list (intern str)))))
+  (help-setup-xref (list #'cl-describe-type type)
+                   (called-interactively-p 'interactive))
+  (save-excursion
+    (with-help-window (help-buffer)
+      (with-current-buffer standard-output
+        (let ((class (cl-find-class type)))
+          (if class
+              (cl--describe-class type class)
+            ;; FIXME: Describe other types (the built-in ones, or those from
+            ;; cl-deftype).
+            (user-error "Unknown type %S" type))))
+      (with-current-buffer standard-output
+        ;; Return the text we displayed.
+        (buffer-string)))))
+
+(defun cl--describe-class (type &optional class)
+  (unless class (setq class (cl--find-class type)))
+  (let ((location (find-lisp-object-file-name type 'define-type))
+        (metatype (type-of class)))
+    (insert (symbol-name type)
+            (substitute-command-keys " is a type (of kind `"))
+    (help-insert-xref-button (symbol-name metatype)
+                             'cl-help-type metatype)
+    (insert (substitute-command-keys "')"))
+    (when location
+      (insert (substitute-command-keys " in `"))
+      (help-insert-xref-button
+       (help-fns-short-filename location)
+       'cl-type-definition type location 'define-type)
+      (insert (substitute-command-keys "'")))
+    (insert ".\n")
+
+    ;; Parents.
+    (let ((pl (cl--class-parents class))
+          cur)
+      (when pl
+        (insert " Inherits from ")
+        (while (setq cur (pop pl))
+          (setq cur (cl--class-name cur))
+          (insert (substitute-command-keys "`"))
+          (help-insert-xref-button (symbol-name cur)
+                                   'cl-help-type cur)
+          (insert (substitute-command-keys (if pl "', " "'"))))
+        (insert ".\n")))
+
+    ;; Children, if available.  ¡For EIEIO!
+    (let ((ch (condition-case nil
+                  (cl-struct-slot-value metatype 'children class)
+                (cl-struct-unknown-slot nil)))
+          cur)
+      (when ch
+        (insert " Children ")
+        (while (setq cur (pop ch))
+          (insert (substitute-command-keys "`"))
+          (help-insert-xref-button (symbol-name cur)
+                                   'cl-help-type cur)
+          (insert (substitute-command-keys (if ch "', " "'"))))
+        (insert ".\n")))
+
+    ;; Type's documentation.
+    (let ((doc (cl--class-docstring class)))
+      (when doc
+        (insert "\n" doc "\n\n")))
+
+    ;; Describe all the slots in this class.
+    (cl--describe-class-slots class)
+
+    ;; Describe all the methods specific to this class.
+    (let ((generics (cl-generic-all-functions type)))
+      (when generics
+        (insert (propertize "Specialized Methods:\n\n" 'face 'bold))
+        (dolist (generic generics)
+          (insert (substitute-command-keys "`"))
+          (help-insert-xref-button (symbol-name generic)
+                                   'help-function generic)
+          (insert (substitute-command-keys "'"))
+          (pcase-dolist (`(,qualifiers ,args ,doc)
+                         (cl--generic-method-documentation generic type))
+            (insert (format " %s%S\n" qualifiers args)
+                    (or doc "")))
+          (insert "\n\n"))))))
+
+(defun cl--describe-class-slot (slot)
+  (insert
+   (concat
+    (propertize "Slot: " 'face 'bold)
+    (prin1-to-string (cl--slot-descriptor-name slot))
+    (unless (eq (cl--slot-descriptor-type slot) t)
+      (concat "    type = "
+              (prin1-to-string (cl--slot-descriptor-type slot))))
+    ;; FIXME: The default init form is treated differently for structs and for
+    ;; eieio objects: for structs, the default is nil, for eieio-objects
+    ;; it's a special "unbound" value.
+    (unless nil ;; (eq (cl--slot-descriptor-initform slot) eieio-unbound)
+      (concat "    default = "
+              (prin1-to-string (cl--slot-descriptor-initform slot))))
+    (when (alist-get :printer (cl--slot-descriptor-props slot))
+      (concat "    printer = "
+              (prin1-to-string
+               (alist-get :printer (cl--slot-descriptor-props slot)))))
+    (when (alist-get :documentation (cl--slot-descriptor-props slot))
+      (concat "\n  "
+              (substitute-command-keys
+               (alist-get :documentation (cl--slot-descriptor-props slot)))
+              "\n")))
+   "\n"))
+
+(defun cl--print-table (header rows)
+  ;; FIXME: Isn't this functionality already implemented elsewhere?
+  (let ((cols (apply #'vector (mapcar #'string-width header)))
+        (col-space 2))
+    (dolist (row rows)
+      (dotimes (i (length cols))
+        (let* ((x (pop row))
+               (curwidth (aref cols i))
+               (newwidth (if x (string-width x) 0)))
+          (if (> newwidth curwidth)
+              (setf (aref cols i) newwidth)))))
+    (let ((formats '())
+          (col 0))
+      (dotimes (i (length cols))
+        (push (concat (propertize "	"
+                                  'display
+                                  `(space :align-to ,(+ col col-space)))
+                      "%s")
+              formats)
+        (cl-incf col (+ col-space (aref cols i))))
+      (let ((format (mapconcat #'identity (nreverse formats) "")))
+        (insert (apply #'format format
+                       (mapcar (lambda (str) (propertize str 'face 'italic))
+                               header))
+                "\n")
+        (insert (apply #'format format
+                       (mapcar (lambda (str) (make-string (string-width str) ?—))
+                               header))
+                "\n")
+        (dolist (row rows)
+          (insert (apply #'format format row) "\n"))))))
+
+(defun cl--describe-class-slots (class)
+  "Print help description for the slots in CLASS.
+Outputs to the current buffer."
+  (let* ((slots (cl--class-slots class))
+         (metatype (type-of class))
+         ;; ¡For EIEIO!
+         (cslots (condition-case nil
+                     (cl-struct-slot-value metatype 'class-slots class)
+                   (cl-struct-unknown-slot nil))))
+    (insert (propertize "Instance Allocated Slots:\n\n"
+			'face 'bold))
+    (let* ((has-doc nil)
+           (slots-strings
+            (mapcar
+             (lambda (slot)
+               (list (cl-prin1-to-string (cl--slot-descriptor-name slot))
+                     (cl-prin1-to-string (cl--slot-descriptor-type slot))
+                     (cl-prin1-to-string (cl--slot-descriptor-initform slot))
+                     (let ((doc (alist-get :documentation
+                                           (cl--slot-descriptor-props slot))))
+                       (if (not doc) ""
+                         (setq has-doc t)
+                         (substitute-command-keys doc)))))
+             slots)))
+      (cl--print-table `("Name" "Type" "Default" . ,(if has-doc '("Doc")))
+                       slots-strings))
+    (insert "\n")
+    (when (> (length cslots) 0)
+      (insert (propertize "\nClass Allocated Slots:\n\n" 'face 'bold))
+      (mapc #'cl--describe-class-slot cslots))))
 
 
 (run-hooks 'cl-extra-load-hook)
 
 ;; Local variables:
-;; byte-compile-dynamic: t
 ;; generated-autoload-file: "cl-loaddefs.el"
 ;; End:
 

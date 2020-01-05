@@ -1,6 +1,6 @@
 ;; gnus-notifications.el -- Send notification on new message in Gnus
 
-;; Copyright (C) 2012-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2020 Free Software Foundation, Inc.
 
 ;; Author: Julien Danjou <julien@danjou.info>
 ;; Keywords: news
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -75,12 +75,19 @@ not get notifications."
   "Map notifications ids to messages.")
 
 (defun gnus-notifications-action (id key)
-  (when (string= key "read")
-    (let ((group-article (assoc id gnus-notifications-id-to-msg)))
-      (when group-article
-        (let ((group (cadr group-article))
-              (article (nth 2 group-article)))
-          (gnus-fetch-group group (list article)))))))
+  (let ((group-article (assoc id gnus-notifications-id-to-msg)))
+    (when group-article
+      (let ((group (cadr group-article))
+            (article (nth 2 group-article)))
+        (cond ((string= key "read")
+               (gnus-fetch-group group (list article))
+               (select-frame-set-input-focus (selected-frame)))
+              ((string= key "mark-read")
+               (gnus-update-read-articles
+                group
+                (delq article (gnus-list-of-unread-articles group)))
+               ;; gnus-group-refresh-group
+               (gnus-group-update-group group)))))))
 
 (defun gnus-notifications-notify (from subject photo-file)
   "Send a notification about a new mail.
@@ -90,7 +97,7 @@ Return a notification id if any, or t on success."
        'notifications-notify
        :title from
        :body subject
-       :actions '("read" "Read")
+       :actions '("read" "Read" "mark-read" "Mark As Read")
        :on-action 'gnus-notifications-action
        :app-icon (gnus-funcall-no-warning
                   'image-search-load-path "gnus/gnus.png")
@@ -147,7 +154,7 @@ This is typically a function to add in
   (dolist (entry gnus-newsrc-alist)
     (let ((group (car entry)))
       ;; Check that the group level is less than
-      ;; `gnus-notifications-minimum-level' and the the group has unread
+      ;; `gnus-notifications-minimum-level' and the group has unread
       ;; messages.
       (when (and (<= (gnus-group-level group) gnus-notifications-minimum-level)
                  (let ((unread (gnus-group-unread group)))
@@ -173,8 +180,11 @@ This is typically a function to add in
                   ;; Ignore mails from ourselves
                   (unless (and gnus-ignored-from-addresses
                                address
-                               (gnus-string-match-p gnus-ignored-from-addresses
-                                                    address))
+                               (cond ((functionp gnus-ignored-from-addresses)
+                                      (funcall gnus-ignored-from-addresses address))
+                                     (t (string-match-p
+					 (gnus-ignored-from-addresses)
+					 address))))
                     (let* ((photo-file (gnus-notifications-get-photo-file address))
                            (notification-id (gnus-notifications-notify
                                              (or (car address-components) address)

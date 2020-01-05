@@ -2,16 +2,21 @@
 @comment %**start of header
 @setfilename ../../info/emacs-xtra.info
 @settitle Specialized Emacs Features
+@include docstyle.texi
 @c Merge all functions, variables, and keys into the concept index.
 @syncodeindex fn cp
 @syncodeindex vr cp
 @syncodeindex ky cp
 @comment %**end of header
 
+@c This is a separate manual to avoid making the Emacs User manual too
+@c large in print.  In the Info format, the chapters included below
+@c are part of the Emacs User manual.
+
 @copying
 This manual describes specialized features of Emacs.
 
-Copyright @copyright{} 2004--2014 Free Software Foundation, Inc.
+Copyright @copyright{} 2004--2020 Free Software Foundation, Inc.
 
 @quotation
 Permission is granted to copy, distribute and/or modify this document
@@ -25,8 +30,6 @@ is included in the section entitled ``GNU Free Documentation License''.
 modify this GNU manual.''
 @end quotation
 @end copying
-
-@documentencoding UTF-8
 
 @dircategory Emacs
 @direntry
@@ -56,7 +59,7 @@ modify this GNU manual.''
 * Picture Mode::        Editing pictures made up of characters using
                          the quarter-plane screen model.
 
-* Autorevert::          Auto Reverting non-file buffers.
+* Non-File Buffers::    Auto Reverting non-file buffers.
 * Subdir Switches::     Subdirectory switches in Dired.
 * Advanced Calendar/Diary Usage:: Advanced Calendar/Diary customization.
 * Emerge::              A convenient way of merging two versions of a program.

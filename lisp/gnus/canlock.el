@@ -1,6 +1,6 @@
 ;;; canlock.el --- functions for Cancel-Lock feature
 
-;; Copyright (C) 1998-1999, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1998-1999, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Katsumi Yamaoka <yamaoka@jpl.org>
 ;; Keywords: news, cancel-lock, hmac, sha1, rfc2104
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -35,13 +35,11 @@
 ;; Verifying Cancel-Lock is mainly a function of news servers, however,
 ;; you can verify your own article using the command `canlock-verify' in
 ;; the (raw) article buffer.  You will be prompted for the password for
-;; each time if the option `canlock-password' or `canlock-password-for-
-;; verify' is nil.  Note that setting these options is a bit unsafe.
+;; each time if the option `canlock-password' or
+;; `canlock-password-for-verify' is nil.  Note that setting these
+;; options is a bit unsafe.
 
 ;;; Code:
-
-(eval-when-compile
-  (require 'cl))
 
 (require 'sha1)
 
@@ -69,17 +67,9 @@ buffer does not look like a news message."
   :type 'boolean
   :group 'canlock)
 
-(eval-when-compile
-  (defmacro canlock-string-as-unibyte (string)
-    "Return a unibyte string with the same individual bytes as STRING."
-    (if (fboundp 'string-as-unibyte)
-	(list 'string-as-unibyte string)
-      string)))
-
 (defun canlock-sha1 (message)
   "Make a SHA-1 digest of MESSAGE as a unibyte string of length 20 bytes."
-  (let (sha1-maximum-internal-length)
-    (sha1 message nil nil 'binary)))
+  (sha1 message nil nil 'binary))
 
 (defun canlock-make-cancel-key (message-id password)
   "Make a Cancel-Key header."
@@ -93,10 +83,7 @@ buffer does not look like a news message."
 			   (char-to-string (logxor 92 byte)))
 			 password "")))
     (base64-encode-string
-     (canlock-sha1
-      (concat opad
-	      (canlock-sha1
-	       (concat ipad (canlock-string-as-unibyte message-id))))))))
+     (canlock-sha1 (concat opad (canlock-sha1 (concat ipad message-id)))))))
 
 (defun canlock-narrow-to-header ()
   "Narrow the buffer to the head of the message."

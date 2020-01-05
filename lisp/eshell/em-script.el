@@ -1,6 +1,6 @@
 ;;; em-script.el --- Eshell script files  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -17,14 +17,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-(require 'eshell)
-(require 'esh-opt)
+(require 'esh-mode)
 
 ;;;###autoload
 (progn
@@ -45,7 +44,7 @@ commands, as a script file."
 (defcustom eshell-login-script (expand-file-name "login" eshell-directory-name)
   "If non-nil, a file to invoke when starting up Eshell interactively.
 This file should be a file containing Eshell commands, where comment
-lines begin with '#'."
+lines begin with `#'."
   :type 'file
   :group 'eshell-script)
 
@@ -57,11 +56,11 @@ This includes when running `eshell-command'."
 
 ;;; Functions:
 
-(defun eshell-script-initialize ()
+(defun eshell-script-initialize ()  ;Called from `eshell-mode' via intern-soft!
   "Initialize the script parsing code."
   (make-local-variable 'eshell-interpreter-alist)
   (setq eshell-interpreter-alist
-	(cons (cons #'(lambda (file args)
+	(cons (cons #'(lambda (file _args)
                         (string= (file-name-nondirectory file)
                                  "eshell"))
                     'eshell/source)
@@ -73,13 +72,14 @@ This includes when running `eshell-command'."
   ;; to ruin it for other modules
   (let (eshell-inside-quote-regexp
 	eshell-outside-quote-regexp)
-    (and (not eshell-non-interactive-p)
+    (and (not (bound-and-true-p eshell-non-interactive-p))
 	 eshell-login-script
 	 (file-readable-p eshell-login-script)
 	 (eshell-do-eval
 	  (list 'eshell-commands
 		(catch 'eshell-replace-command
-		  (eshell-source-file eshell-login-script))) t))
+		  (eshell-source-file eshell-login-script)))
+          t))
     (and eshell-rc-script
 	 (file-readable-p eshell-rc-script)
 	 (eshell-do-eval
@@ -89,8 +89,7 @@ This includes when running `eshell-command'."
 
 (defun eshell-source-file (file &optional args subcommand-p)
   "Execute a series of Eshell commands in FILE, passing ARGS.
-Comments begin with '#'."
-  (interactive "f")
+Comments begin with `#'."
   (let ((orig (point))
 	(here (point-max))
 	(inhibit-point-motion-hooks t))

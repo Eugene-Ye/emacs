@@ -1,6 +1,6 @@
-;;; ring.el --- handle rings of items
+;;; ring.el --- handle rings of items   -*- lexical-binding: t; -*-
 
-;; Copyright (C) 1992, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992, 2001-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: extensions
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -160,14 +160,15 @@ will be performed."
 	(size (ring-size ring))
 	(vect (cddr ring))
 	lst)
-    (dotimes (var (cadr ring) lst)
-      (push (aref vect (mod (+ start var) size)) lst))))
+    (dotimes (var (cadr ring))
+      (push (aref vect (mod (+ start var) size)) lst))
+    lst))
 
 (defun ring-member (ring item)
   "Return index of ITEM if on RING, else nil.
 Comparison is done via `equal'.  The index is 0-based."
   (catch 'found
-    (dotimes (ind (ring-length ring) nil)
+    (dotimes (ind (ring-length ring))
       (when (equal item (ring-ref ring ind))
 	(throw 'found ind)))))
 
@@ -188,17 +189,28 @@ Raise error if ITEM is not in the RING."
 (defun ring-extend (ring x)
   "Increase the size of RING by X."
   (when (and (integerp x) (> x 0))
-    (let* ((hd       (car ring))
-	   (length   (ring-length ring))
-	   (size     (ring-size ring))
-	   (old-vec  (cddr ring))
-	   (new-vec  (make-vector (+ size x) nil)))
-      (setcdr ring (cons length new-vec))
-      ;; If the ring is wrapped, the existing elements must be written
-      ;; out in the right order.
-      (dotimes (j length)
-	(aset new-vec j (aref old-vec (mod (+ hd j) size))))
-      (setcar ring 0))))
+    (ring-resize ring (+ x (ring-size ring)))))
+
+(defun ring-resize (ring size)
+  "Set the size of RING to SIZE.
+If the new size is smaller, then the oldest items in the ring are
+discarded."
+  (when (integerp size)
+    (let ((length (ring-length ring))
+	  (new-vec (make-vector size nil)))
+      (if (= length 0)
+          (setcdr ring (cons 0 new-vec))
+        (let* ((hd (car ring))
+	       (old-size (ring-size ring))
+	       (old-vec (cddr ring))
+               (copy-length (min size length))
+               (copy-hd (mod (+ hd (- length copy-length)) length)))
+          (setcdr ring (cons copy-length new-vec))
+          ;; If the ring is wrapped, the existing elements must be written
+          ;; out in the right order.
+          (dotimes (j copy-length)
+	    (aset new-vec j (aref old-vec (mod (+ copy-hd j) old-size))))
+          (setcar ring 0))))))
 
 (defun ring-insert+extend (ring item &optional grow-p)
   "Like `ring-insert', but if GROW-P is non-nil, then enlarge ring.

@@ -1,6 +1,6 @@
-;;; delsel.el --- delete selection if you insert
+;;; delsel.el --- delete selection if you insert  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992, 1997-1998, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1992, 1997-1998, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Matthieu Devin <devin@lucid.com>
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -35,22 +35,28 @@
 ;; property on their symbols; commands which insert text but don't
 ;; have this property won't delete the selection.  It can be one of
 ;; the values:
-;;  'yank
+;;  `yank'
 ;;      For commands which do a yank; ensures the region about to be
-;;      deleted isn't yanked.
-;;  'supersede
+;;      deleted isn't immediately yanked back, which would make the
+;;      command a no-op.
+;;  `supersede'
 ;;      Delete the active region and ignore the current command,
-;;      i.e. the command will just delete the region.
-;;  'kill
+;;      i.e. the command will just delete the region.  This is for
+;;      commands that normally delete small amounts of text, like
+;;      a single character -- they will instead delete the whole
+;;      active region.
+;;  `kill'
 ;;      `kill-region' is used on the selection, rather than
 ;;      `delete-region'.  (Text selected with the mouse will typically
 ;;      be yankable anyhow.)
 ;;  t
 ;;      The normal case: delete the active region prior to executing
 ;;      the command which will insert replacement text.
-;;  <function>
+;;  FUNCTION
 ;;      For commands which need to dynamically determine this behavior.
-;;      The function should return one of the above values or nil.
+;;      FUNCTION should take no argument and return one of the above
+;;      values, or nil.  In the latter case, FUNCTION should itself
+;;      do with the active region whatever is appropriate."
 
 ;;; Code:
 
@@ -64,13 +70,13 @@ Value must be the register (key) to use.")
 ;;;###autoload
 (define-minor-mode delete-selection-mode
   "Toggle Delete Selection mode.
-With a prefix argument ARG, enable Delete Selection mode if ARG
-is positive, and disable it otherwise.  If called from Lisp,
-enable the mode if ARG is omitted or nil.
 
 When Delete Selection mode is enabled, typed text replaces the selection
 if the selection is active.  Otherwise, typed text is just inserted at
-point regardless of any selection."
+point regardless of any selection.
+
+See `delete-selection-helper' and `delete-selection-pre-hook' for
+information on adapting behavior of commands in Delete Selection mode."
   :global t :group 'editing-basics
   (if (not delete-selection-mode)
       (remove-hook 'pre-command-hook 'delete-selection-pre-hook)
@@ -93,8 +99,7 @@ If KILLP in not-nil, the active region is killed instead of deleted."
           (cons (current-buffer)
                 (and (consp buffer-undo-list) (car buffer-undo-list)))))
    (t
-    (funcall region-extract-function 'delete-only)))
-  t)
+    (funcall region-extract-function 'delete-only))))
 
 (defun delete-selection-repeat-replace-region (arg)
   "Repeat replacing text of highlighted region with typed text.
@@ -152,22 +157,29 @@ With ARG, repeat that many times.  `C-u' means until end of buffer."
   "Delete selection according to TYPE:
  `yank'
      For commands which do a yank; ensures the region about to be
-     deleted isn't yanked.
+     deleted isn't immediately yanked back, which would make the
+     command a no-op.
  `supersede'
      Delete the active region and ignore the current command,
-     i.e. the command will just delete the region.
+     i.e. the command will just delete the region.  This is for
+     commands that normally delete small amounts of text, like
+     a single character -- they will instead delete the whole
+     active region.
  `kill'
      `kill-region' is used on the selection, rather than
-     `delete-region'.  (Text selected with the mouse will typically
-     be yankable anyhow.)
- t
-     The normal case: delete the active region prior to executing
-     the command which will insert replacement text.
+     `delete-region'.  (Text selected with the mouse will
+     typically be yankable anyhow.)
  FUNCTION
-     For commands which need to dynamically determine this behavior.
-     FUNCTION should take no argument and return one of the above values or nil."
+     For commands which need to dynamically determine this
+     behavior.  FUNCTION should take no argument and return a
+     value acceptable as TYPE, or nil.  In the latter case,
+     FUNCTION should itself do with the active region whatever is
+     appropriate.
+ Other non-nil values
+     The normal case: delete the active region prior to executing
+     the command which will insert replacement text."
   (condition-case data
-      (cond ((eq type 'kill)
+      (cond ((eq type 'kill)            ;Deprecated, backward compatibility.
 	     (delete-active-region t)
 	     (if (and overwrite-mode
 		      (eq this-command 'self-insert-command))
@@ -236,10 +248,23 @@ See `delete-selection-helper'."
     (delete-selection-helper (and (symbolp this-command)
                                   (get this-command 'delete-selection)))))
 
-(put 'self-insert-command 'delete-selection
-     (lambda ()
-       (not (run-hook-with-args-until-success
-             'self-insert-uses-region-functions))))
+(defun delete-selection-uses-region-p ()
+  "Return t when `delete-selection-mode' should not delete the region.
+
+The `self-insert-command' could be the current command or may be
+called by the current command.  If this function returns nil,
+then `delete-selection' is allowed to delete the region.
+
+This function is intended for use as the value of the
+`delete-selection' property of a command, and shouldn't be used
+for anything else.  In particular, `self-insert-command' has this
+function as its `delete-selection' property, so that \"electric\"
+self-insert commands that act on the region could adapt themselves
+to `delete-selection-mode'."
+  (not (run-hook-with-args-until-success
+        'self-insert-uses-region-functions)))
+
+(put 'self-insert-command 'delete-selection 'delete-selection-uses-region-p)
 
 (put 'insert-char 'delete-selection t)
 (put 'quoted-insert 'delete-selection t)
@@ -255,7 +280,7 @@ See `delete-selection-helper'."
 (put 'newline-and-indent 'delete-selection t)
 (put 'newline 'delete-selection t)
 (put 'electric-newline-and-maybe-indent 'delete-selection t)
-(put 'open-line 'delete-selection 'kill)
+(put 'open-line 'delete-selection t)
 
 ;; This is very useful for canceling a selection in the minibuffer without
 ;; aborting the minibuffer.
@@ -269,18 +294,10 @@ then it takes a second \\[keyboard-quit] to abort the minibuffer."
     (abort-recursive-edit)))
 
 (define-key minibuffer-local-map "\C-g" 'minibuffer-keyboard-quit)
-(define-key minibuffer-local-ns-map "\C-g" 'minibuffer-keyboard-quit)
-(define-key minibuffer-local-completion-map "\C-g" 'minibuffer-keyboard-quit)
-(define-key minibuffer-local-must-match-map "\C-g" 'minibuffer-keyboard-quit)
-(define-key minibuffer-local-isearch-map "\C-g" 'minibuffer-keyboard-quit)
 
 (defun delsel-unload-function ()
   "Unload the Delete Selection library."
   (define-key minibuffer-local-map "\C-g" 'abort-recursive-edit)
-  (define-key minibuffer-local-ns-map "\C-g" 'abort-recursive-edit)
-  (define-key minibuffer-local-completion-map "\C-g" 'abort-recursive-edit)
-  (define-key minibuffer-local-must-match-map "\C-g" 'abort-recursive-edit)
-  (define-key minibuffer-local-isearch-map "\C-g" 'abort-recursive-edit)
   (dolist (sym '(self-insert-command insert-char quoted-insert yank
                  clipboard-yank insert-register newline-and-indent
                  reindent-then-newline-and-indent newline open-line))

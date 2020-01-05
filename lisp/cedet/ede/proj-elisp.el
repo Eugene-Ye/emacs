@@ -1,6 +1,6 @@
 ;;; ede-proj-elisp.el --- EDE Generic Project Emacs Lisp support
 
-;; Copyright (C) 1998-2005, 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2005, 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: project, make
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -57,7 +57,7 @@ Each package's directory should also appear in :aux-packages via a package name.
   "This target consists of a group of lisp files.
 A lisp target may be one general program with many separate lisp files in it.")
 
-(defmethod ede-proj-makefile-insert-rules :after ((this ede-proj-target-elisp))
+(cl-defmethod ede-proj-makefile-insert-rules :after ((this ede-proj-target-elisp))
     "Insert rules needed by THIS target.
 This inserts the PRELOADS target-local variable."
     (let ((preloads (oref this pre-load-packages)))
@@ -67,7 +67,7 @@ This inserts the PRELOADS target-local variable."
 			(mapconcat 'identity preloads " ")))))
     (insert "\n"))
 
-(defmethod ede-proj-makefile-dependencies ((this ede-proj-target-elisp))
+(cl-defmethod ede-proj-makefile-dependencies ((this ede-proj-target-elisp))
   "Return a string representing the dependencies for THIS.
 Some compilers only use the first element in the dependencies, others
 have a list of intermediates (object files), and others don't care.
@@ -77,21 +77,18 @@ For Emacs Lisp, return addsuffix command on source files."
 	  (ede-proj-makefile-sourcevar this)))
 
 (defvar ede-source-emacs
-  (ede-sourcecode "ede-emacs-source"
-		  :name "Emacs Lisp"
+  (ede-sourcecode :name "Emacs Lisp"
 		  :sourcepattern "\\.el$"
 		  :garbagepattern '("*.elc"))
   "Emacs Lisp source code definition.")
 
 (defvar ede-emacs-compiler
   (ede-compiler
-   "ede-emacs-compiler"
    :name "emacs"
    :variables '(("EMACS" . "emacs")
 		("EMACSFLAGS" . "-batch --no-site-file --eval '(setq debug-on-error t)'")
 		("require" . "$(foreach r,$(1),(require (quote $(r))))"))
    :rules (list (ede-makefile-rule
-		 "elisp-inference-rule"
 		 :target "%.elc"
 		 :dependencies "%.el"
 		 :rules '("$(EMACS) $(EMACSFLAGS) $(addprefix -L ,$(LOADPATH)) \
@@ -103,13 +100,13 @@ For Emacs Lisp, return addsuffix command on source files."
   "Compile Emacs Lisp programs.")
 
 (defvar ede-xemacs-compiler
-  (clone ede-emacs-compiler "ede-xemacs-compiler"
+  (clone ede-emacs-compiler
 	 :name "xemacs"
 	 :variables '(("EMACS" . "xemacs")))
   "Compile Emacs Lisp programs with XEmacs.")
 
 ;;; Claiming files
-(defmethod ede-buffer-mine ((this ede-proj-target-elisp) buffer)
+(cl-defmethod ede-buffer-mine ((this ede-proj-target-elisp) buffer)
   "Return t if object THIS lays claim to the file in BUFFER.
 Lays claim to all .elc files that match .el files in this target."
   (if (string-match "\\.elc$" (buffer-file-name buffer))
@@ -121,7 +118,7 @@ Lays claim to all .elc files that match .el files in this target."
 	;; Is this in our list.
 	(member fname (oref this auxsource))
 	)
-    (call-next-method) ; The usual thing.
+    (cl-call-next-method) ; The usual thing.
     ))
 
 ;;; Emacs Lisp Compiler
@@ -145,7 +142,7 @@ Lays claim to all .elc files that match .el files in this target."
 	      packages (cdr packages))))
     paths))
 
-(defmethod project-compile-target ((obj ede-proj-target-elisp))
+(cl-defmethod project-compile-target ((obj ede-proj-target-elisp))
   "Compile all sources in a Lisp target OBJ.
 Bonus: Return a cons cell: (COMPILED . UPTODATE)."
   (let* ((proj (ede-target-parent obj))
@@ -173,7 +170,7 @@ Bonus: Return a cons cell: (COMPILED . UPTODATE)."
     (message "All Emacs Lisp sources are up to date in %s" (eieio-object-name obj))
     (cons comp utd)))
 
-(defmethod ede-update-version-in-source ((this ede-proj-target-elisp) version)
+(cl-defmethod ede-update-version-in-source ((this ede-proj-target-elisp) version)
   "In a Lisp file, updated a version string for THIS to VERSION.
 There are standards in Elisp files specifying how the version string
 is found, such as a `-version' variable, or the standard header."
@@ -195,12 +192,12 @@ is found, such as a `-version' variable, or the standard header."
 		    (insert version)))))
 	  (setq vs (cdr vs)))
 	;; The next method will include comments such as "Version:"
-	(call-next-method))))
+	(cl-call-next-method))))
 
 
 ;;; Makefile generation functions
 ;;
-(defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-elisp))
+(cl-defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-elisp))
   "Return the variable name for THIS's sources."
   (cond ((ede-proj-automake-p) '("lisp_LISP" . share))
 	(t (concat (ede-pmake-varname this) "_LISP"))))
@@ -219,7 +216,7 @@ is found, such as a `-version' variable, or the standard header."
 	    (setq items (cdr items)))))
       ))
 
-(defmethod ede-proj-makefile-insert-variables :AFTER ((this ede-proj-target-elisp))
+(cl-defmethod ede-proj-makefile-insert-variables :after ((this ede-proj-target-elisp))
   "Insert variables needed by target THIS."
   (let ((newitems (if (oref this aux-packages)
 		      (ede-proj-elisp-packages-to-loadpath
@@ -244,9 +241,9 @@ is found, such as a `-version' variable, or the standard header."
 	  )
       (error "Don't know how to update load path"))))
 
-(defmethod ede-proj-tweak-autoconf ((this ede-proj-target-elisp))
+(cl-defmethod ede-proj-tweak-autoconf ((this ede-proj-target-elisp))
   "Tweak the configure file (current buffer) to accommodate THIS."
-  (call-next-method)
+  (cl-call-next-method)
   ;; Ok, now we have to tweak the autoconf provided `elisp-comp' program.
   (let ((ec (ede-expand-filename this "elisp-comp" 'newfile))
 	(enable-local-variables nil))
@@ -270,7 +267,7 @@ is found, such as a `-version' variable, or the standard header."
 	(save-buffer)
 	(kill-buffer)))))
 
-(defmethod ede-proj-flush-autoconf ((this ede-proj-target-elisp))
+(cl-defmethod ede-proj-flush-autoconf ((this ede-proj-target-elisp))
   "Flush the configure file (current buffer) to accommodate THIS."
   ;; Remove crufty old paths from elisp-compile
   (let ((ec (ede-expand-filename this "elisp-comp" 'newfile))
@@ -311,20 +308,19 @@ Files do not need to be added to this target.")
 
 
 ;;; Claiming files
-(defmethod ede-buffer-mine ((this ede-proj-target-elisp-autoloads) buffer)
+(cl-defmethod ede-buffer-mine ((this ede-proj-target-elisp-autoloads) buffer)
   "Return t if object THIS lays claim to the file in BUFFER.
 Lays claim to all .elc files that match .el files in this target."
   (if (string-match
        (concat (regexp-quote (oref this autoload-file)) "$")
        (buffer-file-name buffer))
       t
-    (call-next-method) ; The usual thing.
+    (cl-call-next-method) ; The usual thing.
     ))
 
 ;; Compilers
 (defvar ede-emacs-cedet-autogen-compiler
   (ede-compiler
-   "ede-emacs-autogen-compiler"
    :name "emacs"
    :variables '(("EMACS" . "emacs")
 		("EMACSFLAGS" . "-batch --no-site-file --eval '(setq debug-on-error t)'")
@@ -333,12 +329,12 @@ Lays claim to all .elc files that match .el files in this target."
    '("$(EMACS) $(EMACSFLAGS) $(addprefix -L ,$(LOADPATH)) \
 --eval '(setq generated-autoload-file \"$(abspath $(LOADDEFS))\")' \
 -f batch-update-autoloads $(abspath $(LOADDIRS))")
-   :rules (list (ede-makefile-rule "clean-autoloads" :target "clean-autoloads" :phony t :rules '("rm -f $(LOADDEFS)")))
+   :rules (list (ede-makefile-rule :target "clean-autoloads" :phony t :rules '("rm -f $(LOADDEFS)")))
    :sourcetype '(ede-source-emacs)
    )
   "Build an autoloads file.")
 
-(defmethod ede-proj-compilers ((obj ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-compilers ((obj ede-proj-target-elisp-autoloads))
   "List of compilers being used by OBJ.
 If the `compiler' slot is empty, get the car of the compilers list."
   (let ((comp (oref obj compiler)))
@@ -351,7 +347,7 @@ If the `compiler' slot is empty, get the car of the compilers list."
 	(setq comp (list (car avail)))))
     comp))
 
-(defmethod ede-proj-makefile-insert-source-variables ((this ede-proj-target-elisp-autoloads)
+(cl-defmethod ede-proj-makefile-insert-source-variables ((this ede-proj-target-elisp-autoloads)
 						      &optional
 						      moresource)
   "Insert the source variables needed by THIS.
@@ -359,16 +355,16 @@ Optional argument MORESOURCE is a list of additional sources to add to the
 sources variable."
   nil)
 
-(defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-elisp-autoloads))
   "Return the variable name for THIS's sources."
   nil) ; "LOADDEFS")
 
-(defmethod ede-proj-makefile-dependencies ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-makefile-dependencies ((this ede-proj-target-elisp-autoloads))
   "Return a string representing the dependencies for THIS.
 Always return an empty string for an autoloads generator."
   "")
 
-(defmethod ede-proj-makefile-insert-variables :AFTER ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-makefile-insert-variables :after ((this ede-proj-target-elisp-autoloads))
   "Insert variables needed by target THIS."
   (ede-pmake-insert-variable-shared "LOADDEFS"
     (insert (oref this autoload-file)))
@@ -378,7 +374,7 @@ Always return an empty string for an autoloads generator."
                        " ")))
   )
 
-(defmethod project-compile-target ((obj ede-proj-target-elisp-autoloads))
+(cl-defmethod project-compile-target ((obj ede-proj-target-elisp-autoloads))
   "Create or update the autoload target."
   (require 'cedet-autogen)
   (let ((default-directory (ede-expand-filename obj ".")))
@@ -387,13 +383,13 @@ Always return an empty string for an autoloads generator."
 	   (oref obj autoload-dirs))
     ))
 
-(defmethod ede-update-version-in-source ((this ede-proj-target-elisp-autoloads) version)
+(cl-defmethod ede-update-version-in-source ((this ede-proj-target-elisp-autoloads) version)
   "In a Lisp file, updated a version string for THIS to VERSION.
 There are standards in Elisp files specifying how the version string
 is found, such as a `-version' variable, or the standard header."
   nil)
 
-(defmethod ede-proj-makefile-insert-dist-dependencies ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-makefile-insert-dist-dependencies ((this ede-proj-target-elisp-autoloads))
   "Insert any symbols that the DIST rule should depend on.
 Emacs Lisp autoload files ship the generated .el files.
 Argument THIS is the target which needs to insert an info file."
@@ -402,18 +398,18 @@ Argument THIS is the target which needs to insert an info file."
   (insert " " (ede-proj-makefile-target-name this))
   )
 
-(defmethod ede-proj-makefile-insert-dist-filepatterns ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-makefile-insert-dist-filepatterns ((this ede-proj-target-elisp-autoloads))
   "Insert any symbols that the DIST rule should distribute.
 Emacs Lisp autoload files ship the generated .el files.
 Argument THIS is the target which needs to insert an info file."
   (insert " " (oref this autoload-file))
   )
 
-(defmethod ede-proj-tweak-autoconf ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-tweak-autoconf ((this ede-proj-target-elisp-autoloads))
   "Tweak the configure file (current buffer) to accommodate THIS."
   (error "Autoloads not supported in autoconf yet"))
 
-(defmethod ede-proj-flush-autoconf ((this ede-proj-target-elisp-autoloads))
+(cl-defmethod ede-proj-flush-autoconf ((this ede-proj-target-elisp-autoloads))
   "Flush the configure file (current buffer) to accommodate THIS."
   nil)
 

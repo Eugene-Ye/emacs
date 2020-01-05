@@ -1,6 +1,6 @@
 ;;; isearchb --- a marriage between iswitchb and isearch
 
-;; Copyright (C) 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -75,7 +75,11 @@
 ;;   killing iswitchb.el and then trying to switch back is broken
 ;;   make sure TAB isn't broken
 
-(require 'iswitchb)
+;;; Code:
+
+;; FIXME: Don't rely on iswitchb!  See bug#36260.
+(with-suppressed-warnings ((obsolete iswitchb))
+  (require 'iswitchb))
 
 (defgroup isearchb nil
   "Switch between buffers using a mechanism like isearch."
@@ -118,7 +122,7 @@ Its purpose is to pass different call arguments to
   (interactive)
   (let* ((prompt "iswitch ")
 	 (iswitchb-method 'samewindow)
-	 (buf (iswitchb-read-buffer prompt nil nil iswitchb-text t)))
+	 (buf (iswitchb-read-buffer prompt nil nil nil iswitchb-text t)))
     (if (eq iswitchb-exit 'findfile)
 	(call-interactively 'find-file)
       (when buf

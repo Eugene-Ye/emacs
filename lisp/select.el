@@ -1,6 +1,6 @@
 ;;; select.el --- lisp portion of standard selection support  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1993-1994, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2001-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: internal
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -49,16 +49,17 @@ the current system default encoding on 9x/Me, `utf-16le-dos'
 
 For X Windows:
 When sending text via selection and clipboard, if the target
-data-type matches with the type of this coding system, it is used
-for encoding the text.  Otherwise (including the case that this
-variable is nil), a proper coding system is used as below:
+data-type matches this coding system according to the table
+below, it is used for encoding the text.  Otherwise (including
+the case that this variable is nil), a proper coding system is
+selected as below:
 
 data-type	coding system
 ---------	-------------
 UTF8_STRING	utf-8
 COMPOUND_TEXT	compound-text-with-extensions
 STRING		iso-latin-1
-C_STRING	no-conversion
+C_STRING	raw-text-unix
 
 When receiving text, if this coding system is non-nil, it is used
 for decoding regardless of the data-type.  If this is nil, a
@@ -86,6 +87,8 @@ After the communication, this variable is set to nil.")
 ;; Only declared obsolete in 23.3.
 (define-obsolete-function-alias 'x-selection 'x-get-selection "at least 19.34")
 
+(define-obsolete-variable-alias 'x-select-enable-clipboard
+  'select-enable-clipboard "25.1")
 (defcustom select-enable-clipboard t
   "Non-nil means cutting and pasting uses the clipboard.
 This can be in addition to, but in preference to, the primary selection,
@@ -94,18 +97,16 @@ if applicable (i.e. under X11)."
   :group 'killing
   ;; The GNU/Linux version changed in 24.1, the MS-Windows version did not.
   :version "24.1")
-(define-obsolete-variable-alias 'x-select-enable-clipboard
-  'select-enable-clipboard "25.1")
 
+(define-obsolete-variable-alias 'x-select-enable-primary
+  'select-enable-primary "25.1")
 (defcustom select-enable-primary nil
-  "Non-nil means cutting and pasting uses the primary selection
+  "Non-nil means cutting and pasting uses the primary selection.
 The existence of a primary selection depends on the underlying GUI you use.
 E.g. it doesn't exist under MS-Windows."
   :type 'boolean
   :group 'killing
-  :version "24.1")
-(define-obsolete-variable-alias 'x-select-enable-primary
-  'select-enable-primary "25.1")
+  :version "25.1")
 
 ;; We keep track of the last text selected here, so we can check the
 ;; current selection against it, and avoid passing back our own text
@@ -159,12 +160,11 @@ The value nil is the same as the list (UTF8_STRING COMPOUND_TEXT STRING)."
 		      (const TEXT)))
   :group 'killing)
 
-;; Get a selection value of type TYPE by calling gui-get-selection with
-;; an appropriate DATA-TYPE argument decided by `x-select-request-type'.
-;; The return value is already decoded.  If gui-get-selection causes an
-;; error, this function return nil.
-
 (defun gui--selection-value-internal (type)
+  "Get a selection value of type TYPE.
+Call `gui-get-selection' with an appropriate DATA-TYPE argument
+decided by `x-select-request-type'.  The return value is already
+decoded.  If `gui-get-selection' signals an error, return nil."
   (let ((request-type (if (eq window-system 'x)
                           (or x-select-request-type
                               '(UTF8_STRING COMPOUND_TEXT STRING))
@@ -231,11 +231,11 @@ The value nil is the same as the list (UTF8_STRING COMPOUND_TEXT STRING)."
 (defun x-get-clipboard ()
   "Return text pasted to the clipboard."
   (declare (obsolete gui-get-selection "25.1"))
-  (gui-call gui-get-selection 'CLIPBOARD 'STRING))
+  (gui-backend-get-selection 'CLIPBOARD 'STRING))
 
 (defun gui-get-primary-selection ()
   "Return the PRIMARY selection, or the best emulation thereof."
-  (or (gui-get-selection 'PRIMARY)
+  (or (gui--selection-value-internal 'PRIMARY)
       (and (fboundp 'w32-get-selection-value)
            (eq (framep (selected-frame)) 'w32)
            ;; MS-Windows emulates PRIMARY in x-get-selection, but only
@@ -248,37 +248,36 @@ The value nil is the same as the list (UTF8_STRING COMPOUND_TEXT STRING)."
 
 ;;; Lower-level, backend dependent selection handling.
 
-(gui-method-declare gui-get-selection #'ignore
+(cl-defgeneric gui-backend-get-selection (_selection-symbol _target-type)
   "Return selected text.
-Called with 2 arguments: (SELECTION-SYMBOL TARGET-TYPE)
 SELECTION-SYMBOL is typically `PRIMARY', `SECONDARY', or `CLIPBOARD'.
 \(Those are literal upper-case symbol names, since that's what X expects.)
-TARGET-TYPE is the type of data desired, typically `STRING'.")
+TARGET-TYPE is the type of data desired, typically `STRING'."
+  nil)
 
-(gui-method-declare gui-set-selection #'ignore
+(cl-defgeneric gui-backend-set-selection (_selection _value)
   "Method to assert a selection of type SELECTION and value VALUE.
 SELECTION is a symbol, typically `PRIMARY', `SECONDARY', or `CLIPBOARD'.
 If VALUE is nil and we own the selection SELECTION, disown it instead.
 Disowning it means there is no such selection.
 \(Those are literal upper-case symbol names, since that's what X expects.)
 VALUE is typically a string, or a cons of two markers, but may be
-anything that the functions on `selection-converter-alist' know about.
+anything that the functions on `selection-converter-alist' know about."
+  nil)
 
-Called with 2 args: (SELECTION VALUE).")
-
-(gui-method-declare gui-selection-owner-p #'ignore
+(cl-defgeneric gui-backend-selection-owner-p (_selection)
   "Whether the current Emacs process owns the given X Selection.
-Called with one argument: (SELECTION).
 The arg should be the name of the selection in question, typically one of
 the symbols `PRIMARY', `SECONDARY', or `CLIPBOARD'.
-\(Those are literal upper-case symbol names, since that's what X expects.)")
+\(Those are literal upper-case symbol names, since that's what X expects.)"
+  nil)
 
-(gui-method-declare gui-selection-exists-p #'ignore
+(cl-defgeneric gui-backend-selection-exists-p (_selection)
   "Whether there is an owner for the given X Selection.
-Called with one argument: (SELECTION).
 The arg should be the name of the selection in question, typically one of
 the symbols `PRIMARY', `SECONDARY', or `CLIPBOARD'.
-\(Those are literal upper-case symbol names, since that's what X expects.)")
+\(Those are literal upper-case symbol names, since that's what X expects.)"
+  nil)
 
 (defun gui-get-selection (&optional type data-type)
   "Return the value of an X Windows selection.
@@ -292,10 +291,12 @@ all upper-case names.  The most often used ones, in addition to
 `PRIMARY', are `SECONDARY' and `CLIPBOARD'.
 
 DATA-TYPE is usually `STRING', but can also be one of the symbols
-in `selection-converter-alist', which see.  This argument is
-ignored on NS, MS-Windows and MS-DOS."
-  (let ((data (gui-call gui-get-selection (or type 'PRIMARY)
-                        (or data-type 'STRING))))
+in `selection-converter-alist', which see.  Window systems other
+than X usually support only a small subset of these symbols, in
+addition to `STRING'; MS-Windows supports `TARGETS', which reports
+the formats available in the clipboard if TYPE is `CLIPBOARD'."
+  (let ((data (gui-backend-get-selection (or type 'PRIMARY)
+                                         (or data-type 'STRING))))
     (when (and (stringp data)
 	       (setq data-type (get-text-property 0 'foreign-selection data)))
       (let ((coding (or next-selection-coding-system
@@ -308,6 +309,10 @@ ignored on NS, MS-Windows and MS-DOS."
                           (_ (error "Unknown selection data type: %S"
                                     type))))))
         (setq data (if coding (decode-coding-string data coding)
+                     ;; This is for C_STRING case.
+                     ;; We want to convert each non-ASCII byte to the
+                     ;; corresponding eight-bit character, which has
+                     ;; a codepoint >= #x3FFF00.
                      (string-to-multibyte data))))
       (setq next-selection-coding-system nil)
       (put-text-property 0 (length data) 'foreign-selection data-type data))
@@ -351,7 +356,7 @@ are not available to other programs."
 	     valid))
       (signal 'error (list "invalid selection" data)))
   (or type (setq type 'PRIMARY))
-  (gui-call gui-set-selection type data)
+  (gui-backend-set-selection type data)
   data)
 (define-obsolete-function-alias 'x-set-selection 'gui-set-selection "25.1")
 
@@ -471,10 +476,21 @@ two markers or an overlay.  Otherwise, it is nil."
 	    (setq str (encode-coding-string str coding)))
 
 	   ((eq type 'C_STRING)
-	    (setq str (string-make-unibyte str)))
+            ;; According to ICCCM Protocol v2.0 (para 2.7.1), C_STRING
+            ;; is a zero-terminated sequence of raw bytes that
+            ;; shouldn't be interpreted as text in any encoding.
+            ;; Therefore, if STR is unibyte (the normal case), we use
+            ;; it as-is; otherwise we assume some of the characters
+            ;; are eight-bit and ensure they are converted to their
+            ;; single-byte representation.
+            (or (null (multibyte-string-p str))
+                (setq str (encode-coding-string str 'raw-text-unix))))
 
 	   (t
 	    (error "Unknown selection type: %S" type)))))
+
+      ;; Most programs are unable to handle NUL bytes in strings.
+      (setq str (replace-regexp-in-string "\0" "\\0" str t t))
 
       (setq next-selection-coding-system nil)
       (cons type str))))
@@ -511,7 +527,7 @@ two markers or an overlay.  Otherwise, it is nil."
     (apply 'vector all)))
 
 (defun xselect-convert-to-delete (selection _type _value)
-  (gui-call gui-set-selection selection nil)
+  (gui-backend-set-selection selection nil)
   ;; A return value of nil means that we do not know how to do this conversion,
   ;; and replies with an "error".  A return value of NULL means that we have
   ;; done the conversion (and any side-effects) but have no value to return.

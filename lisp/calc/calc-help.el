@@ -1,9 +1,8 @@
 ;;; calc-help.el --- help display functions for Calc,
 
-;; Copyright (C) 1990-1993, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
-;; Maintainer: Jay Belanger <jay.p.belanger@gmail.com>
 
 ;; This file is part of GNU Emacs.
 
@@ -18,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -78,14 +77,14 @@ C-w  Describe how there is no warranty for Calc."
 	  (select-window (get-buffer-window "*Help*"))
 	  (while (progn
 		   (message "Calc Help options: Help, Info, ...  press SPC, DEL to scroll, C-g to cancel")
-		   (memq (car (setq key (calc-read-key t)))
+		   (memq (setq key (read-event))
 			 '(?  ?\C-h ?\C-? ?\C-v ?\M-v)))
 	    (condition-case err
-		(if (memq (car key) '(?  ?\C-v))
+		(if (memq key '(? ?\C-v))
 		    (scroll-up)
 		  (scroll-down))
 	      (error (beep)))))
-	(calc-unread-command (cdr key))
+	(calc-unread-command key)
 	(calc-help-prefix nil))
     (let ((calc-dispatch-help t))
       (calc-help-prefix arg))))
@@ -173,7 +172,7 @@ C-w  Describe how there is no warranty for Calc."
 	  (setq desc (concat "M-" (substring desc 4))))
       (while (string-match "^M-# \\(ESC \\|C-\\)" desc)
 	(setq desc (concat "M-# " (substring desc (match-end 0)))))
-      (if (string-match "\\(DEL\\|\\LFD\\|RET\\|SPC\\|TAB\\)" desc)
+      (if (string-match "\\(DEL\\|LFD\\|RET\\|SPC\\|TAB\\)" desc)
           (setq desc (replace-match "<\\&>" nil nil desc)))
       (if briefly
 	  (let ((msg (with-current-buffer (get-buffer-create "*Calc Summary*")
@@ -239,7 +238,7 @@ C-w  Describe how there is no warranty for Calc."
 		      (setq prompts (substring prompts 0 (match-beginning 0))))
 		  (if (string-match "\\` +" prompts)
 		      (setq prompts (substring prompts (match-end 0))))
-		  (setq msg (format
+		  (setq msg (format-message
 			     "%s:  %s%s`%s'%s%s %s%s"
 			     (if (string-match
 				  "\\`\\(calc-[-a-zA-Z0-9]+\\) *\\(.*\\)\\'"
@@ -256,8 +255,8 @@ C-w  Describe how there is no warranty for Calc."
 			   msg
 			   (if (equal notes "") ""
 			     (format "  (?=notes %s)" notes)))
-		  (let ((key (calc-read-key t)))
-		    (if (eq (car key) ??)
+		  (let ((key (read-event)))
+		    (if (eq key ??)
 			(if (equal notes "")
 			    (message "No notes for this command")
 			  (while (string-match "," notes)
@@ -281,7 +280,7 @@ C-w  Describe how there is no warranty for Calc."
 				(princ (buffer-substring pt (point))))
 			      (setq notes (cdr notes)))
 			    (help-print-return-message)))
-		      (calc-unread-command (cdr key)))))
+		      (calc-unread-command key))))
 	      (if (or (null defn) (integerp defn))
 		  (message "%s is undefined" desc)
 		(message "%s runs the command %s"
@@ -364,23 +363,21 @@ C-w  Describe how there is no warranty for Calc."
 	  (error "Can't find `%s' in %s" thing where)))
     (let (Info-history)
       (Info-goto-node (buffer-substring (match-beginning 1) (match-end 1))))
-    (or (let ((case-fold-search nil))
-	  (or (re-search-forward (format "\\[`%s'\\]\\|(`%s')\\|\\<The[ \n]`%s'"
-                                         (or target (regexp-quote thing))
-                                         (or target (regexp-quote thing))
-                                         (or target (regexp-quote thing))) nil t)
-	      (and not-quoted
-		   (let ((case-fold-search t))
-		     (search-forward (or target thing) nil t)))
-	      (search-forward (format "`%s'" (or target thing)) nil t)
-	      (search-forward (or target thing) nil t)))
-	(let ((case-fold-search t))
-	  (or (re-search-forward (format "\\[`%s'\\]\\|(`%s')\\|\\<The[ \n]`%s'"
-                                         (or target (regexp-quote thing))
-                                         (or target (regexp-quote thing))
-                                         (or target (regexp-quote thing))) nil t)
-	      (search-forward (format "`%s'" (or target thing)) nil t)
-	      (search-forward (or target thing) nil t))))
+    (let* ((string-target (or target thing))
+           (quoted (format "['`‘]%s['’]" (regexp-quote string-target)))
+           (bracketed (format "\\[%s\\]\\|(%s)\\|\\<The[ \n]%s"
+                              quoted quoted quoted)))
+      (or (let ((case-fold-search nil))
+            (or (re-search-forward bracketed nil t)
+                (and not-quoted
+                     (let ((case-fold-search t))
+                       (search-forward string-target nil t)))
+                (re-search-forward quoted nil t)
+                (search-forward string-target nil t)))
+          (let ((case-fold-search t))
+            (or (re-search-forward bracketed nil t)
+                (re-search-forward quoted nil t)
+                (search-forward string-target nil t)))))
     (beginning-of-line)
     (message "Found `%s' in %s" thing where)))
 
@@ -388,7 +385,7 @@ C-w  Describe how there is no warranty for Calc."
   (interactive)
   (calc-quit)
   (view-emacs-news)
-  (re-search-forward "^\*+ .*\\<Calc\\>" nil t))
+  (re-search-forward "^\\*+ .*\\<Calc\\>" nil t))
 
 (defvar calc-help-long-names '((?b . "binary/business")
 			       (?g . "graphics")
@@ -402,11 +399,14 @@ C-w  Describe how there is no warranty for Calc."
     (princ "GNU Emacs Calculator.\n")
     (princ "  By Dave Gillespie.\n")
     (princ (format "  %s\n\n" emacs-copyright))
-    (princ "Type `h s' for a more detailed summary.\n")
-    (princ "Or type `h i' to read the full Calc manual on-line.\n\n")
+    (princ (format-message "Type `h s' for a more detailed summary.\n"))
+    (princ (format-message
+            "Or type `h i' to read the full Calc manual on-line.\n\n"))
     (princ "Basic keys:\n")
     (let* ((calc-full-help-flag t))
-      (mapc (function (lambda (x) (princ (format "  %s\n" x))))
+      (mapc (function (lambda (x) (princ (format
+                                          "  %s\n"
+                                          (substitute-command-keys x)))))
 	    (nreverse (cdr (reverse (cdr (calc-help))))))
       (mapc (function (lambda (prefix)
 			(let ((msgs (condition-case err
@@ -415,9 +415,10 @@ C-w  Describe how there is no warranty for Calc."
 			  (if (car msgs)
 			      (princ
 			       (if (eq (nth 2 msgs) ?v)
-				   "\n`v' or `V' prefix (vector/matrix) keys: \n"
+                                   (format-message
+                                    "\n`v' or `V' prefix (vector/matrix) keys: \n")
 				 (if (nth 2 msgs)
-				     (format
+				     (format-message
 				      "\n`%c' prefix (%s) keys:\n"
 				      (nth 2 msgs)
 				      (or (cdr (assq (nth 2 msgs)
@@ -425,8 +426,11 @@ C-w  Describe how there is no warranty for Calc."
 					  (nth 1 msgs)))
 				   (format "\n%s-modified keys:\n"
 					   (capitalize (nth 1 msgs)))))))
-			  (mapcar (function (lambda (x)
-				    (princ (format "  %s\n" x))))
+			  (mapcar (function
+                                   (lambda (x)
+                                     (princ (format
+                                             "  %s\n"
+                                             (substitute-command-keys x)))))
 				  (car msgs)))))
 	    '(calc-inverse-prefix-help
 	      calc-hyperbolic-prefix-help
@@ -541,7 +545,7 @@ C-w  Describe how there is no warranty for Calc."
    '("Select, Additional, Once; eVal, Formula; Rewrite"
      "More, Less, 1-9, Next, Previous"
      "Unselect, Clear; Display; Enable; Breakable"
-     "' (replace), ` (edit), +, -, *, /, RET (grab), DEL"
+     "\\=' (replace), \\=` (edit), +, -, *, /, RET (grab), DEL"
      "SHIFT + swap: Left, Right; maybe: Select, Once"
      "SHIFT + Commute, Merge, Distrib, jump-Eqn, Isolate"
      "SHIFT + Negate, & (invert); Unpack")
@@ -647,7 +651,7 @@ C-w  Describe how there is no warranty for Calc."
 (defun calc-u-prefix-help ()
   (interactive)
   (calc-do-prefix-help
-   '("Simplify, Convert, Temperature-convert, Base-units"
+   '("Simplify, Convert, coNvert exact, Temperature-convert, Base-units"
      "Autorange; Remove, eXtract; Explain; View-table; 0-9"
      "Define, Undefine, Get-defn, Permanent"
      "SHIFT + View-table-other-window"

@@ -1,10 +1,10 @@
 ;;; cal-menu.el --- calendar functions for menu bar and popup menu support
 
-;; Copyright (C) 1994-1995, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1995, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Edward M. Reingold <reingold@cs.uiuc.edu>
 ;;         Lara Rios <lrios@coewl.cen.uiuc.edu>
-;; Maintainer: Glenn Morris <rgm@gnu.org>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: calendar
 ;; Human-Keywords: calendar, popup menus, menu bar
 ;; Package: calendar
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -52,7 +52,7 @@
     ["Insert Anniversary" diary-insert-anniversary-entry]
     ["Insert Block" diary-insert-block-entry]
     ["Insert Cyclic" diary-insert-cyclic-entry]
-    ("Insert Bahá'í"
+    ("Insert Bahá’í"
      ["One time" diary-bahai-insert-entry]
      ["Monthly" diary-bahai-insert-monthly-entry]
      ["Yearly" diary-bahai-insert-yearly-entry])
@@ -100,7 +100,7 @@
         ;; Show 11 years--5 before, 5 after year of middle month.
         ;; We used to use :suffix rather than :label and bumped into
         ;; an easymenu bug:
-        ;; http://lists.gnu.org/archive/html/emacs-devel/2007-11/msg01813.html
+        ;; https://lists.gnu.org/r/emacs-devel/2007-11/msg01813.html
         ;; The bug has since been fixed.
         (dotimes (i 11)
           (push (vector (format "hol-year-%d" i)
@@ -132,7 +132,7 @@
     ["Astronomical Date" calendar-astro-goto-day-number]
     ["Hebrew Date" calendar-hebrew-goto-date]
     ["Persian Date" calendar-persian-goto-date]
-    ["Bahá'í Date" calendar-bahai-goto-date]
+    ["Bahá’í Date" calendar-bahai-goto-date]
     ["Islamic Date" calendar-islamic-goto-date]
     ["Julian Date" calendar-julian-goto-date]
     ["Chinese Date" calendar-chinese-goto-date]
@@ -279,9 +279,5 @@ is non-nil."
     ["Exit calendar" calendar-exit]))
 
 (provide 'cal-menu)
-
-;; Local Variables:
-;; coding: utf-8
-;; End:
 
 ;;; cal-menu.el ends here

@@ -1,15 +1,15 @@
 /* movemail foo bar -- move file foo to file bar,
    locking file foo the way /bin/mail respects.
 
-Copyright (C) 1986, 1992-1994, 1996, 1999, 2001-2014 Free Software
+Copyright (C) 1986, 1992-1994, 1996, 1999, 2001-2020 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,7 +17,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 /* Important notice: defining MAIL_USE_FLOCK or MAIL_USE_LOCKF *will
@@ -59,14 +59,18 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
-#include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <time.h>
 
 #include <getopt.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <string.h>
+
+#include <unlocked-io.h>
+
 #include "syswait.h"
 #ifdef MAIL_USE_POP
 #include "pop.h"
@@ -81,7 +85,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #undef access
 #undef unlink
 #define fork() 0
-#define wait(var) (*(var) = 0)
+#define waitpid(child, var, flags) (*(var) = 0)
 /* Unfortunately, Samba doesn't seem to properly lock Unix files even
    though the locking call succeeds (and indeed blocks local access from
    other NT programs).  If you have direct file access using an NFS
@@ -113,13 +117,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #define MAIL_USE_SYSTEM_LOCK
 #endif
 
-#ifdef MAIL_USE_MMDF
-extern int lk_open (), lk_close ();
-#endif
-
-#if !defined (MAIL_USE_SYSTEM_LOCK) && !defined (MAIL_USE_MMDF) && \
-	(defined (HAVE_LIBMAIL) || defined (HAVE_LIBLOCKFILE)) && \
-        defined (HAVE_MAILLOCK_H)
+#if (!defined MAIL_USE_SYSTEM_LOCK				\
+     && (defined HAVE_LIBMAIL || defined HAVE_LIBLOCKFILE)	\
+     && defined HAVE_MAILLOCK_H)
 #include <maillock.h>
 /* We can't use maillock unless we know what directory system mail
    files appear in. */
@@ -134,19 +134,18 @@ static void error (const char *s1, const char *s2, const char *s3);
 static _Noreturn void pfatal_with_name (char *name);
 static _Noreturn void pfatal_and_delete (char *name);
 #ifdef MAIL_USE_POP
-static int popmail (char *mailbox, char *outfile, int preserve, char *password, int reverse_order);
-static int pop_retr (popserver server, int msgno, FILE *arg);
-static int mbx_write (char *line, int len, FILE *mbf);
-static int mbx_delimit_begin (FILE *mbf);
-static int mbx_delimit_end (FILE *mbf);
+static int popmail (char *, char *, bool, char *, bool);
+static bool pop_retr (popserver, int, FILE *);
+static bool mbx_write (char *, int, FILE *);
+static bool mbx_delimit_begin (FILE *);
+static bool mbx_delimit_end (FILE *);
 #endif
 
 #if (defined MAIL_USE_MAILLOCK						\
-     || (!defined DISABLE_DIRECT_ACCESS && !defined MAIL_USE_MMDF	\
-	 && !defined MAIL_USE_SYSTEM_LOCK))
+     || (!defined DISABLE_DIRECT_ACCESS && !defined MAIL_USE_SYSTEM_LOCK))
 /* Like malloc but get fatal error if memory is exhausted.  */
 
-static void *
+static void * ATTRIBUTE_MALLOC
 xmalloc (size_t size)
 {
   void *result = malloc (size);
@@ -166,23 +165,19 @@ main (int argc, char **argv)
   int indesc, outdesc;
   ssize_t nread;
   int wait_status;
-  int c, preserve_mail = 0;
+  int c;
+  bool preserve_mail = false;
 
 #ifndef MAIL_USE_SYSTEM_LOCK
   struct stat st;
   int tem;
-  char *lockname;
   char *tempname;
   size_t inname_len, inname_dirlen;
   int desc;
 #endif /* not MAIL_USE_SYSTEM_LOCK */
 
-#ifdef MAIL_USE_MAILLOCK
-  char *spool_name;
-#endif
-
 #ifdef MAIL_USE_POP
-  int pop_reverse_order = 0;
+  bool pop_reverse_order = false;
 # define ARGSTR "pr"
 #else /* ! MAIL_USE_POP */
 # define ARGSTR "p"
@@ -193,19 +188,19 @@ main (int argc, char **argv)
 
   delete_lockname = 0;
 
-  while ((c = getopt (argc, argv, ARGSTR)) != EOF)
+  while (0 <= (c = getopt (argc, argv, ARGSTR)))
     {
       switch (c) {
 #ifdef MAIL_USE_POP
       case 'r':
-	pop_reverse_order = 1;
+	pop_reverse_order = true;
 	break;
 #endif
       case 'p':
-	preserve_mail++;
+	preserve_mail = true;
 	break;
       default:
-	exit (EXIT_FAILURE);
+	return EXIT_FAILURE;
       }
     }
 
@@ -223,15 +218,11 @@ main (int argc, char **argv)
 #else
       fprintf (stderr, "Usage: movemail [-p] inbox destfile%s\n", "");
 #endif
-      exit (EXIT_FAILURE);
+      return EXIT_FAILURE;
     }
 
   inname = argv[optind];
   outname = argv[optind+1];
-
-#ifdef MAIL_USE_MMDF
-  mmdf_init (argv[0]);
-#endif
 
   if (*outname == 0)
     fatal ("Destination file name is empty", 0, 0);
@@ -244,7 +235,7 @@ main (int argc, char **argv)
       status = popmail (inname + 3, outname, preserve_mail,
 			(argc - optind == 3) ? argv[optind+2] : NULL,
 			pop_reverse_order);
-      exit (status);
+      return status;
     }
 
   if (setuid (getuid ()) < 0)
@@ -253,19 +244,16 @@ main (int argc, char **argv)
 #endif /* MAIL_USE_POP */
 
 #ifndef DISABLE_DIRECT_ACCESS
-#ifndef MAIL_USE_MMDF
-#ifndef MAIL_USE_SYSTEM_LOCK
+
+  char *lockname = 0;
+  char *spool_name = 0;
+
 #ifdef MAIL_USE_MAILLOCK
   spool_name = mail_spool_name (inname);
-  if (spool_name)
-    {
-#ifdef lint
-      lockname = 0;
 #endif
-    }
-  else
-#endif
+  if (! spool_name)
     {
+#ifndef MAIL_USE_SYSTEM_LOCK
       /* Use a lock file named after our first argument with .lock appended:
 	 If it exists, the mail file is locked.  */
       /* Note: this locking mechanism is *required* by the mailer
@@ -292,7 +280,7 @@ main (int argc, char **argv)
 	continue;
       tempname = xmalloc (inname_dirlen + sizeof "EXXXXXX");
 
-      while (1)
+      while (true)
 	{
 	  /* Create the lock file, but not under the lock file name.  */
 	  /* Give up if cannot do that.  */
@@ -328,38 +316,41 @@ main (int argc, char **argv)
 	    {
 	      time_t now = time (0);
 	      if (st.st_ctime < now - 300)
-		unlink (lockname);
+		{
+		  unlink (lockname);
+		  lockname = 0;
+		}
 	    }
 	}
 
       delete_lockname = lockname;
-    }
 #endif /* not MAIL_USE_SYSTEM_LOCK */
-#endif /* not MAIL_USE_MMDF */
+    }
 
-  if (fork () == 0)
+#ifdef SIGCHLD
+  signal (SIGCHLD, SIG_DFL);
+#endif
+
+  pid_t child = fork ();
+  if (child < 0)
+    fatal ("Error in fork; %s", strerror (errno), 0);
+
+  if (child == 0)
     {
       int lockcount = 0;
       int status = 0;
 #if defined (MAIL_USE_MAILLOCK) && defined (HAVE_TOUCHLOCK)
       time_t touched_lock;
-# ifdef lint
-      touched_lock = 0;
-# endif
 #endif
 
       if (setuid (getuid ()) < 0 || setregid (-1, real_gid) < 0)
 	fatal ("Failed to drop privileges", 0, 0);
 
-#ifndef MAIL_USE_MMDF
 #ifdef MAIL_USE_SYSTEM_LOCK
       indesc = open (inname, O_RDWR | O_BINARY);
 #else  /* if not MAIL_USE_SYSTEM_LOCK */
       indesc = open (inname, O_RDONLY | O_BINARY);
 #endif /* not MAIL_USE_SYSTEM_LOCK */
-#else  /* MAIL_USE_MMDF */
-      indesc = lk_open (inname, O_RDONLY | O_BINARY, 0, 0, 10);
-#endif /* MAIL_USE_MMDF */
 
       if (indesc < 0)
 	pfatal_with_name (inname);
@@ -382,9 +373,9 @@ main (int argc, char **argv)
 #ifdef MAIL_USE_MAILLOCK
       if (spool_name)
 	{
-	  /* The "0 - " is to make it a negative number if maillock returns
+	  /* The "-" is to make it a negative number if maillock returns
 	     non-zero. */
-	  status = 0 - maillock (spool_name, 1);
+	  status = - maillock (spool_name, 1);
 #ifdef HAVE_TOUCHLOCK
 	  touched_lock = time (0);
 #endif
@@ -422,7 +413,7 @@ main (int argc, char **argv)
       {
 	char buf[1024];
 
-	while (1)
+	while (true)
 	  {
 	    nread = read (indesc, buf, sizeof buf);
 	    if (nread < 0)
@@ -464,16 +455,12 @@ main (int argc, char **argv)
 #ifdef MAIL_USE_SYSTEM_LOCK
       if (! preserve_mail)
 	{
-	  if (ftruncate (indesc, 0L) != 0)
+	  if (ftruncate (indesc, 0) != 0)
 	    pfatal_with_name (inname);
 	}
 #endif /* MAIL_USE_SYSTEM_LOCK */
 
-#ifdef MAIL_USE_MMDF
-      lk_close (indesc, 0, 0, 0);
-#else
       close (indesc);
-#endif
 
 #ifndef MAIL_USE_SYSTEM_LOCK
       if (! preserve_mail)
@@ -499,21 +486,18 @@ main (int argc, char **argv)
       if (spool_name)
 	mailunlock ();
 #endif
-      exit (EXIT_SUCCESS);
+      return EXIT_SUCCESS;
     }
 
-  wait (&wait_status);
+  if (waitpid (child, &wait_status, 0) < 0)
+    fatal ("Error in waitpid; %s", strerror (errno), 0);
   if (!WIFEXITED (wait_status))
-    exit (EXIT_FAILURE);
+    return EXIT_FAILURE;
   else if (WEXITSTATUS (wait_status) != 0)
-    exit (WEXITSTATUS (wait_status));
+    return WEXITSTATUS (wait_status);
 
-#if !defined (MAIL_USE_MMDF) && !defined (MAIL_USE_SYSTEM_LOCK)
-#ifdef MAIL_USE_MAILLOCK
-  if (! spool_name)
-#endif /* MAIL_USE_MAILLOCK */
+  if (lockname)
     unlink (lockname);
-#endif /* not MAIL_USE_MMDF and not MAIL_USE_SYSTEM_LOCK */
 
 #endif /* ! DISABLE_DIRECT_ACCESS */
 
@@ -616,12 +600,6 @@ pfatal_and_delete (char *name)
 #include <pwd.h>
 #include <string.h>
 
-#define NOTOK (-1)
-#define OK 0
-
-static char Errmsg[200];	/* POP errors, at least, can exceed
-				   the original length of 80.  */
-
 /*
  * The full valid syntax for a POP mailbox specification for movemail
  * is "po:username:hostname".  The ":hostname" is optional; if it is
@@ -637,10 +615,11 @@ static char Errmsg[200];	/* POP errors, at least, can exceed
  */
 
 static int
-popmail (char *mailbox, char *outfile, int preserve, char *password, int reverse_order)
+popmail (char *mailbox, char *outfile, bool preserve, char *password,
+	 bool reverse_order)
 {
   int nmsgs, nbytes;
-  register int i;
+  int i;
   int mbfi;
   FILE *mbf;
   popserver server;
@@ -690,7 +669,8 @@ popmail (char *mailbox, char *outfile, int preserve, char *password, int reverse
 	}
     }
 
-  if ((mbf = fdopen (mbfi, "wb")) == NULL)
+  mbf = fdopen (mbfi, "wb");
+  if (!mbf)
     {
       pop_close (server);
       error ("Error in fdopen: %s", strerror (errno), 0);
@@ -713,35 +693,28 @@ popmail (char *mailbox, char *outfile, int preserve, char *password, int reverse
     }
 
   for (i = start; i * increment <= end * increment; i += increment)
-    {
-      if (mbx_delimit_begin (mbf) != OK
-	  || pop_retr (server, i, mbf) != OK)
-	{
-	  error ("%s", Errmsg, 0);
-	  close (mbfi);
-	  return EXIT_FAILURE;
-	}
-      mbx_delimit_end (mbf);
-      fflush (mbf);
-      if (ferror (mbf))
-	{
-	  error ("Error in fflush: %s", strerror (errno), 0);
-	  pop_close (server);
-	  close (mbfi);
-	  return EXIT_FAILURE;
-	}
-    }
+    if (! (mbx_delimit_begin (mbf)
+	   && pop_retr (server, i, mbf)
+	   && mbx_delimit_end (mbf)
+	   && fflush (mbf) == 0))
+      {
+	if (errno)
+	  error ("Error in POP retrieving: %s", strerror (errno), 0);
+	pop_close (server);
+	fclose (mbf);
+	return EXIT_FAILURE;
+      }
 
   if (fsync (mbfi) != 0 && errno != EINVAL)
     {
       error ("Error in fsync: %s", strerror (errno), 0);
-      close (mbfi);
+      fclose (mbf);
       return EXIT_FAILURE;
     }
 
-  if (close (mbfi) != 0)
+  if (fclose (mbf) != 0)
     {
-      error ("Error in close: %s", strerror (errno), 0);
+      error ("Error in fclose: %s", strerror (errno), 0);
       return EXIT_FAILURE;
     }
 
@@ -765,7 +738,7 @@ popmail (char *mailbox, char *outfile, int preserve, char *password, int reverse
   return EXIT_SUCCESS;
 }
 
-static int
+static bool
 pop_retr (popserver server, int msgno, FILE *arg)
 {
   char *line;
@@ -773,8 +746,9 @@ pop_retr (popserver server, int msgno, FILE *arg)
 
   if (pop_retrieve_first (server, msgno, &line))
     {
-      snprintf (Errmsg, sizeof Errmsg, "Error from POP server: %s", pop_error);
-      return (NOTOK);
+      error ("Error from POP server: %s", pop_error, 0);
+      errno = 0;
+      return false;
     }
 
   while ((ret = pop_retrieve_next (server, &line)) >= 0)
@@ -782,24 +756,26 @@ pop_retr (popserver server, int msgno, FILE *arg)
       if (! line)
 	break;
 
-      if (mbx_write (line, ret, arg) != OK)
+      if (! mbx_write (line, ret, arg))
 	{
-	  strcpy (Errmsg, strerror (errno));
+	  int write_errno = errno;
 	  pop_close (server);
-	  return (NOTOK);
+	  errno = write_errno;
+	  return false;
 	}
     }
 
   if (ret)
     {
-      snprintf (Errmsg, sizeof Errmsg, "Error from POP server: %s", pop_error);
-      return (NOTOK);
+      error ("Error from POP server: %s", pop_error, 0);
+      errno = 0;
+      return false;
     }
 
-  return (OK);
+  return true;
 }
 
-static int
+static bool
 mbx_write (char *line, int len, FILE *mbf)
 {
 #ifdef MOVEMAIL_QUOTE_POP_FROM_LINES
@@ -811,47 +787,87 @@ mbx_write (char *line, int len, FILE *mbf)
 			    && (a[4] == ' '))
   if (IS_FROM_LINE (line))
     {
-      if (fputc ('>', mbf) == EOF)
-	return (NOTOK);
+      if (fputc ('>', mbf) < 0)
+	return false;
     }
 #endif
   if (line[0] == '\037')
     {
-      if (fputs ("^_", mbf) == EOF)
-	return (NOTOK);
+      if (fputs ("^_", mbf) < 0)
+	return false;
       line++;
       len--;
     }
-  if (fwrite (line, 1, len, mbf) != len)
-    return (NOTOK);
-  if (fputc (0x0a, mbf) == EOF)
-    return (NOTOK);
-  return (OK);
+  return fwrite (line, 1, len, mbf) == len && 0 <= fputc ('\n', mbf);
 }
 
-static int
+#ifdef WINDOWSNT
+/* Work around MS-Windows lack of support for %e or %T with a
+   special-purpose strftime that assumes the exact format that
+   movemail uses.  */
+static size_t
+movemail_strftime (char *s, size_t size, char const *format,
+		   struct tm const *tm)
+{
+  char fmt[size + 6], *q;
+  const char *p;
+
+  for (p = format, q = &fmt[0]; *p; )
+    {
+      if (*p == '%' && p[1] == 'e')
+	{
+	  memcpy (q, "%d", 2);
+	  q += 2;
+	  p += 2;
+	}
+      else if (*p == '%' && p[1] == 'T')
+	{
+	  memcpy (q, "%H:%M:%S", 8);
+	  q += 8;
+	  p += 2;
+	}
+      else if (*p == '%' && p[1] == '%')
+	{
+	  memcpy (q, p, 2);
+	  q += 2;
+	  p += 2;
+	}
+      else
+	*q++ = *p++;
+    }
+
+  size_t n = strftime (s, size, fmt, tm);
+  char *mday = s + sizeof "From movemail Sun Jan " - 1;
+  if (*mday == '0')
+    *mday = ' ';
+  return n;
+}
+# undef strftime
+# define strftime movemail_strftime
+#endif
+
+static bool
 mbx_delimit_begin (FILE *mbf)
 {
   time_t now = time (NULL);
   struct tm *ltime = localtime (&now);
   if (!ltime)
-    return NOTOK;
+    return false;
 
   char fromline[100];
   if (! strftime (fromline, sizeof fromline,
 		  "From movemail %a %b %e %T %Y\n", ltime))
-    return NOTOK;
-  if (fputs (fromline, mbf) == EOF)
-    return (NOTOK);
-  return (OK);
+    {
+      errno = EOVERFLOW;
+      return false;
+    }
+  return 0 <= fputs (fromline, mbf);
 }
 
-static int
+static bool
 mbx_delimit_end (FILE *mbf)
 {
-  if (putc ('\n', mbf) == EOF)
-    return (NOTOK);
-  return (OK);
+  return 0 <= putc ('\n', mbf);
 }
 
 #endif /* MAIL_USE_POP */

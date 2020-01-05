@@ -1,6 +1,6 @@
-;;; ediff-help.el --- Code related to the contents of Ediff help buffers
+;;; ediff-help.el --- Code related to the contents of Ediff help buffers  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1996-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Michael Kifer <kifer@cs.stonybrook.edu>
 ;; Package: ediff
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -30,6 +30,7 @@
 ;; end pacifier
 
 (require 'ediff-init)
+(defvar ediff-multiframe)
 
 ;; Help messages
 
@@ -112,7 +113,7 @@ n,SPC -next diff     |     h -highlighting       |  r -restore buf C's old diff
   C-l -recenter      | #f/#h -focus/hide regions |  + -combine diff regions
   v/V -scroll up/dn  |     X -read-only in buf X | wx -save buf X
   </> -scroll lt/rt  |     m -wide display       | wd -save diff output
-    ~ -swap variants |     s -shrink window C    |  / -show ancestor buff
+    ~ -swap variants |     s -shrink window C    |  / -show/hide ancestor buff
                      |  $$ -show clashes only    |  & -merge w/new default
                      |  $* -skip changed regions |
 "
@@ -155,23 +156,18 @@ the value of this variable and the variables `ediff-help-message-*' in
 ;; the keymap that defines clicks over the quick help regions
 (defvar ediff-help-region-map (make-sparse-keymap))
 
-(define-key
-  ediff-help-region-map
-  (if (featurep 'emacs) [mouse-2] [button2])
-  'ediff-help-for-quick-help)
+(define-key ediff-help-region-map [mouse-2] 'ediff-help-for-quick-help)
 
 ;; runs in the control buffer
 (defun ediff-set-help-overlays ()
   (goto-char (point-min))
   (let (overl beg end cmd)
     (while (re-search-forward " *\\([^ \t\n|]+\\||\\) +-[^|\n]+" nil 'noerror)
-      (setq beg (match-beginning 0)
+      (setq beg (match-beginning 1)
 	    end (match-end 0)
 	    cmd (buffer-substring (match-beginning 1) (match-end 1)))
-      (setq overl (ediff-make-overlay beg end))
-      (if (featurep 'emacs)
-	  (ediff-overlay-put overl 'mouse-face 'highlight)
-	(ediff-overlay-put overl 'highlight t))
+      (setq overl (make-overlay beg end))
+      (ediff-overlay-put overl 'mouse-face 'highlight)
       (ediff-overlay-put overl 'ediff-help-info cmd))))
 
 
@@ -180,63 +176,60 @@ the value of this variable and the variables `ediff-help-message-*' in
   (interactive)
   (ediff-barf-if-not-control-buffer)
   (let ((pos (ediff-event-point last-command-event))
-	overl cmd)
+	cmd)
 
-    (if (featurep 'xemacs)
-	(setq overl (extent-at pos (current-buffer) 'ediff-help-info)
-	      cmd   (ediff-overlay-get overl 'ediff-help-info))
-      (setq cmd (car (mapcar (lambda (elt)
-			       (overlay-get elt 'ediff-help-info))
-			     (overlays-at pos)))))
+    (setq cmd (car (mapcar (lambda (elt)
+			     (overlay-get elt 'ediff-help-info))
+			   (overlays-at pos))))
 
     (if (not (stringp cmd))
-	(error "Hmm...  I don't see an Ediff command around here..."))
+	(user-error "Hmm...  I don't see an Ediff command around here..."))
 
     (ediff-documentation "Quick Help Commands")
 
     (let (case-fold-search)
-      (cond ((string= cmd "?") (re-search-forward "^`\\?'"))
-	    ((string= cmd "G") (re-search-forward "^`G'"))
-	    ((string= cmd "E") (re-search-forward "^`E'"))
-	    ((string= cmd "wd") (re-search-forward "^`wd'"))
-	    ((string= cmd "wx") (re-search-forward "^`wa'"))
-	    ((string= cmd "a/b") (re-search-forward "^`a'"))
-	    ((string= cmd "x") (re-search-forward "^`a'"))
-	    ((string= cmd "xy") (re-search-forward "^`ab'"))
-	    ((string= cmd "p,DEL") (re-search-forward "^`p'"))
-	    ((string= cmd "n,SPC") (re-search-forward "^`n'"))
-	    ((string= cmd "j") (re-search-forward "^`j'"))
-	    ((string= cmd "gx") (re-search-forward "^`ga'"))
-	    ((string= cmd "!") (re-search-forward "^`!'"))
-	    ((string= cmd "*") (re-search-forward "^`\\*'"))
-	    ((string= cmd "m") (re-search-forward "^`m'"))
-	    ((string= cmd "|") (re-search-forward "^`|'"))
-	    ((string= cmd "@") (re-search-forward "^`@'"))
-	    ((string= cmd "h") (re-search-forward "^`h'"))
-	    ((string= cmd "r") (re-search-forward "^`r'"))
-	    ((string= cmd "rx") (re-search-forward "^`ra'"))
-	    ((string= cmd "##") (re-search-forward "^`##'"))
-	    ((string= cmd "#c") (re-search-forward "^`#c'"))
-	    ((string= cmd "#f/#h") (re-search-forward "^`#f'"))
-	    ((string= cmd "X") (re-search-forward "^`A'"))
-	    ((string= cmd "v/V") (re-search-forward "^`v'"))
-	    ((string= cmd "</>") (re-search-forward "^`<'"))
-	    ((string= cmd "~") (re-search-forward "^`~'"))
-	    ((string= cmd "i") (re-search-forward "^`i'"))
-	    ((string= cmd "D") (re-search-forward "^`D'"))
-	    ((string= cmd "R") (re-search-forward "^`R'"))
-	    ((string= cmd "M") (re-search-forward "^`M'"))
-	    ((string= cmd "z/q") (re-search-forward "^`z'"))
-	    ((string= cmd "%") (re-search-forward "^`%'"))
-	    ((string= cmd "C-l") (re-search-forward "^`C-l'"))
-	    ((string= cmd "$$") (re-search-forward "^`\\$\\$'"))
-	    ((string= cmd "$*") (re-search-forward "^`\\$\\*'"))
-	    ((string= cmd "/") (re-search-forward "^`/'"))
-	    ((string= cmd "&") (re-search-forward "^`&'"))
-	    ((string= cmd "s") (re-search-forward "^`s'"))
-	    ((string= cmd "+") (re-search-forward "^`\\+'"))
-	    ((string= cmd "=") (re-search-forward "^`='"))
-	    (t (error "Undocumented command! Type `G' in Ediff Control Panel to drop a note to the Ediff maintainer")))
+      (cond ((string= cmd "?") (re-search-forward "^['`‘]\\?['’]"))
+	    ((string= cmd "G") (re-search-forward "^['`‘]G['’]"))
+	    ((string= cmd "E") (re-search-forward "^['`‘]E['’]"))
+	    ((string= cmd "wd") (re-search-forward "^['`‘]wd['’]"))
+	    ((string= cmd "wx") (re-search-forward "^['`‘]wa['’]"))
+	    ((string= cmd "a/b") (re-search-forward "^['`‘]a['’]"))
+	    ((string= cmd "x") (re-search-forward "^['`‘]a['’]"))
+	    ((string= cmd "xy") (re-search-forward "^['`‘]ab['’]"))
+	    ((string= cmd "p,DEL") (re-search-forward "^['`‘]p['’]"))
+	    ((string= cmd "n,SPC") (re-search-forward "^['`‘]n['’]"))
+	    ((string= cmd "j") (re-search-forward "^['`‘]j['’]"))
+	    ((string= cmd "gx") (re-search-forward "^['`‘]ga['’]"))
+	    ((string= cmd "!") (re-search-forward "^['`‘]!['’]"))
+	    ((string= cmd "*") (re-search-forward "^['`‘]\\*['’]"))
+	    ((string= cmd "m") (re-search-forward "^['`‘]m['’]"))
+	    ((string= cmd "|") (re-search-forward "^['`‘]|['’]"))
+	    ((string= cmd "@") (re-search-forward "^['`‘]@['’]"))
+	    ((string= cmd "h") (re-search-forward "^['`‘]h['’]"))
+	    ((string= cmd "r") (re-search-forward "^['`‘]r['’]"))
+	    ((string= cmd "rx") (re-search-forward "^['`‘]ra['’]"))
+	    ((string= cmd "##") (re-search-forward "^['`‘]##['’]"))
+	    ((string= cmd "#c") (re-search-forward "^['`‘]#c['’]"))
+	    ((string= cmd "#f/#h") (re-search-forward "^['`‘]#f['’]"))
+	    ((string= cmd "X") (re-search-forward "^['`‘]A['’]"))
+	    ((string= cmd "v/V") (re-search-forward "^['`‘]v['’]"))
+	    ((string= cmd "</>") (re-search-forward "^['`‘]<['’]"))
+	    ((string= cmd "~") (re-search-forward "^['`‘]~['’]"))
+	    ((string= cmd "i") (re-search-forward "^['`‘]i['’]"))
+	    ((string= cmd "D") (re-search-forward "^['`‘]D['’]"))
+	    ((string= cmd "R") (re-search-forward "^['`‘]R['’]"))
+	    ((string= cmd "M") (re-search-forward "^['`‘]M['’]"))
+	    ((string= cmd "z/q") (re-search-forward "^['`‘]z['’]"))
+	    ((string= cmd "%") (re-search-forward "^['`‘]%['’]"))
+	    ((string= cmd "C-l") (re-search-forward "^['`‘]C-l['’]"))
+	    ((string= cmd "$$") (re-search-forward "^['`‘]\\$\\$['’]"))
+	    ((string= cmd "$*") (re-search-forward "^['`‘]\\$\\*['’]"))
+	    ((string= cmd "/") (re-search-forward "^['`‘]/['’]"))
+	    ((string= cmd "&") (re-search-forward "^['`‘]&['’]"))
+	    ((string= cmd "s") (re-search-forward "^['`‘]s['’]"))
+	    ((string= cmd "+") (re-search-forward "^['`‘]\\+['’]"))
+	    ((string= cmd "=") (re-search-forward "^['`‘]=['’]"))
+	    (t (user-error "Undocumented command! Type `G' in Ediff Control Panel to drop a note to the Ediff maintainer")))
       ) ; let case-fold-search
     ))
 
@@ -269,8 +262,7 @@ the value of this variable and the variables `ediff-help-message-*' in
 (defun ediff-set-help-message ()
   (setq ediff-long-help-message
 	(cond ((and ediff-long-help-message-function
-		    (or (symbolp ediff-long-help-message-function)
-			(consp ediff-long-help-message-function)))
+		    (functionp ediff-long-help-message-function))
 	       (funcall ediff-long-help-message-function))
 	      (ediff-word-mode
 	       (concat ediff-long-help-message-head
@@ -294,8 +286,7 @@ the value of this variable and the variables `ediff-help-message-*' in
 		       ediff-long-help-message-tail))))
   (setq ediff-brief-help-message
 	(cond ((and ediff-brief-help-message-function
-		    (or (symbolp ediff-brief-help-message-function)
-			(consp ediff-brief-help-message-function)))
+                    (functionp ediff-brief-help-message-function))
 	       (funcall ediff-brief-help-message-function))
 	      ((stringp ediff-brief-help-message-function)
 	       ediff-brief-help-message-function)
@@ -315,6 +306,4 @@ the value of this variable and the variables `ediff-help-message-*' in
 
 
 (provide 'ediff-help)
-
-
 ;;; ediff-help.el ends here

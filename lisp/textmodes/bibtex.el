@@ -1,6 +1,6 @@
 ;;; bibtex.el --- BibTeX mode for GNU Emacs -*- lexical-binding: t -*-
 
-;; Copyright (C) 1992, 1994-1999, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1992, 1994-1999, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Stefan Schoef <schoef@offis.uni-oldenburg.de>
@@ -25,7 +25,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -317,6 +317,20 @@ If parsing fails, try to set this variable to nil."
       ("organization" "Sponsoring organization of the conference")
       ("publisher" "Publishing company, its location")
       ("note")))
+    ("Conference" "Article in Conference Proceedings" ; same as InProceedings
+     (("author")
+      ("title" "Title of the article in proceedings (BibTeX converts it to lowercase)"))
+     (("booktitle" "Name of the conference proceedings")
+      ("year"))
+     (("editor")
+      ("volume" "Volume of the conference proceedings in the series")
+      ("number" "Number of the conference proceedings in a small series (overwritten by volume)")
+      ("series" "Series in which the conference proceedings appeared")
+      ("pages" "Pages in the conference proceedings")
+      ("month") ("address")
+      ("organization" "Sponsoring organization of the conference")
+      ("publisher" "Publishing company, its location")
+      ("note")))
     ("InCollection" "Article in a Collection"
      (("author")
       ("title" "Title of the article in book (BibTeX converts it to lowercase)")
@@ -433,7 +447,7 @@ is present; but these fields are required otherwise.
 OPTIONAL is a list of optional fields.
 
 Each element of these lists is a list of the form
-  \(FIELD COMMENT INIT ALTERNATIVE).
+  (FIELD COMMENT INIT ALTERNATIVE).
 COMMENT, INIT, and ALTERNATIVE are optional.
 
 FIELD is the name of the field.
@@ -443,8 +457,8 @@ INIT is either the initial content of the field or a function,
 which is called to determine the initial content of the field.
 ALTERNATIVE if non-nil is an integer that numbers sets of
 alternatives, starting from zero."
-  :group 'BibTeX
-  :version "24.1"
+  :group 'bibtex
+  :version "26.1"                       ; add Conference
   :type 'bibtex-entry-alist)
 (put 'bibtex-BibTeX-entry-alist 'risky-local-variable t)
 
@@ -848,7 +862,7 @@ To interactively change the dialect use the command `bibtex-set-dialect'."
 
 (defcustom bibtex-no-opt-remove-re "\\`option"
   "If a field name matches this regexp, the prefix OPT is not removed.
-If nil prefix OPT is always removed"
+If nil prefix OPT is always removed."
   :group 'bibtex
   :version "24.1"
   :type '(choice (regexp) (const nil)))
@@ -919,9 +933,12 @@ to the directories specified in `bibtex-string-file-path'."
   :type '(repeat file))
 
 (defcustom bibtex-string-file-path (getenv "BIBINPUTS")
-  "Colon-separated list of paths to search for `bibtex-string-files'."
+  "Colon-separated list of paths to search for `bibtex-string-files'.
+Initialized from the BIBINPUTS environment variable."
   :group 'bibtex
-  :type 'string)
+  :version "27.1"
+  :type '(choice string
+                 (const :tag "Not Set" nil)))
 
 (defcustom bibtex-files nil
   "List of BibTeX files that are searched for entry keys.
@@ -935,9 +952,12 @@ See also `bibtex-search-entry-globally'."
                          directory file)))
 
 (defcustom bibtex-file-path (getenv "BIBINPUTS")
-  "Colon separated list of paths to search for `bibtex-files'."
+  "Colon separated list of paths to search for `bibtex-files'.
+Initialized from the BIBINPUTS environment variable."
   :group 'bibtex
-  :type 'string)
+  :version "27.1"
+  :type '(choice string
+                 (const :tag "Not Set" nil)))
 
 (defcustom bibtex-search-entry-globally nil
   "If non-nil, interactive calls of `bibtex-search-entry' search globally.
@@ -1024,6 +1044,9 @@ See `bibtex-generate-autokey' for details."
   :type '(repeat (cons (regexp :tag "Old")
                        (string :tag "New"))))
 
+(defvaralias 'bibtex-autokey-name-case-convert
+  'bibtex-autokey-name-case-convert-function)
+
 (defcustom bibtex-autokey-name-case-convert-function 'downcase
   "Function called for each name to perform case conversion.
 See `bibtex-generate-autokey' for details."
@@ -1035,8 +1058,6 @@ See `bibtex-generate-autokey' for details."
                  (function :tag "Conversion function")))
 (put 'bibtex-autokey-name-case-convert-function 'safe-local-variable
      (lambda (x) (memq x '(upcase downcase capitalize identity))))
-(defvaralias 'bibtex-autokey-name-case-convert
-  'bibtex-autokey-name-case-convert-function)
 
 (defcustom bibtex-autokey-name-length 'infty
   "Number of characters from name to incorporate into key.
@@ -1099,6 +1120,9 @@ Case is significant.  See `bibtex-generate-autokey' for details."
   :group 'bibtex-autokey
   :type '(repeat regexp))
 
+(defvaralias 'bibtex-autokey-titleword-case-convert
+  'bibtex-autokey-titleword-case-convert-function)
+
 (defcustom bibtex-autokey-titleword-case-convert-function 'downcase
   "Function called for each titleword to perform case conversion.
 See `bibtex-generate-autokey' for details."
@@ -1108,8 +1132,6 @@ See `bibtex-generate-autokey' for details."
                  (const :tag "Capitalize" capitalize)
                  (const :tag "Upcase" upcase)
                  (function :tag "Conversion function")))
-(defvaralias 'bibtex-autokey-titleword-case-convert
-  'bibtex-autokey-titleword-case-convert-function)
 
 (defcustom bibtex-autokey-titleword-abbrevs nil
   "Determines exceptions to the usual abbreviation mechanism.
@@ -1227,7 +1249,7 @@ Used by `bibtex-complete-crossref-cleanup' and `bibtex-copy-summary-as-kill'."
 (defcustom bibtex-generate-url-list
   '((("url" . ".*:.*"))
     (("doi" . "10\\.[0-9]+/.+")
-     "http://dx.doi.org/%s"
+     "https://doi.org/%s"
      ("doi" ".*" 0)))
   "List of schemes for generating the URL of a BibTeX entry.
 These schemes are used by `bibtex-url'.
@@ -1340,6 +1362,8 @@ Set this variable before loading BibTeX mode."
     ;; The Key `C-c&' is reserved for reftex.el
     (define-key km "\t" 'bibtex-find-text)
     (define-key km "\n" 'bibtex-next-field)
+    (define-key km [remap forward-paragraph] 'bibtex-next-entry)
+    (define-key km [remap backward-paragraph] 'bibtex-previous-entry)
     (define-key km "\M-\t" 'completion-at-point)
     (define-key km "\C-c\"" 'bibtex-remove-delimiters)
     (define-key km "\C-c{" 'bibtex-remove-delimiters)
@@ -1399,6 +1423,8 @@ Set this variable before loading BibTeX mode."
     ("Moving inside an Entry"
      ["End of Field" bibtex-find-text t]
      ["Next Field" bibtex-next-field t]
+     ["Next entry" bibtex-next-entry t]
+     ["Previous entry" bibtex-previous-entry t]
      ["Beginning of Entry" bibtex-beginning-of-entry t]
      ["End of Entry" bibtex-end-of-entry t]
     "--"
@@ -1503,7 +1529,7 @@ At most `bibtex-entry-kill-ring-max' items are kept here.")
   "The tail of `bibtex-entry-kill-ring' whose car is the last item yanked.")
 
 (defvar bibtex-last-kill-command nil
-  "Type of the last kill command (either 'field or 'entry).")
+  "Type of the last kill command (either `field' or `entry').")
 
 (defvar bibtex-strings
   (lazy-completion-table bibtex-strings
@@ -2099,7 +2125,7 @@ If FLAG is nil, a message is echoed if point was incremented at least
          (let* ((size (- (point-max) (point-min)))
                 (perc (if (= size 0)
                           100
-                        (/ (* 100 (- (point) (point-min))) size))))
+                        (floor (* 100.0 (- (point) (point-min))) size))))
            (when (>= perc (+ bibtex-progress-lastperc
                              bibtex-progress-interval))
              (setq bibtex-progress-lastperc perc)
@@ -2168,7 +2194,7 @@ If FLAG is nil, a message is echoed if point was incremented at least
 (defun bibtex-beginning-of-first-entry ()
   "Go to beginning of line of first BibTeX entry in buffer.
 If `bibtex-sort-ignore-string-entries' is non-nil, @String entries
-are ignored.  Return point"
+are ignored.  Return point."
   (goto-char (point-min))
   (bibtex-skip-to-valid-entry)
   (point))
@@ -2229,7 +2255,7 @@ Optional arg COMMA is as in `bibtex-enclosing-field'."
                        bibtex-entry-kill-ring))
       ;; If we copied an entry from a buffer containing only this one entry,
       ;; it can be missing the second "\n".
-      (unless (looking-back "\n\n") (insert "\n"))
+      (unless (looking-back "\n\n" (- (point) 2)) (insert "\n"))
       (unless (functionp bibtex-reference-keys)
         ;; update `bibtex-reference-keys'
         (save-excursion
@@ -2329,7 +2355,8 @@ Formats current entry according to variable `bibtex-entry-format'."
                 (when (memq 'sort-fields format)
                   (goto-char (point-min))
                   (let ((beg-fields (save-excursion (bibtex-beginning-first-field)))
-                        (fields-alist (bibtex-parse-entry))
+                        (fields-alist (bibtex-parse-entry
+                                       nil (not (memq 'opts-or-alts format))))
                         bibtex-help-message elt)
                     (delete-region beg-fields (point))
                     (dolist (field default-field-list)
@@ -2351,7 +2378,8 @@ Formats current entry according to variable `bibtex-entry-format'."
                        (end-text  (copy-marker (bibtex-end-of-text-in-field bounds) t))
                        (empty-field (equal "" (bibtex-text-in-field-bounds bounds t)))
                        (field-name (buffer-substring-no-properties beg-name end-name))
-                       (opt-alt   (and (string-match "\\`\\(OPT\\|ALT\\)" field-name)
+                       (opt-alt   (and (memq 'opts-or-alts format)
+                                       (string-match "\\`\\(OPT\\|ALT\\)" field-name)
                                        (not (and bibtex-no-opt-remove-re
                                                  (string-match bibtex-no-opt-remove-re
                                                                field-name)))))
@@ -2573,7 +2601,7 @@ Formats current entry according to variable `bibtex-entry-format'."
 
 (defun bibtex-field-re-init (regexp-alist type)
   "Calculate optimized value for bibtex-regexp-TYPE-opt.
-This value is based on bibtex-regexp-TYPE-alist.  TYPE is 'braces or 'strings.
+This value is based on bibtex-regexp-TYPE-alist.  TYPE is `braces' or `strings'.
 Return optimized value to be used by `bibtex-format-entry'."
   (setq regexp-alist
         (mapcar (lambda (e)
@@ -2620,7 +2648,7 @@ is returned unchanged."
   "Get content of BibTeX field FIELD.  Return empty string if not found.
 Optional arg CHANGE-LIST is a list of substitution patterns that is
 applied to the content of FIELD.  It is an alist with pairs
-\(OLD-REGEXP . NEW-STRING\)."
+\(OLD-REGEXP . NEW-STRING)."
   (let* ((bibtex-expand-strings bibtex-autokey-expand-strings)
          (content (bibtex-text-in-field field bibtex-autokey-use-crossref))
         case-fold-search)
@@ -2692,7 +2720,7 @@ and `bibtex-autokey-names-stretch'."
 
 (defun bibtex-autokey-get-title ()
   "Get title field contents up to a terminator.
-Return the result as a string"
+Return the result as a string."
   (let ((case-fold-search t)
         (titlestring
          (bibtex-autokey-get-field "title"
@@ -2844,7 +2872,7 @@ Concatenate the key:
 (defun bibtex-read-key (prompt &optional key global)
   "Read BibTeX key from minibuffer using PROMPT and default KEY.
 If optional arg GLOBAL is non-nil, completion is based on the keys in
-`bibtex-reference-keys' of `bibtex-files',"
+`bibtex-reference-keys' of `bibtex-files'."
   (let (completion-ignore-case)
     (completing-read prompt (if global (bibtex-global-key-alist)
                               bibtex-reference-keys)
@@ -2887,6 +2915,9 @@ for parsing BibTeX keys.  If parsing fails, try to set this variable to nil."
                                          (1+ (match-beginning 3)) (1- (match-end 3)))))
                                (unless (assoc key crossref-keys)
                                  (push (list key) crossref-keys))))
+                            ;; We have probably have a non-bibtex file.
+                            ((not (match-beginning bibtex-type-in-head))
+                             (throw 'userkey nil))
                             ;; only keys of known entries
                             ((assoc-string (bibtex-type-in-head)
                                            bibtex-entry-alist t)
@@ -2918,7 +2949,7 @@ for parsing BibTeX keys.  If parsing fails, try to set this variable to nil."
               (if verbose
                   (bibtex-progress-message 'done))
               ;; successful operation --> return `bibtex-reference-keys'
-              (setq bibtex-reference-keys ref-keys)))))))
+              (setq bibtex-reference-keys (nreverse ref-keys))))))))
 
 (defun bibtex-parse-strings (&optional add abortable)
   "Set `bibtex-strings' to the string definitions in the whole buffer.
@@ -3032,7 +3063,7 @@ already set.  If SELECT is non-nil interactively select a BibTeX buffer.
 
 When called interactively, FORCE is t, CURRENT is t if current buffer
 visits a file using `bibtex-mode', and SELECT is t if current buffer
-does not use `bibtex-mode',"
+does not use `bibtex-mode'."
   (interactive (list (eq major-mode 'bibtex-mode) t
                      (not (eq major-mode 'bibtex-mode))))
   (let ((file-path (split-string (or bibtex-file-path default-directory) ":+"))
@@ -3625,20 +3656,20 @@ When called interactively with a prefix arg, query for a value of ENTRY-TYPE."
         (mapc 'bibtex-make-field required)
         (mapc 'bibtex-make-optional-field optional)))))
 
-(defun bibtex-parse-entry (&optional content)
+(defun bibtex-parse-entry (&optional content keep-opt-alt)
   "Parse entry at point, return an alist.
 The alist elements have the form (FIELD . TEXT), where FIELD can also be
 the special strings \"=type=\" and \"=key=\".  For the FIELD \"=key=\"
-TEXT may be nil.  Remove \"OPT\" and \"ALT\" from FIELD.
-Move point to the end of the last field.
-If optional arg CONTENT is non-nil extract content of text fields."
+TEXT may be nil.  Move point to the end of the last field.
+If optional arg CONTENT is non-nil extract content of text fields.
+Remove \"OPT\" and \"ALT\" from FIELD unless KEEP-OPT-ALT is non-nil."
   (let (alist bounds)
     (when (looking-at bibtex-entry-maybe-empty-head)
       (push (cons "=type=" (bibtex-type-in-head)) alist)
       (push (cons "=key=" (bibtex-key-in-head)) alist)
       (goto-char (match-end 0))
       (while (setq bounds (bibtex-parse-field))
-	(push (cons (bibtex-name-in-field bounds t)
+	(push (cons (bibtex-name-in-field bounds (not keep-opt-alt))
 		    (bibtex-text-in-field-bounds bounds content))
 	      alist)
 	(goto-char (bibtex-end-of-field bounds))))
@@ -3647,7 +3678,7 @@ If optional arg CONTENT is non-nil extract content of text fields."
 (defun bibtex-autofill-entry ()
   "Try to fill fields of current BibTeX entry based on neighboring entries.
 The current entry must have a key.  Determine the neighboring entry
-\(previous or next\) whose key is more similar to the key of the current
+\(previous or next) whose key is more similar to the key of the current
 entry.  For all empty fields of the current entry insert the corresponding
 field contents of the neighboring entry.  Finally try to update the text
 based on the difference between the keys of the neighboring and the current
@@ -3832,11 +3863,13 @@ Return the new location of point."
       (re-search-forward "[\n\C-m]" nil 'end (1- arg))
     (forward-line (1- arg))))
 
-(defun bibtex-reposition-window ()
+(defun bibtex-reposition-window (&optional pos)
   "Make the current BibTeX entry visible.
 If entry is smaller than `window-body-height', entry is centered in window.
-Otherwise display the beginning of entry."
+Otherwise display the beginning of entry.
+Optional arg POS is the position of the BibTeX entry to use."
   (interactive)
+  (if pos (goto-char pos))
   (let ((pnt (point))
         (beg (line-number-at-pos (bibtex-beginning-of-entry)))
         (end (line-number-at-pos (bibtex-end-of-entry))))
@@ -3855,9 +3888,10 @@ Otherwise display the beginning of entry."
         (goto-char pnt)))))
 
 (defun bibtex-mark-entry ()
-  "Put mark at beginning, point at end of current BibTeX entry."
+  "Put mark at beginning, point at end of current BibTeX entry.
+Activate mark in Transient Mark mode."
   (interactive)
-  (push-mark (bibtex-beginning-of-entry))
+  (push-mark (bibtex-beginning-of-entry) t t)
   (bibtex-end-of-entry))
 
 (defun bibtex-count-entries (&optional count-string-entries)
@@ -4044,8 +4078,7 @@ for a crossref key, t otherwise."
                (message "Key `%s' is current entry" crossref-key)
              (if eqb (select-window (split-window))
                (pop-to-buffer buffer))
-             (goto-char pos)
-             (bibtex-reposition-window)
+             (bibtex-reposition-window pos)
              (beginning-of-line)
              (if (and eqb (> pnt pos) (not noerror))
                  (error "The referencing entry must precede the crossrefed entry!"))))
@@ -4091,11 +4124,16 @@ A prefix arg negates the value of `bibtex-search-entry-globally'."
                     (setq buffer (pop buffer-list)))
           (with-current-buffer buffer
             (if (cdr (assoc-string key bibtex-reference-keys))
-                ;; `bibtex-search-entry' moves point if key found
                 (setq found (bibtex-search-entry key)))))
         (cond ((and found display)
-	       (switch-to-buffer buffer)
-	       (bibtex-reposition-window))
+               ;; If possible, reuse the window displaying BUFFER.
+               (let ((window (get-buffer-window buffer t)))
+                 (if window
+                     (progn
+                       (select-frame-set-input-focus (window-frame window))
+                       (select-window window))
+	           (switch-to-buffer buffer)))
+	       (bibtex-reposition-window found))
               (found (set-buffer buffer))
               (display (message "Key `%s' not found" key)))
         found)
@@ -4232,7 +4270,7 @@ Return t if test was successful, nil otherwise."
                (cond ((not previous))
                      ((member key key-list)
                       (push (cons (bibtex-current-line)
-                                  (format "Duplicate key `%s'" key))
+                                  (format-message "Duplicate key `%s'" key))
                             error-list))
                      ((and bibtex-maintain-sorted-entries
                            (not (bibtex-lessp previous current)))
@@ -4255,8 +4293,9 @@ Return t if test was successful, nil otherwise."
                          (cdr (assoc-string (car key) bibtex-reference-keys)))
                 (bibtex-search-entry (car key))
                 (push (cons (bibtex-current-line)
-                            (format "Duplicate key `%s' in %s" (car key)
-                                    (abbreviate-file-name (buffer-file-name buffer))))
+                            (format-message
+			     "Duplicate key `%s' in %s" (car key)
+			     (abbreviate-file-name (buffer-file-name buffer))))
                       error-list))))
 
           (when test-thoroughly
@@ -4306,14 +4345,16 @@ Return t if test was successful, nil otherwise."
                        (if (setq idx (nth 3 field))
                            (bibtex-vec-push alt-expect idx (car field))
                          (push (cons beg-line
-                                     (format "Required field `%s' missing"
-                                             (car field)))
+                                     (format-message
+				      "Required field `%s' missing"
+				      (car field)))
                                error-list)))
                      (dotimes (idx num-alt)
                        (unless (aref alt-fields idx)
                          (push (cons beg-line
-                                     (format "Alternative fields `%s' missing"
-                                             (aref alt-expect idx)))
+                                     (format-message
+				      "Alternative fields `%s' missing"
+				      (aref alt-expect idx)))
                                error-list))))))))
             (bibtex-progress-message 'done)))))
 
@@ -4327,7 +4368,8 @@ Return t if test was successful, nil otherwise."
             (unless (eq major-mode 'compilation-mode) (compilation-mode))
             (let ((inhibit-read-only t))
               (delete-region (point-min) (point-max))
-              (insert "BibTeX mode command `bibtex-validate'\n"
+              (insert (substitute-command-keys
+		       "BibTeX mode command `bibtex-validate'\n")
                       (if syntax-error
                           "Maybe undetected errors due to syntax errors.  \
 Correct and validate again.\n"
@@ -4338,10 +4380,10 @@ Correct and validate again.\n"
             (goto-char (point-min))
             (forward-line 2)) ; first error message
           (display-buffer err-buf)
-          nil) ; return `nil' (i.e., buffer is invalid)
+          nil) ; return nil (i.e., buffer is invalid)
       (message "%s is syntactically correct"
                (if mark-active "Region" "Buffer"))
-      t))) ; return `t' (i.e., buffer is valid)
+      t))) ; return t (i.e., buffer is valid)
 
 (defun bibtex-validate-globally (&optional strings)
   "Check for duplicate keys in `bibtex-files'.
@@ -4362,9 +4404,10 @@ Return t if test was successful, nil otherwise."
               (if (or (and strings (bibtex-string= entry-type "string"))
                       (assoc-string entry-type bibtex-entry-alist t))
                   (if (member key key-list)
-                      (push (format "%s:%d: Duplicate key `%s'\n"
-                                    (buffer-file-name)
-                                    (bibtex-current-line) key)
+                      (push (format-message
+			     "%s:%d: Duplicate key `%s'\n"
+			     (buffer-file-name)
+			     (bibtex-current-line) key)
                             error-list)
                     (push key key-list))))
             (push (cons buffer key-list) buffer-key-list)))))
@@ -4377,9 +4420,10 @@ Return t if test was successful, nil otherwise."
           (dolist (key (cdr (assq buffer buffer-key-list)))
             (when (assoc-string key current-keys)
               (bibtex-search-entry key)
-              (push (format "%s:%d: Duplicate key `%s' in %s\n"
-                            (buffer-file-name) (bibtex-current-line) key
-                            (abbreviate-file-name (buffer-file-name buffer)))
+              (push (format-message
+		     "%s:%d: Duplicate key `%s' in %s\n"
+		     (buffer-file-name) (bibtex-current-line) key
+		     (abbreviate-file-name (buffer-file-name buffer)))
                     error-list))))))
 
     ;; Process error list
@@ -4389,15 +4433,16 @@ Return t if test was successful, nil otherwise."
             (unless (eq major-mode 'compilation-mode) (compilation-mode))
             (let ((inhibit-read-only t))
               (delete-region (point-min) (point-max))
-              (insert "BibTeX mode command `bibtex-validate-globally'\n\n")
+              (insert (substitute-command-keys
+		       "BibTeX mode command `bibtex-validate-globally'\n\n"))
               (dolist (err (sort error-list 'string-lessp)) (insert err))
               (set-buffer-modified-p nil))
             (goto-char (point-min))
             (forward-line 2)) ; first error message
           (display-buffer err-buf)
-          nil) ; return `nil' (i.e., buffer is invalid)
+          nil) ; return nil (i.e., buffer is invalid)
       (message "No duplicate keys.")
-      t))) ; return `t' (i.e., buffer is valid)
+      t))) ; return t (i.e., buffer is valid)
 
 (defun bibtex-next-field (begin &optional comma)
   "Move point to end of text of next BibTeX field or entry head.
@@ -4419,6 +4464,24 @@ is as in `bibtex-enclosing-field'.  It is t for interactive calls."
              (re-search-forward bibtex-any-entry-maybe-empty-head nil t))
       (goto-char (match-beginning 0)))
     (bibtex-find-text begin nil bibtex-help-message)))
+
+(defun bibtex-next-entry (&optional arg)
+  "Move point ARG entries forward.
+ARG defaults to one.  Called interactively, ARG is the prefix
+argument."
+  (interactive "p")
+  (bibtex-end-of-entry)
+  (when (re-search-forward bibtex-entry-maybe-empty-head nil t (or arg 1))
+    (goto-char (match-beginning 0))))
+
+(defun bibtex-previous-entry (&optional arg)
+  "Move point ARG entries backward.
+ARG defaults to one.  Called interactively, ARG is the prefix
+argument."
+  (interactive "p")
+  (bibtex-beginning-of-entry)
+  (when (re-search-backward bibtex-entry-maybe-empty-head nil t (or arg 1))
+    (goto-char (match-beginning 0))))
 
 (defun bibtex-find-text (&optional begin noerror help comma)
   "Move point to end of text of current BibTeX field or entry head.
@@ -4904,23 +4967,26 @@ If mark is active reformat entries in region, if not in whole buffer."
           (cond (read-options
                  (if use-previous-options
                      bibtex-reformat-previous-options
-                   (setq bibtex-reformat-previous-options
-                         (delq nil
-                               (mapcar (lambda (option)
-                                         (if (y-or-n-p (car option)) (cdr option)))
-                                       `(("Realign entries (recommended)? " . realign)
-                                         ("Remove empty optional and alternative fields? " . opts-or-alts)
-                                         ("Remove delimiters around pure numerical fields? " . numerical-fields)
-                                         (,(concat (if bibtex-comma-after-last-field "Insert" "Remove")
-                                                   " comma at end of entry? ") . last-comma)
-                                         ("Replace double page dashes by single ones? " . page-dashes)
-                                         ("Delete whitespace at the beginning and end of fields? " . whitespace)
-                                         ("Inherit booktitle? " . inherit-booktitle)
-                                         ("Force delimiters? " . delimiters)
-                                         ("Unify case of entry types and field names? " . unify-case)
-                                         ("Enclose parts of field entries by braces? " . braces)
-                                         ("Replace parts of field entries by string constants? " . strings)
-                                         ("Sort fields? " . sort-fields)))))))
+                   (let (answers)
+                     (map-y-or-n-p
+                      #'car
+                      (lambda (option)
+                        (push (cdr option) answers))
+                      `(("Realign entries (recommended)? " . realign)
+                        ("Remove empty optional and alternative fields? " . opts-or-alts)
+                        ("Remove delimiters around pure numerical fields? " . numerical-fields)
+                        (,(concat (if bibtex-comma-after-last-field "Insert" "Remove")
+                                  " comma at end of entry? ") . last-comma)
+                        ("Replace double page dashes by single ones? " . page-dashes)
+                        ("Delete whitespace at the beginning and end of fields? " . whitespace)
+                        ("Inherit booktitle? " . inherit-booktitle)
+                        ("Force delimiters? " . delimiters)
+                        ("Unify case of entry types and field names? " . unify-case)
+                        ("Enclose parts of field entries by braces? " . braces)
+                        ("Replace parts of field entries by string constants? " . strings)
+                        ("Sort fields? " . sort-fields))
+                      '("formatting action" "formatting actions" "perform"))
+                     (setq bibtex-reformat-previous-options (nreverse answers)))))
                 ;; Do not include required-fields because `bibtex-reformat'
                 ;; cannot handle the error messages of `bibtex-format-entry'.
                 ;; Use `bibtex-validate' to check for required fields.
@@ -5038,7 +5104,7 @@ entries from minibuffer."
              (list beg end
                    (lambda (s p a)
                      (cond
-                      ((eq a 'metadata) `(metadata (category . bibtex-key)))
+                      ((eq a 'metadata) '(metadata (category . bibtex-key)))
                       (t (let ((completion-ignore-case nil))
                            (complete-with-action
                             a (bibtex-global-key-alist) s p)))))
@@ -5056,7 +5122,7 @@ entries from minibuffer."
            (list beg end
                  (lambda (s p a)
                    (cond
-                    ((eq a 'metadata) `(metadata (category . bibtex-string)))
+                    ((eq a 'metadata) '(metadata (category . bibtex-string)))
                     (t (let ((completion-ignore-case t))
                          (complete-with-action a compl s p)))))
                  :exit-function (bibtex-complete-string-cleanup compl))))))
@@ -5104,7 +5170,7 @@ entries from minibuffer."
   "Browse a URL for the BibTeX entry at point.
 Optional POS is the location of the BibTeX entry.
 The URL is generated using the schemes defined in `bibtex-generate-url-list'
-\(see there\).  If multiple schemes match for this entry, or the same scheme
+\(see there).  If multiple schemes match for this entry, or the same scheme
 matches more than once, use the one for which the first step's match is the
 closest to POS.  The URL is passed to `browse-url' unless NO-BROWSE is t.
 Return the URL or nil if none can be generated."
@@ -5280,7 +5346,7 @@ where FILE is the BibTeX file of ENTRY."
             (bibtex-display-entries entries)
           (message "No BibTeX entries %smatching `%s'"
                    (if (string= "" field) ""
-                     (format "with field `%s' " field))
+                     (format-message "with field `%s' " field))
                    regexp)))
     entries))
 

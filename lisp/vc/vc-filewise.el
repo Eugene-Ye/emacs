@@ -1,9 +1,9 @@
 ;;; vc-filewise.el --- common functions for file-oriented back ends.
 
-;; Copyright (C) 1992-1996, 1998-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992-1996, 1998-2020 Free Software Foundation, Inc.
 
-;; Author:     FSF (see vc.el for full credits)
-;; Maintainer: Andre Spiegel <spiegel@gnu.org>
+;; Author: FSF (see vc.el for full credits)
+;; Maintainer: emacs-devel@gnu.org
 ;; Package: vc
 
 ;; This file is part of GNU Emacs.
@@ -19,13 +19,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;; Common functions for file-oriented back ends - SCCS, RCS, SRC, CVS
-;; 
-;; The main purpose of this file is so none od this code jas to like
+;;
+;; The main purpose of this file is so none of this code has to live
 ;; in the always-resident vc-hooks.  A secondary purpose is to remove
 ;; code specific to this class of back ends from vc.el.
 
@@ -41,7 +41,7 @@ If the file is not registered, or the master name is not known, return nil."
       ;; vc-BACKEND-registered explicitly
       (let ((backend (vc-backend file)))
 	(if (and backend
-		 (vc-call-backend backend 'registered file))
+		 (vc-filewise-registered backend file))
 	    (vc-file-getprop file 'vc-name)))))
 
 (defun vc-rename-master (oldmaster newfile templates)
@@ -80,39 +80,5 @@ If the file is not registered, or the master name is not known, return nil."
       (if (stringp result)
 	  (vc-file-setprop file 'vc-name result)
 	nil))))				; Not registered
-
-(defun vc-check-master-templates (file templates)
-  "Return non-nil if there is a master corresponding to FILE.
-
-TEMPLATES is a list of strings or functions.  If an element is a
-string, it must be a control string as required by `format', with two
-string placeholders, such as \"%sRCS/%s,v\".  The directory part of
-FILE is substituted for the first placeholder, the basename of FILE
-for the second.  If a file with the resulting name exists, it is taken
-as the master of FILE, and returned.
-
-If an element of TEMPLATES is a function, it is called with the
-directory part and the basename of FILE as arguments.  It should
-return non-nil if it finds a master; that value is then returned by
-this function."
-  (let ((dirname (or (file-name-directory file) ""))
-        (basename (file-name-nondirectory file)))
-    (catch 'found
-      (mapcar
-       (lambda (s)
-	 (let ((trial (vc-possible-master s dirname basename)))
-	   (when (and trial (file-exists-p trial)
-		      ;; Make sure the file we found with name
-		      ;; TRIAL is not the source file itself.
-		      ;; That can happen with RCS-style names if
-		      ;; the file name is truncated (e.g. to 14
-		      ;; chars).  See if either directory or
-		      ;; attributes differ.
-		      (or (not (string= dirname
-					(file-name-directory trial)))
-			  (not (equal (file-attributes file)
-				      (file-attributes trial)))))
-	       (throw 'found trial))))
-       templates))))
 
 (provide 'vc-filewise)

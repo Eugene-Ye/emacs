@@ -1,6 +1,6 @@
 ;;; fast-lock.el --- automagic text properties caching for fast Font Lock mode
 
-;; Copyright (C) 1994-1998, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1998, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Simon Marshall <simon@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -161,7 +161,7 @@
 ;; - XEmacs: Add `font-lock-value-in-major-mode' if necessary
 ;; - Removed `fast-lock-submit-bug-report' and bade farewell
 ;; 3.11--3.12:
-;; - Added Custom support (Hrvoje Niksic help)
+;; - Added Custom support (Hrvoje Nikšić help)
 ;; - Made `save-buffer-state' wrap `inhibit-point-motion-hooks'
 ;; - Made `fast-lock-cache-data' simplify calls of `font-lock-compile-keywords'
 ;; 3.12--3.13:
@@ -190,17 +190,13 @@
 (defvar font-lock-face-list)
 
 (eval-when-compile
- ;;
- ;; We don't do this at the top-level as we only use non-autoloaded macros.
- (require 'cl)
- ;;
  ;; We use this to preserve or protect things when modifying text properties.
  (defmacro save-buffer-state (varlist &rest body)
    "Bind variables according to VARLIST and eval BODY restoring buffer state."
    `(let* (,@(append varlist
                      '((modified (buffer-modified-p)) (buffer-undo-list t)
                        (inhibit-read-only t) (inhibit-point-motion-hooks t)
-                       before-change-functions after-change-functions
+                       (inhibit-modification-hooks t)
                        deactivate-mark buffer-file-name buffer-file-truename)))
      ,@body
      (when (and (not modified) (buffer-modified-p))
@@ -217,23 +213,6 @@
            (while (unless (memq (car faces) fast-lock-save-faces)
                     (setq faces (cdr faces))))
            faces)))))
-
-;;(defun fast-lock-submit-bug-report ()
-;;  "Submit via mail a bug report on fast-lock.el."
-;;  (interactive)
-;;  (let ((reporter-prompt-for-summary-p t))
-;;    (reporter-submit-bug-report "simon@gnu.org" "fast-lock 3.14"
-;;     '(fast-lock-cache-directories fast-lock-minimum-size
-;;       fast-lock-save-others fast-lock-save-events fast-lock-save-faces
-;;       fast-lock-verbose)
-;;     nil nil
-;;     (concat "Hi Si.,
-;;
-;;I want to report a bug.  I've read the `Bugs' section of `Info' on Emacs, so I
-;;know how to make a clear and unambiguous report.  To reproduce the bug:
-;;
-;;Start a fresh editor via `" invocation-name " -no-init-file -no-site-file'.
-;;In the `*scratch*' buffer, evaluate:"))))
 
 (defgroup fast-lock nil
   "Font Lock support mode to cache fontification."
@@ -336,7 +315,7 @@ If nil, means information for all faces will be saved.")
 With arg, turn Fast Lock mode on if and only if arg is positive and the buffer
 is associated with a file.  Enable it automatically in your `~/.emacs' by:
 
- (setq font-lock-support-mode 'fast-lock-mode)
+ (setq font-lock-support-mode \\='fast-lock-mode)
 
 If Fast Lock mode is enabled, and the current buffer does not contain any text
 properties, any associated Font Lock cache is used if its timestamp matches the
@@ -445,7 +424,8 @@ See `fast-lock-mode'."
 	     ;; Only save if user's restrictions are satisfied.
 	     (and min-size (>= (buffer-size) min-size))
 	     (or fast-lock-save-others
-		 (eq (user-uid) (nth 2 (file-attributes buffer-file-name))))
+		 (eq (user-uid) (file-attribute-user-id
+				 (file-attributes buffer-file-name))))
 	     ;;
 	     ;; Only save if there are `face' properties to save.
 	     (text-property-not-all (point-min) (point-max) 'face nil))
@@ -538,7 +518,7 @@ If the same file has different cache file names when edited on different
 machines, e.g., on one machine the cache file name has the prefix `#home',
 perhaps due to automount, try putting in your `~/.emacs' something like:
 
- (setq directory-abbrev-alist (cons '(\"^/home/\" . \"/\") directory-abbrev-alist))
+ (setq directory-abbrev-alist (cons \\='(\"^/home/\" . \"/\") directory-abbrev-alist))
 
 Emacs automagically removes the common `/tmp_mnt' automount prefix by default.
 

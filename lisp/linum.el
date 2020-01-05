@@ -1,6 +1,6 @@
 ;;; linum.el --- display line numbers in the left margin -*- lexical-binding: t -*-
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Markus Triska <markus.triska@gmx.at>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -62,7 +62,7 @@ See also `linum-before-numbering-hook'."
 
 (defcustom linum-eager t
   "Whether line numbers should be updated after each command.
-The conservative setting `nil' might miss some buffer changes,
+The conservative setting nil might miss some buffer changes,
 and you have to scroll or press \\[recenter-top-bottom] to update the numbers."
   :group 'linum
   :type 'boolean)
@@ -75,12 +75,10 @@ and you have to scroll or press \\[recenter-top-bottom] to update the numbers."
 ;;;###autoload
 (define-minor-mode linum-mode
   "Toggle display of line numbers in the left margin (Linum mode).
-With a prefix argument ARG, enable Linum mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable the mode
-if ARG is omitted or nil.
 
 Linum mode is a buffer-local minor mode."
   :lighter ""                           ; for desktop.el
+  :append-arg-docstring t
   (if linum-mode
       (progn
         (if linum-eager
@@ -112,7 +110,20 @@ Linum mode is a buffer-local minor mode."
 (define-globalized-minor-mode global-linum-mode linum-mode linum-on)
 
 (defun linum-on ()
-  (unless (minibufferp)
+  (unless (or (minibufferp)
+              ;; Turning linum-mode in the daemon's initial frame
+              ;; could significantly slow down startup, if the buffer
+              ;; in which this is done is large, because Emacs thinks
+              ;; the "window" spans the entire buffer then.  This
+              ;; could happen when restoring session via desktop.el,
+              ;; if some large buffer was under linum-mode when
+              ;; desktop was saved.  So we disable linum-mode for
+              ;; non-client frames in a daemon session.
+
+              ;; Note that nowadays, this actually doesn't show line
+              ;; numbers in client frames at all, because we visit the
+              ;; file before creating the client frame.  See bug#35726.
+              (and (daemonp) (null (frame-parameter nil 'client))))
     (linum-mode 1)))
 
 (defun linum-delete-overlays ()
@@ -120,7 +131,15 @@ Linum mode is a buffer-local minor mode."
   (mapc #'delete-overlay linum-overlays)
   (setq linum-overlays nil)
   (dolist (w (get-buffer-window-list (current-buffer) nil t))
-    (set-window-margins w 0 (cdr (window-margins w)))))
+    ;; restore margins if needed FIXME: This still fails if the
+    ;; "other" mode has incidentally set margins to exactly what linum
+    ;; had: see bug#20674 for a similar workaround in nlinum.el
+    (let ((set-margins (window-parameter w 'linum--set-margins))
+          (current-margins (window-margins w)))
+      (when (and set-margins
+                 (equal set-margins current-margins))
+        (set-window-margins w 0 (cdr current-margins))
+        (set-window-parameter w 'linum--set-margins nil)))))
 
 (defun linum-update-current ()
   "Update line numbers for the current buffer."
@@ -138,8 +157,16 @@ Linum mode is a buffer-local minor mode."
       (mapc #'delete-overlay linum-available)
       (setq linum-available nil))))
 
-(defun linum--face-height (face)
-  (aref (font-info (face-font face)) 2))
+;; Behind display-graphic-p test.
+(declare-function font-info "font.c" (name &optional frame))
+
+(defun linum--face-width (face)
+  (let ((info (font-info (face-font face)))
+        width)
+    (setq width (aref info 11))
+    (if (<= width 0)
+        (setq width (aref info 10)))
+    width))
 
 (defun linum-update-window (win)
   "Update line numbers for the portion visible in window WIN."
@@ -162,7 +189,7 @@ Linum mode is a buffer-local minor mode."
              (visited (catch 'visited
                         (dolist (o (overlays-in (point) (point)))
                           (when (equal-including-properties
-				 (overlay-get o 'linum-str) str)
+                                 (overlay-get o 'linum-str) str)
                             (unless (memq o linum-overlays)
                               (push o linum-overlays))
                             (setq linum-available (delq o linum-available))
@@ -183,11 +210,14 @@ Linum mode is a buffer-local minor mode."
       (setq line (1+ line)))
     (when (display-graphic-p)
       (setq width (ceiling
-                   ;; We'd really want to check the widths rather than the
-                   ;; heights, but it's a start.
-                   (/ (* width 1.0 (linum--face-height 'linum))
-                      (frame-char-height)))))
-    (set-window-margins win width (cdr (window-margins win)))))
+                   (/ (* width 1.0 (linum--face-width 'linum))
+                      (frame-char-width)))))
+    ;; open up space in the left margin, if needed, and record that
+    ;; fact as the window-parameter `linum--set-margins'
+    (let ((existing-margins (window-margins win)))
+      (when (> width (or (car existing-margins) 0))
+        (set-window-margins win width (cdr existing-margins))
+        (set-window-parameter win 'linum--set-margins (window-margins win))))))
 
 (defun linum-after-change (beg end _len)
   ;; update overlays on deletions, and after newlines are inserted

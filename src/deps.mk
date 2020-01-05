@@ -1,7 +1,7 @@
 ### deps.mk --- src/Makefile fragment for GNU Emacs
 
-## Copyright (C) 1985, 1987-1988, 1993-1995, 1999-2014
-##   Free Software Foundation, Inc.
+## Copyright (C) 1985, 1987-1988, 1993-1995, 1999-2020 Free Software
+## Foundation, Inc.
 
 ## This file is part of GNU Emacs.
 
@@ -16,11 +16,11 @@
 ## GNU General Public License for more details.
 ##
 ## You should have received a copy of the GNU General Public License
-## along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+## along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ## Commentary:
 ##
-## This file is inserted in src/Makefile if AUTO_DEPEND=no.
+## This file is included in src/Makefile if AUTO_DEPEND=no.
 ## It defines static dependencies between the various source files.
 
 ## FIXME some of these dependencies are platform-specific.
@@ -35,7 +35,7 @@
 ### Code:
 
 atimer.o: atimer.c atimer.h syssignal.h systime.h lisp.h blockinput.h \
- globals.h ../lib/unistd.h $(config_h)
+ globals.h ../lib/unistd.h msdos.h $(config_h)
 bidi.o: bidi.c buffer.h character.h dispextern.h msdos.h lisp.h \
    globals.h $(config_h)
 buffer.o: buffer.c buffer.h region-cache.h commands.h window.h \
@@ -71,7 +71,7 @@ cmds.o: cmds.c syntax.h buffer.h character.h commands.h window.h lisp.h \
 pre-crt0.o: pre-crt0.c
 dbusbind.o: dbusbind.c termhooks.h frame.h keyboard.h lisp.h $(config_h)
 dired.o: dired.c commands.h buffer.h lisp.h $(config_h) character.h charset.h \
-   coding.h regex.h systime.h blockinput.h atimer.h composite.h \
+   coding.h regex-emacs.h systime.h blockinput.h atimer.h composite.h \
    ../lib/filemode.h ../lib/unistd.h globals.h
 dispnew.o: dispnew.c systime.h commands.h process.h frame.h coding.h \
    window.h buffer.h termchar.h termopts.h termhooks.h cm.h \
@@ -92,7 +92,7 @@ editfns.o: editfns.c window.h buffer.h systime.h $(INTERVALS_H) character.h \
 emacs.o: emacs.c commands.h systty.h syssignal.h blockinput.h process.h \
    termhooks.h buffer.h atimer.h systime.h $(INTERVALS_H) lisp.h $(config_h) \
    globals.h ../lib/unistd.h window.h dispextern.h keyboard.h keymap.h \
-   frame.h coding.h gnutls.h msdos.h unexec.h
+   frame.h coding.h gnutls.h msdos.h dosfns.h unexec.h
 fileio.o: fileio.c window.h buffer.h systime.h $(INTERVALS_H) character.h \
    coding.h msdos.h blockinput.h atimer.h lisp.h $(config_h) frame.h \
    commands.h globals.h ../lib/unistd.h
@@ -169,20 +169,21 @@ process.o: process.c process.h buffer.h window.h termhooks.h termopts.h \
    blockinput.h atimer.h coding.h msdos.h nsterm.h composite.h \
    keyboard.h lisp.h globals.h $(config_h) character.h xgselect.h sysselect.h \
    ../lib/unistd.h gnutls.h
-regex.o: regex.c syntax.h buffer.h lisp.h globals.h $(config_h) regex.h \
+regex-emacs.o: regex-emacs.c syntax.h buffer.h lisp.h globals.h \
+   $(config_h) regex-emacs.h \
    category.h character.h
 region-cache.o: region-cache.c buffer.h region-cache.h \
    lisp.h globals.h $(config_h)
 scroll.o: scroll.c termchar.h dispextern.h frame.h msdos.h keyboard.h \
    termhooks.h lisp.h globals.h $(config_h) systime.h coding.h composite.h \
    window.h
-search.o: search.c regex.h commands.h buffer.h region-cache.h syntax.h \
+search.o: search.c regex-emacs.h commands.h buffer.h region-cache.h syntax.h \
    blockinput.h atimer.h systime.h category.h character.h charset.h \
    $(INTERVALS_H) lisp.h globals.h $(config_h)
 sound.o: sound.c dispextern.h syssignal.h lisp.h globals.h $(config_h) \
    atimer.h systime.h ../lib/unistd.h msdos.h
 syntax.o: syntax.c syntax.h buffer.h commands.h category.h character.h \
-   keymap.h regex.h $(INTERVALS_H) lisp.h globals.h $(config_h)
+   keymap.h regex-emacs.h $(INTERVALS_H) lisp.h globals.h $(config_h)
 sysdep.o: sysdep.c syssignal.h systty.h systime.h syswait.h blockinput.h \
    process.h dispextern.h termhooks.h termchar.h termopts.h coding.h \
    frame.h atimer.h window.h msdos.h dosfns.h keyboard.h cm.h lisp.h \

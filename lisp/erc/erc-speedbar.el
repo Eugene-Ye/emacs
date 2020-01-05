@@ -1,9 +1,9 @@
 ;;; erc-speedbar.el --- Speedbar support for ERC
 
-;; Copyright (C) 2001-2004, 2006-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2004, 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Mario Lang <mlang@delysid.org>
-;; Contributor: Eric M. Ludlam <eric@siege-engine.com>
+;; Contributor: Eric M. Ludlam <zappo@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
 
 ;; This file is part of GNU Emacs.
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -42,15 +42,15 @@
 ;;; Customization:
 
 (defgroup erc-speedbar nil
-  "Integration of ERC in the Speedbar"
+  "Integration of ERC in the Speedbar."
   :group 'erc)
 
 (defcustom erc-speedbar-sort-users-type 'activity
   "How channel nicknames are sorted.
 
-'activity     - Sort users by channel activity
-'alphabetical - Sort users alphabetically
-nil           - Do not sort users"
+`activity'     - Sort users by channel activity
+`alphabetical' - Sort users alphabetically
+nil            - Do not sort users"
   :group 'erc-speedbar
   :type '(choice (const :tag "Sort users by channel activity" activity)
 		 (const :tag "Sort users alphabetically" alphabetical)
@@ -140,7 +140,7 @@ This will add a speedbar major display mode."
 	t))))
 
 (defun erc-speedbar-expand-server (text server indent)
-  (cond ((string-match "+" text)
+  (cond ((string-match "\\+" text)
 	 (speedbar-change-expand-button-char ?-)
 	 (if (speedbar-with-writable
 	       (save-excursion
@@ -185,7 +185,7 @@ This will add a speedbar major display mode."
   "For the line matching TEXT, in CHANNEL, expand or contract a line.
 INDENT is the current indentation level."
   (cond
-   ((string-match "+" text)
+   ((string-match "\\+" text)
     (speedbar-change-expand-button-char ?-)
     (speedbar-with-writable
      (save-excursion
@@ -270,8 +270,8 @@ INDENT is the current indentation level."
        indent))))
 
 (defun erc-speedbar-update-channel (buffer)
-  "Update the speedbar information about a ERC buffer. The update
-is only done when the channel is actually expanded already."
+  "Update the speedbar information about a ERC buffer.
+The update is only done when the channel is actually expanded already."
   ;; This is only a rude hack and doesn't care about multiserver usage
   ;; yet, consider this a brain storming, better ideas?
   (with-current-buffer speedbar-buffer
@@ -285,7 +285,7 @@ is only done when the channel is actually expanded already."
 	(erc-speedbar-expand-channel "+" buffer 1)))))
 
 (defun erc-speedbar-expand-user (text token indent)
-  (cond ((string-match "+" text)
+  (cond ((string-match "\\+" text)
 	 (speedbar-change-expand-button-char ?-)
 	 (speedbar-with-writable
 	   (save-excursion
@@ -361,7 +361,5 @@ The INDENT level is ignored."
 ;;; erc-speedbar.el ends here
 ;;
 ;; Local Variables:
-;; indent-tabs-mode: t
-;; tab-width: 8
+;; generated-autoload-file: "erc-loaddefs.el"
 ;; End:
-

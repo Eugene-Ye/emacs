@@ -1,6 +1,6 @@
 ### @configure_input@
 
-# Copyright (C) 1997-2014 Free Software Foundation, Inc.
+# Copyright (C) 1997-2020 Free Software Foundation, Inc.
 # Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
 #   2006, 2007, 2008, 2009, 2010, 2011
 #   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -19,7 +19,7 @@
 # GNU General Public License for more details.
 
 # You should have received a copy of the GNU General Public License
-# along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+# along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 SHELL = @SHELL@
 
@@ -29,12 +29,27 @@ srcdir=@srcdir@
 # Where the generated files go.
 leimdir = ${srcdir}/../lisp/leim
 
+EXEEXT = @EXEEXT@
+
+# 'make' verbosity.
+AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
+
+AM_V_GEN = $(am__v_GEN_@AM_V@)
+am__v_GEN_ = $(am__v_GEN_@AM_DEFAULT_V@)
+am__v_GEN_0 = @echo "  GEN     " $@;
+am__v_GEN_1 =
+
+AM_V_at = $(am__v_at_@AM_V@)
+am__v_at_ = $(am__v_at_@AM_DEFAULT_V@)
+am__v_at_0 = @
+am__v_at_1 =
+
 # Prevent any settings in the user environment causing problems.
 unexport EMACSDATA EMACSDOC EMACSPATH
 
 # Which Emacs to use to convert TIT files to Emacs Lisp files,
 # and generate the file leim-list.el.
-EMACS = ../src/emacs
+EMACS = ../src/emacs${EXEEXT}
 
 # How to run Emacs.
 # Prevent any setting of EMACSLOADPATH in user environment causing problems.
@@ -69,7 +84,8 @@ MISC= \
 	${leimdir}/quail/PY.el		\
 	${leimdir}/quail/ZIRANMA.el	\
 	${leimdir}/quail/CTLau.el	\
-	${leimdir}/quail/CTLau-b5.el
+	${leimdir}/quail/CTLau-b5.el    \
+	${srcdir}/../lisp/language/pinyin.el
 
 ## All the generated .el files.
 TIT_MISC = ${TIT_GB} ${TIT_BIG5} ${MISC}
@@ -88,11 +104,12 @@ ${leimdir}/quail ${leimdir}/ja-dic:
 
 ## All of TIT_GB and TIT_BIG5.
 ${leimdir}/quail/%.el: ${srcdir}/CXTERM-DIC/%.tit
-	${RUN_EMACS} -l titdic-cnv \
+	$(AM_V_GEN)${RUN_EMACS} -l titdic-cnv \
 	  -f batch-titdic-convert -dir ${leimdir}/quail $<
 
 
-misc_convert = ${RUN_EMACS} -l titdic-cnv -f batch-miscdic-convert -dir ${leimdir}/quail
+misc_convert = $(AM_V_GEN)${RUN_EMACS} \
+  -l titdic-cnv -f batch-miscdic-convert -dir ${leimdir}/quail
 
 ## CTLau.el, CTLau-b5.el.
 ${leimdir}/quail/CT%.el: ${srcdir}/MISC-DIC/CT%.html
@@ -114,17 +131,20 @@ ${leimdir}/quail/tsang-%.el ${leimdir}/quail/quick-%.el: ${srcdir}/MISC-DIC/cang
 leim-list.el: ${leimdir}/leim-list.el
 
 ${leimdir}/leim-list.el: ${srcdir}/leim-ext.el ${TIT_MISC}
-	rm -f $@
-	${RUN_EMACS} -l international/quail \
+	$(AM_V_GEN)rm -f $@
+	$(AM_V_at)${RUN_EMACS} -l international/quail \
 	  --eval "(update-leim-list-file (unmsys--file-name \"${leimdir}\"))"
-	sed -n -e '/^[^;]/p' -e 's/^;\(;*\)inc /;\1 /p' < $< >> $@
+	$(AM_V_at)sed -n -e '/^[^;]/p' -e 's/^;\(;*\)inc /;\1 /p' < $< >> $@
 
 
 ${leimdir}/ja-dic/ja-dic.el: | $(leimdir)/ja-dic
 
 ${leimdir}/ja-dic/ja-dic.el: $(srcdir)/SKK-DIC/SKK-JISYO.L
-	$(RUN_EMACS) -batch -l ja-dic-cnv \
+	$(AM_V_GEN)$(RUN_EMACS) -batch -l ja-dic-cnv \
 	  -f batch-skkdic-convert -dir "$(leimdir)/ja-dic" "$<"
+
+${srcdir}/../lisp/language/pinyin.el: ${srcdir}/MISC-DIC/pinyin.map
+	$(AM_V_GEN)${RUN_EMACS} -l titdic-cnv -f pinyin-convert $< $@
 
 
 .PHONY: bootstrap-clean distclean maintainer-clean extraclean
@@ -139,7 +159,7 @@ maintainer-clean: distclean bootstrap-clean
 
 ## We do not delete ja-dic, even in a bootstrap, because it rarely
 ## changes and is slow to regenerate.
-extraclean:
+extraclean: bootstrap-clean
 	rm -rf ${leimdir}/ja-dic
 
 ### Makefile.in ends here

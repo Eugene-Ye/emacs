@@ -1,6 +1,6 @@
 ;;; deuglify.el --- deuglify broken Outlook (Express) articles
 
-;; Copyright (C) 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Raymond Scholz <rscholz@zonix.de>
 ;;         Thomas Steffen
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -78,7 +78,7 @@
 ;; `gnus-outlook-deuglify-unwrap-stop-chars'.  Setting this to ".?!"
 ;; inhibits unwrapping if the cited line ends with a full stop,
 ;; question mark or exclamation mark.  Note that this variable
-;; defaults to `nil', triggering a few false positives but generally
+;; defaults to nil, triggering a few false positives but generally
 ;; giving you better results.
 ;;
 ;; Unwrapping works on every level of citation.  Thus you will be able
@@ -110,7 +110,7 @@
 ;; > Bye, John
 ;;
 ;; Repairing the attribution line will be done by function
-;; `gnus-article-outlook-repair-attribution which calls other function that
+;; `gnus-article-outlook-repair-attribution' which calls other function that
 ;; try to recognize and repair broken attribution lines.  See variable
 ;; `gnus-outlook-deuglify-attrib-cut-regexp' for stuff that should be
 ;; cut off from the beginning of an attribution line and variable
@@ -121,7 +121,7 @@
 ;; Rearranging the article so that the cited text appears above the
 ;; new text will be done by function
 ;; `gnus-article-outlook-rearrange-citation'.  This function calls
-;; `gnus-article-outlook-repair-attribution to find and repair an attribution
+;; `gnus-article-outlook-repair-attribution' to find and repair an attribution
 ;; line.
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -177,18 +177,18 @@
 ;; As I said before there may (or will) be a few false positives on
 ;; unwrapping cited lines with `gnus-article-outlook-unwrap-lines'.
 ;;
-;; `gnus-article-outlook-repair-attribution will only fix the first
+;; `gnus-article-outlook-repair-attribution' will only fix the first
 ;; attribution line found in the article.  Furthermore it fixed to
 ;; certain kinds of attributions.  And there may be horribly many
 ;; false positives, vanishing lines and so on -- so don't trust your
 ;; eyes.  Again I recommend manual invocation.
 ;;
 ;; `gnus-article-outlook-rearrange-citation' carries all the limitations of
-;; `gnus-article-outlook-repair-attribution.
+;; `gnus-article-outlook-repair-attribution'.
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
-;; See ChangeLog for other changes.
+;; See commit log for other changes.
 ;;
 ;; Revision 1.5  2002/01/27 14:39:17  rscholz
 ;; * New variable `gnus-outlook-deuglify-no-wrap-chars' to inhibit
@@ -266,25 +266,25 @@
   "\\(On \\|Am \\)?\\(Mon\\|Tue\\|Wed\\|Thu\\|Fri\\|Sat\\|Sun\\),[^,]+, "
   "Regular expression matching the beginning of an attribution line that should be cut off."
   :version "22.1"
-  :type 'string
+  :type 'regexp
   :group 'gnus-outlook-deuglify)
 
 (defcustom gnus-outlook-deuglify-attrib-verb-regexp
   "wrote\\|writes\\|says\\|schrieb\\|schreibt\\|meinte\\|skrev\\|a écrit\\|schreef\\|escribió"
   "Regular expression matching the verb used in an attribution line."
   :version "22.1"
-  :type 'string
+  :type 'regexp
   :group 'gnus-outlook-deuglify)
 
 (defcustom  gnus-outlook-deuglify-attrib-end-regexp
   ": *\\|\\.\\.\\."
   "Regular expression matching the end of an attribution line."
   :version "22.1"
-  :type 'string
+  :type 'regexp
   :group 'gnus-outlook-deuglify)
 
 (defcustom gnus-outlook-display-hook nil
-  "A hook called after an deuglified article has been prepared.
+  "A hook called after a deuglified article has been prepared.
 It is run after `gnus-article-prepare-hook'."
   :version "22.1"
   :type 'hook
@@ -299,8 +299,12 @@ It is run after `gnus-article-prepare-hook'."
     ;; it. Calling `gnus-article-prepare-display' on an already
     ;; prepared article removes all MIME parts.  I'm unsure whether
     ;; this is a bug or not.
-    (gnus-article-highlight t)
-    (gnus-treat-article nil)
+    (save-excursion
+      (save-restriction
+	(widen)
+	(article-goto-body)
+	(narrow-to-region (point) (point-max))
+	(gnus-treat-article nil)))
     (gnus-run-hooks 'gnus-article-prepare-hook
 		    'gnus-outlook-display-hook)))
 
@@ -452,11 +456,12 @@ If NODISPLAY is non-nil, don't redisplay the article buffer."
 ;;;###autoload
 (defun gnus-outlook-deuglify-article (&optional nodisplay)
   "Full deuglify of broken Outlook (Express) articles.
-Treat dumbquotes, unwrap lines, repair attribution and rearrange citation.  If
-NODISPLAY is non-nil, don't redisplay the article buffer."
+Treat \"smartquotes\", unwrap lines, repair attribution and
+rearrange citation.  If NODISPLAY is non-nil, don't redisplay the
+article buffer."
   (interactive "P")
   ;; apply treatment of dumb quotes
-  (gnus-article-treat-dumbquotes)
+  (gnus-article-treat-smartquotes)
   ;; repair wrapped cited lines
   (gnus-article-outlook-unwrap-lines 'nodisplay)
   ;; repair attribution line and rearrange citation.

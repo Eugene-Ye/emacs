@@ -1,6 +1,6 @@
 ;;; descr-text.el --- describe text mode  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1994-1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Boris Goldowsky <boris@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -88,8 +88,6 @@ into help buttons that call `describe-text-category' or
 	     (insert-text-button
 	      (format "%S" value)
 	      'type 'help-face 'help-args (list value)))
-            ((widgetp value)
-	     (describe-text-widget value))
 	    (t
 	     (describe-text-sexp value))))
     (insert "\n")))
@@ -161,8 +159,8 @@ otherwise."
       ;; Buttons
       (when (and button (not (widgetp wid-button)))
 	(newline)
-	(insert "Here is a `" (format "%S" button-type)
-		"' button labeled `" button-label "'.\n\n"))
+	(insert (format-message "Here is a `%S' button labeled `%s'.\n\n"
+                                button-type button-label)))
       ;; Overlays
       (when overlays
 	(newline)
@@ -277,12 +275,12 @@ This function is semi-obsolete.  Use `get-char-code-property'."
 			    'general-category (intern val))
 			   val)))
 	       (list "Combining class"
-		     (let ((val (nth 1 fields)))
+		     (let ((val (nth 2 fields)))
 		       (or (char-code-property-description
 			    'canonical-combining-class (intern val))
 			   val)))
 	       (list "Bidi category"
-		     (let ((val (nth 1 fields)))
+		     (let ((val (nth 3 fields)))
 		       (or (char-code-property-description
 			    'bidi-class (intern val))
 			   val)))
@@ -322,7 +320,7 @@ This function is semi-obsolete.  Use `get-char-code-property'."
 					       (nth 13 fields) 16)))))))))))
 
 ;; Not defined on builds without X, but behind display-graphic-p.
-(declare-function internal-char-font "fontset.c" (position &optional ch))
+(declare-function internal-char-font "font.c" (position &optional ch))
 
 ;; Return information about how CHAR is displayed at the buffer
 ;; position POS.  If the selected frame is on a graphic display,
@@ -386,13 +384,22 @@ The position information includes POS; the total size of BUFFER; the
 region limits, if narrowed; the column number; and the horizontal
 scroll amount, if the buffer is horizontally scrolled.
 
-The character information includes the character code; charset and
-code points in it; syntax; category; how the character is encoded in
-BUFFER and in BUFFER's file; character composition information (if
-relevant); the font and font glyphs used to display the character;
-the character's canonical name and other properties defined by the
-Unicode Data Base; and widgets, buttons, overlays, and text properties
-relevant to POS."
+The character information includes:
+ its codepoint;
+ its charset (see `char-charset'), overridden by the `charset' text
+   property at POS, if any;
+ the codepoint of the character in the above charset;
+ the character's script (as defined by `char-script-table')
+ the character's syntax, as produced by `syntax-after'
+   and `internal-describe-syntax-value';
+ its category (see `char-category-set' and `describe-char-categories');
+ how to input the character using the keyboard and input methods;
+ how the character is encoded in BUFFER and in BUFFER's file;
+ the font and font glyphs used to display the character;
+ the composition information for displaying the character (if relevant);
+ the character's canonical name and other properties defined by the
+   Unicode Data Base;
+ and widgets, buttons, overlays, and text properties relevant to POS."
   (interactive "d")
   (unless (buffer-live-p buffer) (setq buffer (current-buffer)))
   (let ((src-buf (current-buffer)))
@@ -413,12 +420,11 @@ relevant to POS."
            (multibyte-p enable-multibyte-characters)
            (overlays (mapcar (lambda (o) (overlay-properties o))
                              (overlays-at pos)))
-           (char-description (if (not multibyte-p)
+           (char-description (if (< char 128)
                                  (single-key-description char)
-                               (if (< char 128)
-                                   (single-key-description char)
-                                 (string-to-multibyte
-                                  (char-to-string char)))))
+                               (string (if (not multibyte-p)
+                                           (decode-char 'eight-bit char)
+                                         char))))
            (text-props-desc
             (let ((tmp-buf (generate-new-buffer " *text-props*")))
               (unwind-protect
@@ -539,9 +545,7 @@ relevant to POS."
                ,(let* ((beg      (point-min))
                        (end      (point-max))
                        (total    (buffer-size))
-                       (percent  (if (> total 50000) ; Avoid overflow multiplying by 100
-                                     (/ (+ (/ total 200) (1- pos))  (max (/ total 100) 1))
-                                   (/ (+ (/ total 2) (* 100 (1- pos)))  (max total 1))))
+                       (percent  (round (* 100.0 (1- pos)) (max total 1)))
                        (hscroll  (if (= (window-hscroll) 0)
                                      ""
                                    (format ", Hscroll: %d" (window-hscroll))))
@@ -559,7 +563,7 @@ relevant to POS."
                         (apply 'propertize char-description
                                (text-properties-at pos))
                         char char char))
-              ("preferred charset"
+              ("charset"
                ,`(insert-text-button
                   ,(symbol-name charset)
                   'type 'help-character-set 'help-args '(,charset))
@@ -618,11 +622,28 @@ relevant to POS."
                                    'help-args '(,current-input-method))
 				 "input method")
 			 (list
-			  "type \"C-x 8 RET HEX-CODEPOINT\" or \"C-x 8 RET NAME\"")))))
+                          (let* ((names (ucs-names))
+                                 (name
+                                  (or (when (= char ?\a)
+				       ;; Special case for "BELL" which is
+				       ;; apparently the only char which
+				       ;; doesn't have a new name and whose
+				       ;; old-name is shadowed by a newer char
+				       ;; with that name (bug#25641).
+				       "BELL (BEL)")
+                                      (get-char-code-property char 'name)
+                                      (get-char-code-property char 'old-name))))
+                            (if (and name (gethash name names))
+                                (format
+                                 "type \"C-x 8 RET %x\" or \"C-x 8 RET %s\""
+                                 char name)
+                              (format "type \"C-x 8 RET %x\"" char))))))))
               ("buffer code"
                ,(if multibyte-p
                     (encoded-string-description
-                     (string-as-unibyte (char-to-string char)) nil)
+                     (encode-coding-string (char-to-string char)
+                                           'emacs-internal)
+                     nil)
                   (format "#x%02X" char)))
               ("file code"
                ,@(if multibyte-p
@@ -691,7 +712,6 @@ relevant to POS."
                        (called-interactively-p 'interactive))
       (with-help-window (help-buffer)
         (with-current-buffer standard-output
-          (set-buffer-multibyte multibyte-p)
           (let ((formatter (format "%%%ds:" max-width)))
             (dolist (elt item-list)
               (when (cadr elt)
@@ -719,26 +739,17 @@ relevant to POS."
           (when disp-vector
             (insert
              "\nThe display table entry is displayed by ")
-            (if (display-graphic-p (selected-frame))
-                (progn
-                  (insert "these fonts (glyph codes):\n")
-                  (dotimes (i (length disp-vector))
-                    (insert (glyph-char (car (aref disp-vector i))) ?:
-                            (propertize " " 'display '(space :align-to 5))
-                            (or (cdr (aref disp-vector i)) "-- no font --")
-                            "\n")
-                    (let ((face (glyph-face (car (aref disp-vector i)))))
-                      (when face
-                        (insert (propertize " " 'display '(space :align-to 5))
-                                "face: ")
-                        (insert (concat "`" (symbol-name face) "'"))
-                        (insert "\n")))))
-              (insert "these terminal codes:\n")
-              (dotimes (i (length disp-vector))
-                (insert (car (aref disp-vector i))
-                        (propertize " " 'display '(space :align-to 5))
-                        (or (cdr (aref disp-vector i)) "-- not encodable --")
-                        "\n"))))
+            (insert "these fonts (glyph codes):\n")
+            (dotimes (i (length disp-vector))
+              (insert (glyph-char (car (aref disp-vector i))) ?:
+                      (propertize " " 'display '(space :align-to 5))
+                      (or (cdr (aref disp-vector i)) "-- no font --")
+                      "\n")
+              (let ((face (glyph-face (car (aref disp-vector i)))))
+                (when face
+                  (insert (propertize " " 'display '(space :align-to 5))
+                          "face: ")
+                  (insert (format-message "`%s'\n" face))))))
 
           (when composition
             (insert "\nComposed")
@@ -795,7 +806,8 @@ relevant to POS."
                   (insert "\n  " (car elt) ":"
                           (propertize " " 'display '(space :align-to 4))
                           (or (cdr elt) "-- not encodable --"))))
-              (insert "\nSee the variable `reference-point-alist' for "
+              (insert (substitute-command-keys
+		       "\nSee the variable `reference-point-alist' for ")
                       "the meaning of the rule.\n")))
 
           (unless eight-bit-p
@@ -809,9 +821,16 @@ relevant to POS."
                         'describe-char-unidata-list))
              'follow-link t)
             (insert "\n")
-            (dolist (elt (if (eq describe-char-unidata-list t)
-                             (nreverse (mapcar 'car char-code-property-alist))
-                           describe-char-unidata-list))
+            (dolist (elt
+                     (cond ((eq describe-char-unidata-list t)
+                            (nreverse (mapcar 'car char-code-property-alist)))
+                           ((< char 32)
+                            ;; Temporary fix (2016-05-22): The
+                            ;; decomposition item for \n corrupts the
+                            ;; display on a Linux virtual terminal.
+                            ;; (Bug #23594).
+                            (remq 'decomposition describe-char-unidata-list))
+                           (t describe-char-unidata-list)))
               (let ((val (get-char-code-property char elt))
                     description)
                 (when val
@@ -823,7 +842,101 @@ relevant to POS."
           (if text-props-desc (insert text-props-desc))
           (setq buffer-read-only t))))))
 
-(define-obsolete-function-alias 'describe-char-after 'describe-char "22.1")
+;;; Describe-Char-ElDoc
+
+(defun describe-char-eldoc--truncate (name width)
+  "Truncate NAME at white spaces such that it is no longer than WIDTH.
+
+Split NAME on white space character and return string with as
+many leading words of NAME as possible without exceeding WIDTH
+characters.  If NAME consists of white space characters only,
+return an empty string.  Three dots (\"...\") are appended to
+returned string if some of the words from NAME have been omitted.
+
+NB: Function may return string longer than WIDTH if name consists
+of a single word, or it's first word is longer than WIDTH
+characters."
+  (let ((words (split-string name)))
+    (if words
+        (let ((last words))
+          (setq width (- width (length (car words))))
+          (while (and (cdr last)
+                      (<= (+ (length (cadr last)) (if (cddr last) 4 1)) width))
+            (setq last (cdr last))
+            (setq width (- width (length (car last)) 1)))
+          (let ((ellipsis (and (cdr last) "...")))
+            (setcdr last nil)
+            (concat (mapconcat 'identity words " ") ellipsis)))
+      "")))
+
+(defun describe-char-eldoc--format (ch &optional width)
+  "Format a description for character CH which is no more than WIDTH characters.
+
+Full description message has a \"U+HEX: NAME (GC: GENERAL-CATEGORY)\"
+format where:
+- HEX is a hexadecimal codepoint of the character (zero-padded to at
+  least four digits),
+- NAME is name of the character.
+- GC is a two-letter abbreviation of the general-category of the
+  character, and
+- GENERAL-CATEGORY is full name of the general-category of the
+  character.
+
+If WIDTH is non-nil some elements of the description may be
+omitted to accommodate the length restriction.  Under certain
+condition, the function may return string longer than WIDTH, see
+`describe-char-eldoc--truncate'."
+  (let ((name (get-char-code-property ch 'name)))
+    (when name
+      (let* ((code (propertize (format "U+%04X" ch)
+                               'face 'font-lock-constant-face))
+             (gc (get-char-code-property ch 'general-category))
+             (gc-desc (char-code-property-description 'general-category gc)))
+
+        (unless (or (not width) (<= (length name) width))
+          (setq name (describe-char-eldoc--truncate name width)))
+        (setq name (concat (substring name 0 1) (downcase (substring name 1))))
+        (setq name (propertize name 'face 'font-lock-variable-name-face))
+
+        (setq gc (propertize (symbol-name gc) 'face 'font-lock-comment-face))
+        (when gc-desc
+          (setq gc-desc (propertize gc-desc 'face 'font-lock-comment-face)))
+
+        (let ((lcode    (length code))
+              (lname    (length name))
+              (lgc      (length gc))
+              (lgc-desc (and gc-desc (length gc-desc))))
+          (cond
+           ((and gc-desc
+                 (or (not width) (<= (+ lcode lname lgc lgc-desc 7) width)))
+            (concat code ": " name " (" gc ": " gc-desc ")"))
+           ((and gc-desc (<= (+ lcode lname lgc-desc 5) width))
+            (concat code ": " name " (" gc-desc ")"))
+           ((or (not width) (<= (+ lcode lname lgc 5) width))
+            (concat code ": " name " (" gc ")"))
+           ((<= (+ lname lgc 3) width)
+            (concat name " (" gc ")"))
+           (t name)))))))
+
+;;;###autoload
+(defun describe-char-eldoc ()
+  "Return a description of character at point for use by ElDoc mode.
+
+Return nil if character at point is a printable ASCII
+character (i.e. codepoint between 32 and 127 inclusively).
+Otherwise return a description formatted by
+`describe-char-eldoc--format' function taking into account value
+of `eldoc-echo-area-use-multiline-p' variable and width of
+minibuffer window for width limit.
+
+This function is meant to be used as a value of
+`eldoc-documentation-function' variable."
+  (let ((ch (following-char)))
+    (when (and (not (zerop ch)) (or (< ch 32) (> ch 127)))
+      (describe-char-eldoc--format
+       ch
+       (unless (eq eldoc-echo-area-use-multiline-p t)
+         (1- (window-width (minibuffer-window))))))))
 
 (provide 'descr-text)
 

@@ -1,6 +1,6 @@
 ;;; mm-archive.el --- Functions for parsing archive files as MIME
 
-;; Copyright (C) 2012-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; This file is part of GNU Emacs.
@@ -16,30 +16,32 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
 (require 'mm-decode)
-(eval-when-compile
-  (autoload 'gnus-recursive-directory-files "gnus-util")
-  (autoload 'mailcap-extension-to-mime "mailcap"))
+(autoload 'gnus-recursive-directory-files "gnus-util")
+(autoload 'mailcap-extension-to-mime "mailcap")
 
 (defvar mm-archive-decoders
   '(("application/ms-tnef" t "tnef" "-f" "-" "-C")
     ("application/zip" nil "unzip" "-j" "-x" "%f" "-d")
     ("application/x-gtar-compressed" nil "tar" "xzf" "-" "-C")
+    ("application/x-tar-gz" nil "tar" "xzf" "-" "-C")
     ("application/x-tar" nil "tar" "xf" "-" "-C")))
 
 (defun mm-archive-decoders () mm-archive-decoders)
 
 (defun mm-dissect-archive (handle)
-  (let ((decoder (cddr (assoc (car (mm-handle-type handle))
-			      mm-archive-decoders)))
-	(dir (mm-make-temp-file
-	      (expand-file-name "emm." mm-tmp-directory) 'dir)))
+  (let* ((type (car (mm-handle-type handle)))
+	 (decoder (cddr (assoc type mm-archive-decoders)))
+	 dir)
+    (unless decoder
+      (error "No decoder found for %s" type))
+    (setq dir (make-temp-file (expand-file-name "emm." mm-tmp-directory) 'dir))
     (set-file-modes dir #o700)
     (unwind-protect
 	(progn

@@ -1,10 +1,10 @@
 ;;; tildify.el --- adding hard spaces into texts -*- lexical-binding: t -*-
 
-;; Copyright (C) 1997-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 
 ;; Author:     Milan Zamazal <pdm@zamazal.org>
 ;;             Michal Nazarewicz <mina86@mina86.com>
-;; Version:    4.5.7
+;; Version:    4.6.1
 ;; Keywords:   text, TeX, SGML, wp
 
 ;; This file is part of GNU Emacs.
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -54,7 +54,7 @@
 (defgroup tildify nil
   "Add hard spaces or other text fragments to text buffers."
   :version "21.1"
-  :group 'wp)
+  :group 'text)
 
 (defcustom tildify-pattern
   "\\(?:[,:;(][ \t]*[a]\\|\\<[AIKOSUVZikosuvz]\\)\\([ \t]+\\|[ \t]*\n[ \t]*\\)\\(?:\\w\\|[([{\\]\\|<[a-zA-Z]\\)"
@@ -67,7 +67,7 @@ matching the white space).  The pattern is matched case-sensitive regardless of
 the value of `case-fold-search' setting."
   :version "25.1"
   :group 'tildify
-  :type 'string
+  :type 'regexp
   :safe t)
 
 (defcustom tildify-pattern-alist ()
@@ -160,7 +160,7 @@ a simple pass through function could be used:
     (setq-local tildify-foreach-region-function
                 (lambda (cb beg end) (funcall cb beg end)))
 or better still:
-    (setq-local tildify-foreach-region-function 'funcall)
+    (setq-local tildify-foreach-region-function \\='funcall)
 See `tildify-foreach-ignore-environments' function for other ways to use the
 variable."
   :version "25.1"
@@ -261,7 +261,9 @@ Call CALLBACK on each region outside of environment to ignore.  Stop scanning
 the region as soon as CALLBACK returns nil.  Environments to ignore are
 defined by deprecated `tildify-ignored-environments-alist'.   CALLBACK may be
 called on portions of the buffer outside of [BEG END)."
-  (let ((pairs (tildify--pick-alist-entry tildify-ignored-environments-alist)))
+  (let ((pairs (with-suppressed-warnings ((obsolete tildify--pick-alist-entry))
+                 (tildify--pick-alist-entry
+                  tildify-ignored-environments-alist))))
     (if pairs
         (tildify-foreach-ignore-environments pairs callback beg end)
       (funcall callback beg end))))
@@ -282,7 +284,7 @@ corresponding text part and can be either:
 
 CALLBACK is a function accepting two arguments -- REG-BEG and REG-END -- that
 will be called for portions of the buffer outside of the environments defined by
-PAIRS regexes.
+PAIRS regexps.
 
 The function will return as soon as CALLBACK returns nil or point goes past END.
 CALLBACK may be called on portions of the buffer outside of [BEG END); in fact
@@ -291,8 +293,8 @@ BEG argument is ignored.
 This function is meant to be used to set `tildify-foreach-region-function'
 variable.  For example, for an XML file one might use:
   (setq-local tildify-foreach-region-function
-    (apply-partially 'tildify-foreach-ignore-environments
-                     '((\"<! *--\" . \"-- *>\") (\"<\" . \">\"))))"
+    (apply-partially \\='tildify-foreach-ignore-environments
+                     \\='((\"<! *--\" . \"-- *>\") (\"<\" . \">\"))))"
   (let ((beg-re (concat "\\(?:" (mapconcat 'car pairs "\\)\\|\\(?:") "\\)"))
         p end-re)
     (save-excursion
@@ -350,12 +352,14 @@ If ASK is nil, perform replace without asking user for confirmation.
 
 Returns (count . response) cons where count is number of string
 replacements done and response is one of symbols: t (all right), nil
-(quit), force (replace without further questions)."
+\(quit), force (replace without further questions)."
   (save-excursion
     (goto-char beg)
     (let ((regexp tildify-pattern)
           (match-number 1)
-          (tilde (or (tildify--pick-alist-entry tildify-string-alist)
+          (tilde (or (with-suppressed-warnings ((obsolete
+                                                 tildify--pick-alist-entry))
+                       (tildify--pick-alist-entry tildify-string-alist))
                      tildify-space-string))
           (end-marker (copy-marker end))
           answer
@@ -365,7 +369,9 @@ replacements done and response is one of symbols: t (all right), nil
           (message-log-max nil)
           (count 0))
       ;; For the time being, tildify-pattern-alist overwrites tildify-pattern
-      (let ((alist (tildify--pick-alist-entry tildify-pattern-alist)))
+      (let ((alist (with-suppressed-warnings ((obsolete
+                                               tildify--pick-alist-entry))
+                     (tildify--pick-alist-entry tildify-pattern-alist))))
         (when alist
           (setq regexp (car alist) match-number (cadr alist))))
       (while (and (not quit)
@@ -401,13 +407,113 @@ replacements done and response is one of symbols: t (all right), nil
                         (t t))))))
 
 
+;;; *** Tildify Mode ***
+
+(defcustom tildify-space-pattern "[,:;(][ \t]*[a]\\|\\<[AIKOSUVWZikosuvwz]"
+  "Pattern specifying whether to insert a hard space at point.
+
+If the pattern matches `looking-back', a hard space needs to be inserted instead
+of a space at point.  The regexp is always case sensitive, regardless of the
+current `case-fold-search' setting."
+  :version "25.1"
+  :group 'tildify
+  :type 'regexp)
+
+(defcustom tildify-space-predicates '(tildify-space-region-predicate)
+  "A list of predicate functions for `tildify-space' function."
+  :version "25.1"
+  :group 'tildify
+  :type '(repeat function))
+
+(defcustom tildify-double-space-undos t
+  "Weather `tildify-space' should undo hard space when space is typed again."
+  :version "25.1"
+  :group 'tildify
+  :type 'boolean)
+
+;;;###autoload
+(defun tildify-space ()
+  "Convert space before point into a hard space if the context is right.
+
+If
+ * character before point is a space character,
+ * character before that has \"w\" character syntax (i.e. it's a word
+   constituent),
+ * `tildify-space-pattern' matches when `looking-back' (no more than 10
+   characters) from before the space character, and
+ * all predicates in `tildify-space-predicates' return non-nil,
+replace the space character with value of `tildify-space-string' and
+return t.
+
+Otherwise, if
+ * `tildify-double-space-undos' variable is non-nil,
+ * character before point is a space character, and
+ * text before that is a hard space as defined by
+   `tildify-space-string' variable,
+remove the hard space and leave only the space character.
+
+This function is meant to be used as a `post-self-insert-hook'."
+  (interactive)
+  (let* ((p (point)) (p-1 (1- p)) (n (- p (point-min)))
+         (l (length tildify-space-string)) (l+1 (1+ l))
+         case-fold-search)
+    (when (and (> n 2) (eq (preceding-char) ?\s))
+      (cond
+       ((and (eq (char-syntax (char-before p-1)) ?w)
+             (save-excursion
+               (goto-char p-1)
+               (looking-back tildify-space-pattern (max (point-min) (- p 10))))
+             (run-hook-with-args-until-failure 'tildify-space-predicates))
+        (delete-char -1)
+        (insert tildify-space-string)
+        t)
+       ((and tildify-double-space-undos
+             (> n l+1)
+             (string-equal tildify-space-string
+                           (buffer-substring (- p l+1) p-1)))
+        (goto-char p-1)
+        (delete-char (- l))
+        (goto-char (1+ (point)))
+        nil)))))
+
+(defun tildify-space-region-predicate ()
+  "Check whether character before point should be tildified.
+Based on `tildify-foreach-region-function', check whether character before,
+which is assumed to be a space character, should be replaced with a hard space."
+  (catch 'found
+    (tildify--foreach-region (lambda (_b _e) (throw 'found t)) (1- (point)) (point))))
+
+;;;###autoload
+(define-minor-mode tildify-mode
+  "Adds electric behavior to space character.
+
+When space is inserted into a buffer in a position where hard space is required
+instead (determined by `tildify-space-pattern' and `tildify-space-predicates'),
+that space character is replaced by a hard space specified by
+`tildify-space-string'.  Converting of the space is done by `tildify-space'.
+
+When `tildify-mode' is enabled, if `tildify-string-alist' specifies a hard space
+representation for current major mode, the `tildify-space-string' buffer-local
+variable will be set to the representation."
+  nil " ~" nil
+  (when tildify-mode
+    (let ((space (with-suppressed-warnings ((obsolete
+                                             tildify--pick-alist-entry))
+                   (tildify--pick-alist-entry tildify-string-alist))))
+      (if (not (string-equal " " (or space tildify-space-string)))
+          (when space
+            (setq tildify-space-string space))
+        (message (eval-when-compile
+                   (concat "Hard space is a single space character, tildify-"
+                           "mode won't have any effect, disabling.")))
+        (setq tildify-mode nil))))
+  (if tildify-mode
+      (add-hook 'post-self-insert-hook 'tildify-space nil t)
+    (remove-hook 'post-self-insert-hook 'tildify-space t)))
+
+
 ;;; *** Announce ***
 
 (provide 'tildify)
-
-
-;; Local variables:
-;; coding: utf-8
-;; End:
 
 ;;; tildify.el ends here

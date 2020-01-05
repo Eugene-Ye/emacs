@@ -1,6 +1,6 @@
 ;;; rmailmm.el --- MIME decoding and display stuff for RMAIL
 
-;; Copyright (C) 2006-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Alexander Pohoyda
 ;;	Alex Schroeder
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -135,9 +135,10 @@ automatically display the image in the buffer."
   (cond ((fboundp 'libxml-parse-html-region) 'rmail-mime-render-html-shr)
 	((executable-find "lynx") 'rmail-mime-render-html-lynx)
 	(t nil))
-  "Function to convert HTML to text.  Called with buffer containing HTML
-extracted from message in a temporary buffer.  Converts to text in current 
-buffer. If NIL, display HTML source."
+  "Function to convert HTML to text.
+Called with buffer containing HTML extracted from message in a
+temporary buffer.  Converts to text in current buffer.  If nil,
+display HTML source."
   :group 'rmail
   :version "25.1"
   :type '(choice function (const nil)))
@@ -146,7 +147,7 @@ buffer. If NIL, display HTML source."
   ;; Default to preferring HTML parts, but only if we have a renderer
   (if rmail-mime-render-html-function t nil)
   "If non-nil, default to showing HTML part rather than text part
-when both are available"
+when both are available."
   :group 'rmail
   :version "25.1"
   :type 'boolean)
@@ -171,7 +172,7 @@ The value is usually nil, and bound to non-nil while inserting
 MIME entities.")
 
 (defvar rmail-mime-searching nil
-  "Bound to T inside `rmail-search-mime-message' to suppress expensive 
+  "Bound to T inside `rmail-search-mime-message' to suppress expensive
 operations such as HTML decoding")
 
 ;;; MIME-entity object
@@ -189,7 +190,7 @@ A MIME-entity is a vector of 10 elements:
 TYPE and DISPOSITION correspond to MIME headers Content-Type and
 Content-Disposition respectively, and have this format:
 
-  \(VALUE (ATTRIBUTE . VALUE) (ATTRIBUTE . VALUE) ...)
+  (VALUE (ATTRIBUTE . VALUE) (ATTRIBUTE . VALUE) ...)
 
 Each VALUE is a string and each ATTRIBUTE is a string.
 
@@ -201,7 +202,7 @@ Content-Type: multipart/mixed;
 The corresponding TYPE argument must be:
 
 \(\"multipart/mixed\"
-  \(\"boundary\" . \"----=_NextPart_000_0104_01C617E4.BDEC4C40\"))
+  (\"boundary\" . \"----=_NextPart_000_0104_01C617E4.BDEC4C40\"))
 
 TRANSFER-ENCODING corresponds to MIME header
 Content-Transfer-Encoding, and is a lower-case string.
@@ -661,6 +662,7 @@ HEADER is a header component of a MIME-entity object (see
 	(transfer-encoding (rmail-mime-entity-transfer-encoding entity))
 	(charset (cdr (assq 'charset (cdr (rmail-mime-entity-type entity)))))
 	(buffer (current-buffer))
+	(case-fold-search t)
 	coding-system)
     (if charset (setq coding-system (coding-system-from-name charset)))
     (or (and coding-system (coding-system-p coding-system))
@@ -674,6 +676,22 @@ HEADER is a header component of a MIME-entity object (see
 	     (ignore-errors (base64-decode-region (point-min) (point-max))))
 	    ((string= transfer-encoding "quoted-printable")
 	     (quoted-printable-decode-region (point-min) (point-max))))
+      ;; Some broken MUAs state the charset only in the HTML <head>,
+      ;; so if we don't have a non-trivial coding-system at this
+      ;; point, make one last attempt to find it there.
+      (if (eq coding-system 'undecided)
+	  (save-excursion
+	    (goto-char (point-min))
+	    (when (re-search-forward
+		   "^<html><head><meta[^;]*; charset=\\([-a-zA-Z0-9]+\\)"
+		   nil t)
+	      (setq coding-system (coding-system-from-name (match-string 1)))
+	      (or (and coding-system (coding-system-p coding-system))
+		  (setq coding-system 'undecided)))
+	    ;; Finally, let them manually force decoding if they know it.
+	    (if (and (eq coding-system 'undecided)
+		     (not (null coding-system-for-read)))
+		(setq coding-system coding-system-for-read))))
       (decode-coding-region (point-min) (point) coding-system)
       (if (and
 	   (or (not rmail-mime-coding-system) (consp rmail-mime-coding-system))
@@ -687,6 +705,9 @@ HEADER is a header component of a MIME-entity object (see
 		(funcall rmail-mime-render-html-function source-buffer)
 	      (insert-buffer-substring source-buffer))
 	    (rmail-mime-fix-inserted-faces start)))))))
+
+(declare-function libxml-parse-html-region "xml.c"
+		  (start end &optional base-url discard-comments))
 
 (defun rmail-mime-render-html-shr (source-buffer)
   (let ((dom (with-current-buffer source-buffer
@@ -715,12 +736,12 @@ HEADER is a header component of a MIME-entity object (see
 (defun rmail-mime-fix-inserted-faces (start)
   (while (< start (point))
     (let ((face (get-text-property start 'face))
-	  (next (next-single-property-change 
+	  (next (next-single-property-change
 		 start 'face (current-buffer) (point))))
       (if face				; anything to do?
 	  (put-text-property start next 'font-lock-face face))
       (setq start next))))
-    
+
 (defun rmail-mime-toggle-button (button)
   "Hide or show the body of the MIME-entity associated with BUTTON."
   (save-excursion
@@ -796,12 +817,13 @@ directly."
 	 (bulk-data (aref tagline 1))
 	 (body (rmail-mime-entity-body entity))
 	 ;; Find the default directory for this media type.
-	 (directory (catch 'directory
-		      (dolist (entry rmail-mime-attachment-dirs-alist)
-			(when (string-match (car entry) (car content-type))
-			  (dolist (dir (cdr entry))
-			    (when (file-directory-p dir)
-			      (throw 'directory dir)))))))
+	 (directory (or (catch 'directory
+			  (dolist (entry rmail-mime-attachment-dirs-alist)
+			    (when (string-match (car entry) (car content-type))
+			      (dolist (dir (cdr entry))
+				(when (file-directory-p dir)
+				  (throw 'directory dir))))))
+			"~"))
 	 (filename (or (cdr (assq 'name (cdr content-type)))
 		       (cdr (assq 'filename (cdr content-disposition)))
 		       "noname"))
@@ -814,7 +836,8 @@ directly."
 	      size (car bulk-data))
       (if (stringp (aref body 0))
 	  (setq data (aref body 0))
-	(setq data (string-as-unibyte (buffer-string)))
+	(setq data (buffer-string))
+        (cl-assert (not (multibyte-string-p data)))
 	(aset body 0 data)
 	(rmail-mime-set-bulk-data entity)
 	(delete-region (point-min) (point-max)))
@@ -1098,11 +1121,11 @@ are the values of the respective parsed headers.  The latter should
 be lower-case.  The parsed headers for CONTENT-TYPE and CONTENT-DISPOSITION
 have the form
 
-  \(VALUE . ALIST)
+  (VALUE . ALIST)
 
 In other words:
 
-  \(VALUE (ATTRIBUTE . VALUE) (ATTRIBUTE . VALUE) ...)
+  (VALUE (ATTRIBUTE . VALUE) (ATTRIBUTE . VALUE) ...)
 
 VALUE is a string and ATTRIBUTE is a symbol.
 
@@ -1114,7 +1137,7 @@ Content-Type: multipart/mixed;
 The parsed header value:
 
 \(\"multipart/mixed\"
-  \(\"boundary\" . \"----=_NextPart_000_0104_01C617E4.BDEC4C40\"))"
+  (\"boundary\" . \"----=_NextPart_000_0104_01C617E4.BDEC4C40\"))"
   ;; Handle the content transfer encodings we know.  Unknown transfer
   ;; encodings will be passed on to the various handlers.
   (cond ((string= content-transfer-encoding "base64")
@@ -1368,8 +1391,8 @@ STATE forces a particular display state, rather than toggling.
 `raw' forces raw mode, any other non-nil value forces decoded mode.
 
 If `rmail-enable-mime' is nil, this creates a temporary \"*RMAIL*\"
-buffer holding a decoded copy of the message. Inline content-types are
-handled according to `rmail-mime-media-type-handlers-alist'.
+buffer holding a decoded copy of the message.  Inline content-types
+are handled according to `rmail-mime-media-type-handlers-alist'.
 By default, this displays text and multipart messages, and offers to
 download attachments as specified by `rmail-mime-attachment-dirs-alist'.
 The arguments ARG and STATE have no effect in this case."
@@ -1539,7 +1562,7 @@ This is the usual value of `rmail-insert-mime-forwarded-message-function'."
 (provide 'rmailmm)
 
 ;; Local Variables:
-;; generated-autoload-file: "rmail.el"
+;; generated-autoload-file: "rmail-loaddefs.el"
 ;; End:
 
 ;;; rmailmm.el ends here

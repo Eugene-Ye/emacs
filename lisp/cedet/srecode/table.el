@@ -1,8 +1,8 @@
 ;;; srecode/table.el --- Tables of Semantic Recoders
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -26,6 +26,7 @@
 ;;
 
 (require 'eieio)
+(require 'cl-generic)
 (require 'eieio-base)
 (require 'mode-local)
 (require 'srecode)
@@ -172,7 +173,7 @@ calculate all inherited templates from parent modes."
 
 	new))))
 
-(defmethod srecode-mode-table-find ((mt srecode-mode-table) file)
+(cl-defmethod srecode-mode-table-find ((mt srecode-mode-table) file)
   "Look in the mode table MT for a template table from FILE.
 Return nil if there was none."
   (object-assoc file 'file (oref mt modetables)))
@@ -186,8 +187,8 @@ INIT are the initialization parameters for the new template table."
 	 (new (apply 'srecode-template-table
 		     (file-name-nondirectory file)
 		     :file file
-		     :filesize (nth 7 attr)
-		     :filedate (nth 5 attr)
+		     :filesize (file-attribute-size attr)
+		     :filedate (file-attribute-modification-time attr)
 		     :major-mode mode
 		     init
 		     )))
@@ -200,8 +201,8 @@ INIT are the initialization parameters for the new template table."
     ;; into the search table first, allowing lower priority items
     ;; to be the items found in the search table.
     (object-sort-list mt 'modetables (lambda (a b)
-				       (> (oref a :priority)
-					  (oref b :priority))))
+				       (> (oref a priority)
+					  (oref b priority))))
     ;; Return it.
     new))
 
@@ -235,12 +236,12 @@ Use PREDICATE is the same as for the `sort' function."
 	(srecode-dump tmp))
       )))
 
-(defmethod srecode-dump ((tab srecode-mode-table))
+(cl-defmethod srecode-dump ((tab srecode-mode-table))
   "Dump the contents of the SRecode mode table TAB."
   (princ "MODE TABLE FOR ")
-  (princ (oref tab :major-mode))
+  (princ (oref tab major-mode))
   (princ "\n--------------------------------------------\n\nNumber of tables: ")
-  (let ((subtab (oref tab :tables)))
+  (let ((subtab (oref tab tables)))
     (princ (length subtab))
     (princ "\n\n")
     (while subtab
@@ -248,22 +249,22 @@ Use PREDICATE is the same as for the `sort' function."
       (setq subtab (cdr subtab)))
     ))
 
-(defmethod srecode-dump ((tab srecode-template-table))
+(cl-defmethod srecode-dump ((tab srecode-template-table))
   "Dump the contents of the SRecode template table TAB."
   (princ "Template Table for ")
   (princ (eieio-object-name-string tab))
   (princ "\nPriority: ")
-  (prin1 (oref tab :priority))
-  (when (oref tab :application)
+  (prin1 (oref tab priority))
+  (when (oref tab application)
     (princ "\nApplication: ")
-    (princ (oref tab :application)))
-  (when (oref tab :framework)
+    (princ (oref tab application)))
+  (when (oref tab framework)
     (princ "\nFramework: ")
-    (princ (oref tab :framework)))
-  (when (oref tab :project)
+    (princ (oref tab framework)))
+  (when (oref tab project)
     (require 'srecode/find) ; For srecode-template-table-in-project-p
     (princ "\nProject Directory: ")
-    (princ (oref tab :project))
+    (princ (oref tab project))
     (when (not (srecode-template-table-in-project-p tab))
       (princ "\n   ** Not Usable in this file. **")))
   (princ "\n\nVariables:\n")
@@ -287,4 +288,3 @@ Use PREDICATE is the same as for the `sort' function."
 (provide 'srecode/table)
 
 ;;; srecode/table.el ends here
-

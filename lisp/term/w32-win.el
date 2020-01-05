@@ -1,6 +1,6 @@
 ;;; w32-win.el --- parse switches controlling interface with W32 window system -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1994, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Kevin Gallo
 ;; Keywords: terminals
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -66,7 +66,7 @@
 ;; ../startup.el.
 
 ;; (if (not (eq window-system 'w32))
-;;     (error "%s: Loading w32-win.el but not compiled for w32" (invocation-name)))
+;;     (error "%s: Loading w32-win.el but not compiled for w32" invocation-name))
 
 (eval-when-compile (require 'cl-lib))
 (require 'frame)
@@ -170,6 +170,15 @@ the last file dropped is selected."
 ;; new layout/language selected by the user.
 (global-set-key [language-change] 'ignore)
 
+;; Some Windows applications send the 'noname' (VK_NONAME) pseudo-key
+;; to prevent Windows from sleeping.  We want to ignore these key
+;; events, to avoid annoying users by ringing the bell and announcing
+;; that the key is not bound.
+(global-set-key [noname]   'ignore)
+(global-set-key [C-noname] 'ignore)
+(global-set-key [M-noname] 'ignore)
+
+
 (defvar x-resource-name)
 
 
@@ -177,12 +186,15 @@ the last file dropped is selected."
 
  ;;; make f10 activate the real menubar rather than the mini-buffer menu
  ;;; navigation feature.
- (defun w32-menu-bar-open (&optional frame)
+(defun w32-menu-bar-open (&optional frame)
    "Start key navigation of the menu bar in FRAME.
 
 This initially activates the first menu-bar item, and you can then navigate
 with the arrow keys, select a menu entry with the Return key or cancel with
-the Escape key.  If FRAME has no menu bar, this function does nothing.
+one or two Escape keypresses.  (Two Escape keypresses are needed when a
+menu was already dropped down by pressing Return.)
+
+If FRAME has no menu bar, this function does nothing.
 
 If FRAME is nil or not given, use the selected frame.
 If FRAME does not have the menu bar enabled, display a text menu using
@@ -213,6 +225,8 @@ See the documentation of `create-fontset-from-fontset-spec' for the format.")
 (defvar libpng-version)                 ; image.c #ifdef HAVE_NTGUI
 (defvar libgif-version)
 (defvar libjpeg-version)
+
+(defvar libgnutls-version)              ; gnutls.c
 
 ;;; Set default known names for external libraries
 (setq dynamic-library-alist
@@ -265,10 +279,15 @@ See the documentation of `create-fontset-from-fontset-spec' for the format.")
        '(svg "librsvg-2-2.dll")
        '(gdk-pixbuf "libgdk_pixbuf-2.0-0.dll")
        '(glib "libglib-2.0-0.dll")
+       '(gio "libgio-2.0-0.dll")
        '(gobject "libgobject-2.0-0.dll")
-       '(gnutls "libgnutls-28.dll" "libgnutls-26.dll")
+       (if (>= libgnutls-version 30400)
+	   '(gnutls "libgnutls-30.dll")
+	 '(gnutls "libgnutls-28.dll" "libgnutls-26.dll"))
        '(libxml2 "libxml2-2.dll" "libxml2.dll")
-       '(zlib "zlib1.dll" "libz-1.dll")))
+       '(zlib "zlib1.dll" "libz-1.dll")
+       '(lcms2 "liblcms2-2.dll")
+       '(json "libjansson-4.dll")))
 
 ;;; multi-tty support
 (defvar w32-initialized nil
@@ -286,7 +305,8 @@ See the documentation of `create-fontset-from-fontset-spec' for the format.")
 (declare-function x-parse-geometry "frame.c" (string))
 (defvar x-command-line-resources)
 
-(defun w32-initialize-window-system (&optional _display)
+(cl-defmethod window-system-initialization (&context (window-system w32)
+                                            &optional _display)
   "Initialize Emacs for W32 GUI frames."
   (cl-assert (not w32-initialized))
 
@@ -300,7 +320,7 @@ See the documentation of `create-fontset-from-fontset-spec' for the format.")
       (setq x-resource-name
             ;; Change any . or * characters in x-resource-name to hyphens,
             ;; so as not to choke when we use it in X resource queries.
-            (replace-regexp-in-string "[.*]" "-" (invocation-name))))
+            (replace-regexp-in-string "[.*]" "-" invocation-name)))
 
   (x-open-connection "w32" x-command-line-resources
                      ;; Exit with a fatal error if this fails and we
@@ -372,48 +392,79 @@ See the documentation of `create-fontset-from-fontset-spec' for the format.")
   (setq w32-initialized t))
 
 (add-to-list 'display-format-alist '("\\`w32\\'" . w32))
-(gui-method-define handle-args-function w32 #'x-handle-args)
-(gui-method-define frame-creation-function w32
-                   #'x-create-frame-with-faces)
-(gui-method-define window-system-initialization w32
-                   #'w32-initialize-window-system)
+(cl-defmethod handle-args-function (args &context (window-system w32))
+  (x-handle-args args))
+
+(cl-defmethod frame-creation-function (params &context (window-system w32))
+  (x-create-frame-with-faces params))
 
 ;;;; Selections
 
 (declare-function w32-set-clipboard-data "w32select.c"
 		  (string &optional ignored))
-(declare-function w32-get-clipboard-data "w32select.c")
-(declare-function w32-selection-exists-p "w32select.c")
+(declare-function w32-get-clipboard-data "w32select.c"
+                  (&optional ignored))
+(declare-function w32-selection-exists-p "w32select.c"
+                  (&optional selection terminal))
+(declare-function w32-selection-targets "w32select.c"
+                  (&optional selection terminal))
 
 ;;; Fix interface to (X-specific) mouse.el
 (defun w32--set-selection (type value)
   (if (eq type 'CLIPBOARD)
-      (w32-set-clipboard-data value)
+      (w32-set-clipboard-data (replace-regexp-in-string "\0" "\\0" value t t))
     (put 'x-selections (or type 'PRIMARY) value)))
 
 (defun w32--get-selection  (&optional type data-type)
-  (if (and (eq type 'CLIPBOARD)
-           (eq data-type 'STRING))
-      (with-demoted-errors "w32-get-clipboard-data:%S"
-        (w32-get-clipboard-data))
-    (get 'x-selections (or type 'PRIMARY))))
+  (cond ((and (eq type 'CLIPBOARD)
+              (eq data-type 'STRING))
+         (with-demoted-errors "w32-get-clipboard-data:%S"
+           (w32-get-clipboard-data)))
+        ((eq data-type 'TARGETS)
+         (if (eq type 'CLIPBOARD)
+             (w32-selection-targets type)
+           (if (get 'x-selections (or type 'PRIMARY)) '[STRING])))
+        (t (get 'x-selections (or type 'PRIMARY)))))
 
 (defun w32--selection-owner-p (selection)
   (and (memq selection '(nil PRIMARY SECONDARY))
        (get 'x-selections (or selection 'PRIMARY))))
 
-(gui-method-define gui-set-selection w32 #'w32--set-selection)
-(gui-method-define gui-get-selection w32 #'w32--get-selection)
+(cl-defmethod gui-backend-set-selection (type value
+                                         &context (window-system w32))
+  (w32--set-selection type value))
 
-(gui-method-define gui-selection-owner-p w32 #'w32--selection-owner-p)
-(gui-method-define gui-selection-exists-p w32 #'w32-selection-exists-p)
+(cl-defmethod gui-backend-get-selection (type data-type
+                                         &context (window-system w32))
+  (w32--get-selection type data-type))
+
+(cl-defmethod gui-backend-selection-owner-p (selection
+                                             &context (window-system w32))
+  (w32--selection-owner-p selection))
+
+(cl-defmethod gui-backend-selection-exists-p (selection
+                                              &context (window-system w32))
+  (w32-selection-exists-p selection))
 
 (when (eq system-type 'windows-nt)
   ;; Make copy&pasting in w32's console interact with the system's clipboard!
-  (gui-method-define gui-set-selection nil #'w32--set-selection)
-  (gui-method-define gui-get-selection nil #'w32--get-selection)
-  (gui-method-define gui-selection-owner-p nil #'w32--selection-owner-p)
-  (gui-method-define gui-selection-exists-p nil #'w32-selection-exists-p))
+  ;; We could move those cl-defmethods outside of the `when' and use
+  ;; "&context (system-type (eql windows-nt))" instead!
+  (cl-defmethod gui-backend-set-selection (type value
+                                           &context (window-system nil))
+    (w32--set-selection type value))
+
+  (cl-defmethod gui-backend-get-selection (type data-type
+                                           &context (window-system nil))
+    (w32--get-selection type data-type))
+
+  (cl-defmethod gui-backend-selection-owner-p (selection
+                                               &context (window-system nil))
+    (w32--selection-owner-p selection))
+
+  (cl-defmethod gui-selection-exists-p (selection
+                                        &context (window-system nil))
+    (w32-selection-exists-p selection)))
 
 ;; The "Windows" keys on newer keyboards bring up the Start menu
 ;; whether you want it or not - make Emacs ignore these keystrokes
@@ -434,6 +485,137 @@ numbers, and the build number."
 That includes all Windows systems except for 9X/Me."
   (getenv "SystemRoot"))
 
+;; The value of the following variable was calculated using the table in
+;; https://docs.microsoft.com/windows/desktop/Intl/unicode-subset-bitfields,
+;; by looking for Unicode subranges for which no USB bits are defined.
+(defconst w32-no-usb-subranges
+  '((#x000800 . #x0008ff)
+    (#x0018b0 . #x0018ff)
+    (#x001a20 . #x001aff)
+    (#x001bc0 . #x001bff)
+    (#x001c80 . #x001cff)
+    (#x002fe0 . #x002fef)
+    (#x00a4d0 . #x00a4ff)
+    (#x00a6a0 . #x00a6ff)
+    (#x00a830 . #x00a83f)
+    (#x00a8e0 . #x00a8ff)
+    (#x00a960 . #x00a9ff)
+    (#x00aa60 . #x00abff)
+    (#x00d7b0 . #x00d7ff)
+    (#x010200 . #x01027f)
+    (#x0102e0 . #x0102ff)
+    (#x010350 . #x01037f)
+    (#x0103e0 . #x0103ff)
+    (#x0104b0 . #x0107ff)
+    (#x010840 . #x0108ff)
+    (#x010940 . #x0109ff)
+    (#x010a60 . #x011fff)
+    (#x012480 . #x01cfff)
+    (#x01d250 . #x01d2ff)
+    (#x01d380 . #x01d3ff)
+    (#x01d800 . #x01efff)
+    (#x01f0a0 . #x01ffff)
+    (#x02a6e0 . #x02f7ff)
+    (#x02fa20 . #x0dffff)
+    (#x0e0080 . #x0e00ff)
+    (#x0e01f0 . #x0fefff))
+  "List of Unicode subranges whose support cannot be announced by a font.
+The FONTSIGNATURE structure reported by MS-Windows for a font
+includes 123 Unicode Subset bits (USBs) to identify subranges of
+the Unicode codepoint space supported by the font.  Since the
+number of bits is fixed, not every Unicode block can have a
+corresponding USB bit; fonts that support characters from blocks
+that have no USBs cannot communicate their support to Emacs,
+unless the font is opened and physically tested for glyphs for
+characters from these blocks.")
+
+(defun w32--filter-USB-scripts ()
+  "Filter USB scripts out of `script-representative-chars'."
+  (let (val)
+    (dolist (elt script-representative-chars)
+      (let ((subranges w32-no-usb-subranges)
+            (chars (cdr elt))
+            ch found subrange)
+        (while (and (consp chars) (not found))
+          (setq ch (car chars)
+                chars (cdr chars))
+          (while (and (consp subranges) (not found))
+            (setq subrange (car subranges)
+                  subranges (cdr subranges))
+            (when (and (>= ch (car subrange)) (<= ch (cdr subrange)))
+              (setq found t)
+              (push elt val))))))
+    (nreverse val)))
+
+(defvar w32-non-USB-fonts nil
+  "Alist of script symbols and corresponding fonts.
+Each element of the alist has the form (SCRIPT FONTS...), where
+SCRIPT is a symbol of a script and FONTS are one or more fonts installed
+on the system that can display SCRIPT's characters.  FONTS are
+specified as symbols.
+Only scripts that have no corresponding Unicode Subset Bits (USBs) can
+be found in this alist.
+This alist is used by w32font.c when it looks for fonts that can display
+characters from scripts for which no USBs are defined.")
+
+(defun w32-find-non-USB-fonts (&optional frame size)
+  "Compute the value of `w32-non-USB-fonts' for specified SIZE and FRAME.
+FRAME defaults to the selected frame.
+SIZE is the required font size and defaults to the nominal size of the
+default font on FRAME, or its best approximation."
+  (let* ((inhibit-compacting-font-caches t)
+         (all-fonts
+          (delete-dups
+           (x-list-fonts "-*-*-medium-r-normal-*-*-*-*-*-*-iso10646-1"
+                         'default frame)))
+         val)
+    (mapc (function
+           (lambda (script-desc)
+             (let* ((script (car script-desc))
+                    (script-chars (vconcat (cdr script-desc)))
+                    (nchars (length script-chars))
+                    (fntlist all-fonts)
+                    (entry (list script))
+                    fspec ffont font-obj glyphs idx)
+               ;; For each font in FNTLIST, determine whether it
+               ;; supports the representative character(s) of any
+               ;; scripts that have no USBs defined for it.
+               (dolist (fnt fntlist)
+                 (setq fspec (ignore-errors (font-spec :name fnt)))
+                 (if fspec
+                     (setq ffont (find-font fspec frame)))
+                 (when ffont
+                   (setq font-obj
+                         (open-font ffont size frame))
+                   ;; Ignore fonts for which open-font returns nil:
+                   ;; they are buggy fonts that we cannot use anyway.
+                   (setq glyphs
+                         (if font-obj
+                             (font-get-glyphs font-obj
+                                              0 nchars script-chars)
+                           '[nil]))
+                   ;; Does this font support ALL of the script's
+                   ;; representative characters?
+                   (setq idx 0)
+                   (while (and (< idx nchars) (not (null (aref glyphs idx))))
+                     (setq idx (1+ idx)))
+                   (if (= idx nchars)
+                       ;; It does; add this font to the script's entry in alist.
+                       (let ((font-family (font-get font-obj :family)))
+                         ;; Unifont is an ugly font, and it is already
+                         ;; present in the default fontset.
+                         (unless (string= (downcase (symbol-name font-family))
+                                          "unifont")
+                           (push font-family entry))))))
+                 (if (> (length entry) 1)
+                     (push (nreverse entry) val)))))
+          (w32--filter-USB-scripts))
+    ;; We've opened a lot of fonts, so clear the font caches to free
+    ;; some memory.
+    (clear-font-cache)
+    (and val (setq w32-non-USB-fonts val))))
+
 (provide 'w32-win)
+(provide 'term/w32-win)
 
 ;;; w32-win.el ends here

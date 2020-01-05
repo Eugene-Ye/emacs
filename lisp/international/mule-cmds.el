@@ -1,6 +1,6 @@
 ;;; mule-cmds.el --- commands for multilingual environment  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -34,8 +34,6 @@
 
 (defvar dos-codepage)
 (autoload 'widget-value "wid-edit")
-
-(defvar mac-system-coding-system)
 
 ;;; MULE related key bindings and menus.
 
@@ -74,7 +72,7 @@
   (let ((map (make-sparse-keymap "Set Coding System")))
     (bindings--define-key map [set-buffer-process-coding-system]
       '(menu-item "For I/O with Subprocess" set-buffer-process-coding-system
-        :visible (fboundp 'start-process)
+        :visible (fboundp 'make-process)
         :enable (get-buffer-process (current-buffer))
         :help "How to en/decode I/O from/to subprocess connected to this buffer"))
     (bindings--define-key map [set-next-selection-coding-system]
@@ -138,8 +136,7 @@
                  (expand-file-name "HELLO" data-directory))
         :help "Demonstrate various character sets"))
     (bindings--define-key map [set-various-coding-system]
-      `(menu-item "Set Coding Systems" ,set-coding-system-map
-		  :enable (default-value 'enable-multibyte-characters)))
+      `(menu-item "Set Coding Systems" ,set-coding-system-map))
 
     (bindings--define-key map [separator-input-method] menu-bar-separator)
     (bindings--define-key map [describe-input-method]
@@ -159,7 +156,7 @@
 ;; very frequently while editing multilingual text.  Now we can use
 ;; only two such keys: "\C-\\" and "\C-^", but the latter is not
 ;; convenient because it requires shifting on most keyboards.  An
-;; alternative is "\C-\]" which is now bound to `abort-recursive-edit'
+;; alternative is "\C-]" which is now bound to `abort-recursive-edit'
 ;; but it won't be used that frequently.
 (define-key global-map "\C-\\" 'toggle-input-method)
 
@@ -177,7 +174,7 @@
 		    "\\(charset\\)"
 		    "\\)\\s-+\\)?"
 		    ;; Note starting with word-syntax character:
-		    "`\\(\\sw\\(\\sw\\|\\s_\\)+\\)'")))
+		    "['`‘]\\(\\sw\\(\\sw\\|\\s_\\)+\\)['’]")))
 
 (defun coding-system-change-eol-conversion (coding-system eol-type)
   "Return a coding system which differs from CODING-SYSTEM in EOL conversion.
@@ -284,9 +281,7 @@ wrong, use this command again to toggle back to the right mode."
 (defun view-hello-file ()
   "Display the HELLO file, which lists many languages and characters."
   (interactive)
-  ;; We have to decode the file in any environment.
-  (let ((coding-system-for-read 'iso-2022-7bit))
-    (view-file (expand-file-name "HELLO" data-directory))))
+  (view-file (expand-file-name "HELLO" data-directory)))
 
 (defun universal-coding-system-argument (coding-system)
   "Execute an I/O command using the specified coding system."
@@ -300,13 +295,16 @@ wrong, use this command again to toggle back to the right mode."
 		(format "Coding system for following command (default %s): " default)
 	      "Coding system for following command: ")
 	    default))))
+  ;; FIXME: This "read-key-sequence + call-interactively" loop is trying to
+  ;; reproduce the normal command loop, but this "can't" be done faithfully so
+  ;; it necessarily suffers from breakage in corner cases (e.g. it fails to run
+  ;; pre/post-command-hook, doesn't properly set this-command/last-command, it
+  ;; doesn't handle keyboard macros, ...).
   (let* ((keyseq (read-key-sequence
 		  (format "Command to execute with %s:" coding-system)))
-	 (cmd (key-binding keyseq))
-	 prefix)
+	 (cmd (key-binding keyseq)))
     ;; read-key-sequence ignores quit, so make an explicit check.
-    ;; Like many places, this assumes quit == C-g, but it need not be.
-    (if (equal last-input-event ?\C-g)
+    (if (equal last-input-event (nth 3 (current-input-mode)))
 	(keyboard-quit))
     (when (memq cmd '(universal-argument digit-argument))
       (call-interactively cmd)
@@ -315,28 +313,21 @@ wrong, use this command again to toggle back to the right mode."
       (while (progn
 	       (setq keyseq (read-key-sequence nil t)
 		     cmd (key-binding keyseq t))
-	       (not (eq cmd 'universal-argument-other-key)))
-	(let ((current-prefix-arg prefix-arg)
-	      ;; Have to bind `last-command-event' here so that
-	      ;; `digit-argument', for instance, can compute the
-	      ;; prefix arg.
-	      (last-command-event (aref keyseq 0)))
-	  (call-interactively cmd)))
-
-      ;; This is the final call to `universal-argument-other-key', which
-      ;; set's the final `prefix-arg.
-      (let ((current-prefix-arg prefix-arg))
-	(call-interactively cmd))
-
-      ;; Read the command to execute with the given prefix arg.
-      (setq prefix prefix-arg
-	    keyseq (read-key-sequence nil t)
-	    cmd (key-binding keyseq)))
+	       (memq cmd '(negative-argument digit-argument
+	                   universal-argument-more)))
+	(setq current-prefix-arg prefix-arg prefix-arg nil)
+	;; Have to bind `last-command-event' here so that
+	;; `digit-argument', for instance, can compute the
+	;; `prefix-arg'.
+	(setq last-command-event (aref keyseq 0))
+	(call-interactively cmd)))
 
     (let ((coding-system-for-read coding-system)
 	  (coding-system-for-write coding-system)
-	  (coding-system-require-warning t)
-	  (current-prefix-arg prefix))
+	  (coding-system-require-warning t))
+      (setq current-prefix-arg prefix-arg prefix-arg nil)
+      ;; Have to bind `last-command-event' e.g. for `self-insert-command'.
+      (setq last-command-event (aref keyseq 0))
       (message "")
       (call-interactively cmd))))
 
@@ -356,11 +347,11 @@ This also sets the following values:
 
   (if (eq system-type 'darwin)
       ;; The file-name coding system on Darwin systems is always utf-8.
-      (setq default-file-name-coding-system 'utf-8)
-    (if (and (default-value 'enable-multibyte-characters)
-	     (or (not coding-system)
+      (setq default-file-name-coding-system 'utf-8-unix)
+    (if (and (or (not coding-system)
 		 (coding-system-get coding-system 'ascii-compatible-p)))
-	(setq default-file-name-coding-system coding-system)))
+	(setq default-file-name-coding-system
+	      (coding-system-change-eol-conversion coding-system 'unix))))
   (setq default-terminal-coding-system coding-system)
   ;; Prevent default-terminal-coding-system from converting ^M to ^J.
   (setq default-keyboard-coding-system
@@ -397,7 +388,7 @@ A coding system that requires automatic detection of text+encoding
 
 To prefer, for instance, utf-8, say the following:
 
-  \(prefer-coding-system 'utf-8)"
+  (prefer-coding-system \\='utf-8)"
   (interactive "zPrefer coding system: ")
   (if (not (and coding-system (coding-system-p coding-system)))
       (error "Invalid coding system `%s'" coding-system))
@@ -416,7 +407,7 @@ To prefer, for instance, utf-8, say the following:
 	      (coding-system-change-eol-conversion base eol-type)))
     (set-default-coding-systems base)
     (if (called-interactively-p 'interactive)
-	(or (eq base default-file-name-coding-system)
+	(or (eq base (coding-system-type default-file-name-coding-system))
 	    (message "The default value of `file-name-coding-system' was not changed because the specified coding system is not suitable for file names.")))))
 
 (defvar sort-coding-systems-predicate nil
@@ -457,8 +448,8 @@ non-nil, it is used to sort CODINGS instead."
 		      ;; E: 1 if not XXX-with-esc
 		      ;; II: if iso-2022 based, 0..3, else 1.
 		      (logior
-		       (lsh (if (eq base most-preferred) 1 0) 7)
-		       (lsh
+		       (ash (if (eq base most-preferred) 1 0) 7)
+		       (ash
 			(let ((mime (coding-system-get base :mime-charset)))
 			   ;; Prefer coding systems corresponding to a
 			   ;; MIME charset.
@@ -474,9 +465,9 @@ non-nil, it is used to sort CODINGS instead."
 				     (t 3))
 			     0))
 			5)
-		       (lsh (if (memq base lang-preferred) 1 0) 4)
-		       (lsh (if (memq base from-priority) 1 0) 3)
-		       (lsh (if (string-match-p "-with-esc\\'"
+		       (ash (if (memq base lang-preferred) 1 0) 4)
+		       (ash (if (memq base from-priority) 1 0) 3)
+		       (ash (if (string-match-p "-with-esc\\'"
 						(symbol-name base))
 				0 1) 2)
 		       (if (eq (coding-system-type base) 'iso-2022)
@@ -719,14 +710,14 @@ DEFAULT is the coding system to use by default in the query."
 	      (insert "No default coding systems to try for "
 		      (if (stringp from)
 			  (format "string \"%s\"." from)
-			(format "buffer `%s'." bufname)))
+			(format-message "buffer `%s'." bufname)))
 	    (insert
 	     "These default coding systems were tried to encode"
 	     (if (stringp from)
 		 (concat " \"" (if (> (length from) 10)
 				   (concat (substring from 0 10) "...\"")
 				 (concat from "\"")))
-	       (format " text\nin the buffer `%s'" bufname))
+	       (format-message " text\nin the buffer `%s'" bufname))
 	     ":\n")
 	    (let ((pos (point))
 		  (fill-prefix "  "))
@@ -744,7 +735,8 @@ e.g., for sending an email message.\n ")
 	    (when unsafe
 	      (insert (if rejected "The other coding systems"
 			"However, each of them")
-		      " encountered characters it couldn't encode:\n")
+		      (substitute-command-keys
+		       " encountered characters it couldn't encode:\n"))
 	      (dolist (coding unsafe)
 		(insert (format "  %s cannot encode these:" (car coding)))
 		(let ((i 0)
@@ -875,13 +867,13 @@ and TO is ignored."
 		  (setq auto-cs (car auto-cs))
 		(display-warning
 		 'mule
-		 (format "\
+		 (format-message "\
 Invalid coding system `%s' is specified
 for the current buffer/file by the %s.
 It is highly recommended to fix it before writing to a file."
 			 (car auto-cs)
 			 (if (eq (cdr auto-cs) :coding) ":coding tag"
-			   (format "variable `%s'" (cdr auto-cs))))
+			   (format-message "variable `%s'" (cdr auto-cs))))
 		 :warning)
 		(or (yes-or-no-p "Really proceed with writing? ")
 		    (error "Save aborted"))
@@ -901,6 +893,11 @@ It is highly recommended to fix it before writing to a file."
 	;; other setting.
 	(let ((base (coding-system-base auto-cs)))
 	  (unless (memq base '(nil undecided))
+            ;; For encoding, no-conversion-multibyte is the same as
+            ;; no-conversion.
+            (if (eq base 'no-conversion-multibyte)
+                (setq auto-cs 'no-conversion
+                      base 'no-conversion))
             (setq default-coding-system (list (cons auto-cs base)))
             (setq no-other-defaults t))))
 
@@ -992,6 +989,11 @@ It is highly recommended to fix it before writing to a file."
 
       ;; If all the defaults failed, ask a user.
       (when (not coding-system)
+        ;; If UTF-8 is in CODINGS, but is not its first member, make
+        ;; it the first one, so it is offered as the default.
+        (and (memq 'utf-8 codings) (not (eq 'utf-8 (car codings)))
+             (setq codings (append '(utf-8) (delq 'utf-8 codings))))
+
 	(setq coding-system (select-safe-coding-system-interactively
 			     from to codings unsafe rejected (car codings))))
 
@@ -1029,7 +1031,13 @@ It is highly recommended to fix it before writing to a file."
 		 ;; This check perhaps isn't ideal, but is probably
 		 ;; the best thing to do.
 		 (not (auto-coding-alist-lookup (or file buffer-file-name "")))
-		 (not (coding-system-equal coding-system auto-cs)))
+		 (not (coding-system-equal coding-system auto-cs))
+                 ;; coding-system-equal barfs on 'charset'.
+                 (or (equal (coding-system-type auto-cs) 'charset)
+                     (equal (coding-system-type coding-system) 'charset)
+                     (not (coding-system-equal (coding-system-type auto-cs)
+                                               (coding-system-type
+                                                coding-system)))))
 	    (unless (yes-or-no-p
 		     (format "Selected encoding %s disagrees with \
 %s specified by file contents.  Really save (else edit coding cookies \
@@ -1158,10 +1166,7 @@ see `language-info-alist'."
 	    ((eq key 'nonascii-translation)
 	     (set-language-environment-nonascii-translation lang-env))
 	    ((eq key 'charset)
-	     (set-language-environment-charset lang-env))
-	    ((and (not (default-value 'enable-multibyte-characters))
-		  (or (eq key 'unibyte-syntax) (eq key 'unibyte-display)))
-	     (set-language-environment-unibyte lang-env)))))
+	     (set-language-environment-charset lang-env)))))
 
 (defun set-language-info-internal (lang-env key info)
   "Internal use only.
@@ -1271,7 +1276,7 @@ This file contains a list of libraries of Emacs input methods (LEIM)
 in the format of Lisp expression for registering each input method.
 Emacs loads this file at startup time.")
 
-(defconst leim-list-header (format
+(defconst leim-list-header (format-message
 ";;; %s -- list of LEIM (Library of Emacs Input Method) -*-coding: utf-8;-*-
 ;;
 ;; This file is automatically generated.
@@ -1333,7 +1338,7 @@ This is the input method activated automatically by the command
 `toggle-input-method' (\\[toggle-input-method])."
   :link  '(custom-manual "(emacs)Input Methods")
   :group 'mule
-  :type `(choice (const nil)
+  :type '(choice (const nil)
                  mule-input-method-string)
   :set-after '(current-language-environment))
 
@@ -1471,21 +1476,14 @@ If INPUT-METHOD is nil, deactivate any current input method."
 (defun deactivate-input-method ()
   "Turn off the current input method."
   (when current-input-method
-    (if input-method-history
-	(unless (string= current-input-method (car input-method-history))
-	  (setq input-method-history
-		(cons current-input-method
-		      (delete current-input-method input-method-history))))
-      (setq input-method-history (list current-input-method)))
+    (add-to-history 'input-method-history current-input-method)
     (unwind-protect
 	(progn
 	  (setq input-method-function nil
 		current-input-method-title nil)
 	  (funcall deactivate-current-input-method-function))
       (unwind-protect
-	  (run-hooks
-	   'input-method-inactivate-hook ; for backward compatibility
-	   'input-method-deactivate-hook)
+	  (run-hooks 'input-method-deactivate-hook)
 	(setq current-input-method nil)
 	(force-mode-line-update)))))
 
@@ -1587,7 +1585,7 @@ which marks the variable `default-input-method' as set for Custom buffers."
 			  (called-interactively-p 'interactive))
 	 (with-output-to-temp-buffer (help-buffer)
 	   (let ((elt (assoc input-method input-method-alist)))
-	     (princ (format
+	     (princ (format-message
 		     "Input method: %s (`%s' in mode line) for %s\n  %s\n"
 		     input-method (nth 3 elt) (nth 1 elt) (nth 4 elt))))))))))
 
@@ -1698,7 +1696,7 @@ Usually, the input method inserts the intermediate key sequence,
 or candidate translations corresponding to the sequence,
 at point in the current buffer.
 But, if this flag is non-nil, it displays them in echo area instead."
-  :type 'hook
+  :type 'boolean
   :group 'mule)
 
 (defvar input-method-exit-on-invalid-key nil
@@ -1800,9 +1798,12 @@ The default status is as follows:
 
   (set-default-coding-systems nil)
   (setq default-sendmail-coding-system 'iso-latin-1)
-  ;; On Darwin systems, this should be utf-8, but when this file is loaded
-  ;; utf-8 is not yet defined, so we set it in set-locale-environment instead.
-  (setq default-file-name-coding-system 'iso-latin-1)
+  ;; On Darwin systems, this should be utf-8-unix, but when this file is loaded
+  ;; that is not yet defined, so we set it in set-locale-environment instead.
+  ;; [Actually, it seems to work fine to use utf-8-unix here, and not just
+  ;; on Darwin.  The previous comment seems to be outdated?
+  ;; See patch at https://debbugs.gnu.org/15803 ]
+  (setq default-file-name-coding-system 'iso-latin-1-unix)
   ;; Preserve eol-type from existing default-process-coding-systems.
   ;; On non-unix-like systems in particular, these may have been set
   ;; carefully by the user, or by the startup code, to deal with the
@@ -1899,9 +1900,6 @@ the new language environment, it runs `set-language-environment-hook'."
   (set-language-environment-input-method language-name)
   (set-language-environment-nonascii-translation language-name)
   (set-language-environment-charset language-name)
-  ;; Unibyte setups if necessary.
-  (unless (default-value 'enable-multibyte-characters)
-    (set-language-environment-unibyte language-name))
 
   (let ((func (get-language-info language-name 'setup-function)))
     (if (functionp func)
@@ -1953,7 +1951,7 @@ See `set-language-info-alist' for use in programs."
 	     (set-language-info-alist (car elt) (cdr elt)))
 	   ;; re-set the environment in case its parameters changed
 	   (set-language-environment current-language-environment)))
-  :type `(alist
+  :type '(alist
 	  :key-type (string :tag "Language environment"
 			    :completions
                             (lambda (string pred action)
@@ -1980,28 +1978,22 @@ See `set-language-info-alist' for use in programs."
 (defun standard-display-european-internal ()
   ;; Actually set up direct output of non-ASCII characters.
   (standard-display-8bit (if (eq window-system 'pc) 128 160) 255)
-  ;; Unibyte Emacs on MS-DOS wants to display all 8-bit characters with
-  ;; the native font, and codes 160 and 146 stand for something very
-  ;; different there.
-  (or (and (eq window-system 'pc) (not (default-value
-					 'enable-multibyte-characters)))
-      (progn
-	;; Most X fonts used to do the wrong thing for latin-1 code 160.
-	(unless (and (eq window-system 'x)
-		     ;; XFree86 4 has fixed the fonts.
-		     (string= "The XFree86 Project, Inc" (x-server-vendor))
-		     (> (aref (number-to-string (nth 2 (x-server-version))) 0)
-			?3))
-	  ;; Make non-line-break space display as a plain space.
-	  (aset standard-display-table (unibyte-char-to-multibyte 160) [32]))
-	;; Most Windows programs send out apostrophes as \222.  Most X fonts
-	;; don't contain a character at that position.  Map it to the ASCII
-	;; apostrophe.  [This is actually RIGHT SINGLE QUOTATION MARK,
-	;; U+2019, normally from the windows-1252 character set.  XFree 4
-	;; fonts probably have the appropriate glyph at this position,
-	;; so they could use standard-display-8bit.  It's better to use a
-	;; proper windows-1252 coding system.  --fx]
-	(aset standard-display-table (unibyte-char-to-multibyte 146) [39]))))
+  ;; Most X fonts used to do the wrong thing for latin-1 code 160.
+  (unless (and (eq window-system 'x)
+	       ;; XFree86 4 has fixed the fonts.
+	       (string= "The XFree86 Project, Inc" (x-server-vendor))
+	       (> (aref (number-to-string (nth 2 (x-server-version))) 0)
+		  ?3))
+    ;; Make non-line-break space display as a plain space.
+    (aset standard-display-table (unibyte-char-to-multibyte 160) [32]))
+  ;; Most Windows programs send out apostrophes as \222.  Most X fonts
+  ;; don't contain a character at that position.  Map it to the ASCII
+  ;; apostrophe.  [This is actually RIGHT SINGLE QUOTATION MARK,
+  ;; U+2019, normally from the windows-1252 character set.  XFree 4
+  ;; fonts probably have the appropriate glyph at this position,
+  ;; so they could use standard-display-8bit.  It's better to use a
+  ;; proper windows-1252 coding system.  --fx]
+  (aset standard-display-table (unibyte-char-to-multibyte 146) [39]))
 
 (defun set-language-environment-coding-systems (language-name)
   "Do various coding system setups for language environment LANGUAGE-NAME."
@@ -2037,10 +2029,8 @@ See `set-language-info-alist' for use in programs."
   (let ((input-method (get-language-info language-name 'input-method)))
     (when input-method
       (setq default-input-method input-method)
-      (if input-method-history
-	  (setq input-method-history
-		(cons input-method
-		      (delete input-method input-method-history)))))))
+      (when input-method-history
+        (add-to-history 'input-method-history input-method)))))
 
 (defun set-language-environment-nonascii-translation (language-name)
   "Do unibyte/multibyte translation setup for language environment LANGUAGE-NAME."
@@ -2120,7 +2110,7 @@ See `set-language-info-alist' for use in programs."
       (with-current-buffer standard-output
 	(insert language-name " language environment\n\n")
 	(if (stringp doc)
-	    (insert doc "\n\n"))
+	    (insert (substitute-command-keys doc) "\n\n"))
 	(condition-case nil
 	    (let ((str (eval (get-language-info language-name 'sample-text))))
 	      (if (stringp str)
@@ -2173,10 +2163,11 @@ See `set-language-info-alist' for use in programs."
 	      (search-backward (symbol-name (car l)))
 	      (help-xref-button 0 'help-coding-system (car l))
 	      (goto-char (point-max))
-	      (insert " (`"
+	      (insert (substitute-command-keys " (`")
 		      (coding-system-mnemonic (car l))
-		      "' in mode line):\n\t"
-		      (coding-system-doc-string (car l))
+		      (substitute-command-keys "' in mode line):\n\t")
+                      (substitute-command-keys
+                       (coding-system-doc-string (car l)))
 		      "\n")
 	      (let ((aliases (coding-system-aliases (car l))))
 		(when aliases
@@ -2198,22 +2189,27 @@ See `set-language-info-alist' for use in programs."
 (defconst locale-language-names
   (purecopy
    '(
-    ;; Locale names of the form LANGUAGE[_TERRITORY][.CODESET][@MODIFIER]
-    ;; as specified in the Single Unix Spec, Version 2.
-    ;; LANGUAGE is a language code taken from ISO 639:1988 (E/F)
-    ;; with additions from ISO 639/RA Newsletter No.1/1989;
-    ;; see Internet RFC 2165 (1997-06) and
-    ;; http://www.evertype.com/standards/iso639/iso639-en.html
-    ;; TERRITORY is a country code taken from ISO 3166
-    ;; http://www.din.de/gremien/nas/nabd/iso3166ma/codlstp1/en_listp1.html.
-    ;; CODESET and MODIFIER are implementation-dependent.
+     ;; Locale names of the form LANGUAGE[_TERRITORY][.CODESET][@MODIFIER]
+     ;; as specified in the Single Unix Spec, Version 2.
+     ;; LANGUAGE is a language code taken from ISO 639:1988 (E/F)
+     ;; with additions from ISO 639/RA Newsletter No.1/1989;
+     ;; see Internet RFC 2165 (1997-06) and
+     ;; http://www.evertype.com/standards/iso639/iso639-en.html
+     ;; TERRITORY is a country code taken from ISO 3166
+     ;; http://www.din.de/gremien/nas/nabd/iso3166ma/codlstp1/en_listp1.html.
+     ;; CODESET and MODIFIER are implementation-dependent.
+
+     ;; Language names for which there are no locales (yet) are
+     ;; commented out.
 
      ;; jasonr comments: MS Windows uses three letter codes for
      ;; languages instead of the two letter ISO codes that POSIX
-     ;; uses. In most cases the first two letters are the same, so
-     ;; most of the regexps in locale-language-names work. Japanese
-     ;; and Chinese are exceptions, which are listed in the
-     ;; non-standard section at the bottom of locale-language-names.
+     ;; uses.  In most cases the first two letters are the same, so
+     ;; most of the regexps in locale-language-names work.  Japanese,
+     ;; Chinese, and some others are exceptions, which are listed in the
+     ;; non-standard section at the bottom of locale-language-names, or
+     ;; in the main section, if otherwise we would pick up the wrong
+     ;; entry (because the first matching entry is used).
 
     ("aa_DJ" . "Latin-1") ; Afar
     ("aa" . "UTF-8")
@@ -2221,28 +2217,30 @@ See `set-language-info-alist' for use in programs."
     ("af" . "Latin-1") ; Afrikaans
     ("am" "Ethiopic" utf-8) ; Amharic
     ("an" . "Latin-9") ; Aragonese
+    ("arn" . "UTF-8") ; MS-Windows Mapudungun, Mapuche
     ("ar" . "Arabic")
-    ; as Assamese
+    ("as" . "UTF-8") ; Assamese
     ; ay Aymara
     ("az" . "UTF-8") ; Azerbaijani
-    ; ba Bashkir
+    ("ba" . "UTF-8") ; Bashkir, Cyrillic script
     ("be" "Belarusian" cp1251) ; Belarusian [Byelorussian until early 1990s]
     ("bg" "Bulgarian" cp1251) ; Bulgarian
     ; bh Bihari
     ; bi Bislama
-    ("bn" . "UTF-8") ; Bengali, Bangla
+    ("bn" "Bengali" utf-8) ; Bengali, Bangla
     ("bo" . "Tibetan")
     ("br" . "Latin-1") ; Breton
     ("bs" . "Latin-2") ; Bosnian
     ("byn" . "UTF-8")  ; Bilin; Blin
-    ("ca" . "Latin-1") ; Catalan
-    ; co Corsican
+    ("ca" "Catalan" iso-8859-1) ; Catalan
+    ("co" . "UTF-8") ; Corsican
     ("cs" "Czech" iso-8859-2)
     ("cy" "Welsh" iso-8859-14)
     ("da" . "Latin-1") ; Danish
     ("de" "German" iso-8859-1)
-    ; dv Divehi
+    ("dv" . "UTF-8") ; Divehi
     ; dz Bhutani
+    ("ee" . "Latin-4") ; Ewe
     ("el" "Greek" iso-8859-7)
     ;; Users who specify "en" explicitly typically want Latin-1, not ASCII.
     ;; That's actually what the GNU locales define, modulo things like
@@ -2251,10 +2249,12 @@ See `set-language-info-alist' for use in programs."
     ("en" "English" iso-8859-1) ; English
     ("eo" . "Esperanto") ; Esperanto
     ("es" "Spanish" iso-8859-1)
-    ("et" . "Latin-1") ; Estonian
+    ("et" . "Latin-9") ; Estonian
     ("eu" . "Latin-1") ; Basque
-    ("fa" . "UTF-8") ; Persian
-    ("fi" . "Latin-1") ; Finnish
+    ("fa" "Persian" utf-8) ; Persian
+    ("fil" . "UTF-8") ; Filipino
+    ("fpo" . "UTF-8") ; MS-Windows Filipino
+    ("fi" . "Latin-9") ; Finnish
     ("fj" . "Latin-1") ; Fiji
     ("fo" . "Latin-1") ; Faroese
     ("fr" "French" iso-8859-1) ; French
@@ -2262,79 +2262,97 @@ See `set-language-info-alist' for use in programs."
     ("ga" . "Latin-1") ; Irish Gaelic (new orthography)
     ("gd" . "Latin-9") ; Scots Gaelic
     ("gez" "Ethiopic" utf-8) ; Geez
+    ("gla" . "Latin-9") ; MS-Windows Scots Gaelic
     ("gl" . "Latin-1") ; Gallegan; Galician
     ; gn Guarani
-    ("gu" . "UTF-8") ; Gujarati
+    ("gu" "Gujarati" utf-8) ; Gujarati
     ("gv" . "Latin-1") ; Manx Gaelic
     ; ha Hausa
     ("he" "Hebrew" iso-8859-8)
     ("hi" "Devanagari" utf-8) ; Hindi
+    ("hni_IN" . "UTF-8") ; Chhattisgarhi
     ("hr" "Croatian" iso-8859-2) ; Croatian
     ("hu" . "Latin-2") ; Hungarian
-    ; hy Armenian
+    ("hy" . "UTF-8") ;  Armenian
     ; ia Interlingua
     ("id" . "Latin-1") ; Indonesian
     ; ie Interlingue
-    ; ik Inupiak
+    ("ig" . "UTF-8") ; Igbo (Nigeria)
+    ("ibo" . "UTF-8") ; MS-Windows Igbo
+    ; ik Inupiak, Inupiaq
     ("is" . "Latin-1") ; Icelandic
     ("it" "Italian" iso-8859-1) ; Italian
     ; iu Inuktitut
     ("iw" "Hebrew" iso-8859-8)
     ("ja" "Japanese" euc-jp)
     ; jw Javanese
+    ("kal" . "Latin-1") ; MS-Windows Greenlandic
     ("ka" "Georgian" georgian-ps) ; Georgian
-    ; kk Kazakh
+    ("kk" . "UTF-8") ; Kazakh
     ("kl" . "Latin-1") ; Greenlandic
-    ; km Cambodian
+    ("km" "Khmer" utf-8) ; Cambodian, Khmer
+    ("knk" "Devanagari" utf-8) ; MS-Windows Konkani
+    ("kok" "Devanagari" utf-8) ; Konkani
     ("kn" "Kannada" utf-8)
     ("ko" "Korean" euc-kr)
-    ; ks Kashmiri
+    ("ks" . "UTF-8") ; Kashmiri
     ; ku Kurdish
     ("kw" . "Latin-1") ; Cornish
-    ; ky Kirghiz
+    ("ky" . "UTF-8") ; Kirghiz
+    ("lao" "Lao" utf-8) ; MS-Windows Lao
     ("la" . "Latin-1") ; Latin
     ("lb" . "Latin-1") ; Luxemburgish
-    ("lg" . "Laint-6") ; Ganda
+    ("lg" . "Latin-6") ; Ganda, a.k.a. Luganda
     ; ln Lingala
     ("lo" "Lao" utf-8) ; Laothian
     ("lt" "Lithuanian" iso-8859-13)
-    ("lv" . "Latvian") ; Latvian, Lettish
+    ("lv" "Latvian" iso-8859-13) ; Latvian, Lettish
     ; mg Malagasy
     ("mi" . "Latin-7") ; Maori
     ("mk" "Cyrillic-ISO" iso-8859-5) ; Macedonian
+    ("mlt" . "Latin-3") ; MS-Windows Maltese
     ("ml" "Malayalam" utf-8)
     ("mn" . "UTF-8") ; Mongolian
-    ; mo Moldavian
+    ; mo Moldavian (retired)
+    ("mri" . "Latin-7") ; MS-Windows Maori
     ("mr" "Devanagari" utf-8) ; Marathi
     ("ms" . "Latin-1") ; Malay
     ("mt" . "Latin-3") ; Maltese
-    ; my Burmese
+    ("mym" "Malayalam" utf-8) ; MS-Windows Malayalam
+    ("my" "Burmese" utf-8) ; Burmese
     ; na Nauru
     ("nb" . "Latin-1") ; Norwegian
     ("ne" "Devanagari" utf-8) ; Nepali
     ("nl" "Dutch" iso-8859-1)
+    ("nn" . "Latin-1") ; Norwegian Nynorsk
+    ("non" . "Latin-1") ; MS-Windows Norwegian Nynorsk
     ("no" . "Latin-1") ; Norwegian
+    ("nr_ZA" . "UTF-8") ; South Ndebele
+    ("nso_ZA" . "UTF-8") ; Pedi
     ("oc" . "Latin-1") ; Occitan
     ("om_ET" . "UTF-8") ; (Afan) Oromo
     ("om" . "Latin-1") ; (Afan) Oromo
-    ; or Oriya
-    ("pa" . "UTF-8") ; Punjabi
-    ("pl" . "Latin-2") ; Polish
-    ; ps Pashto, Pushto
+    ("or" "Oriya" utf-8)
+    ("pa" "Punjabi" utf-8) ; Punjabi
+    ("pl" "Polish" iso-8859-2) ; Polish
+    ("ps" . "UTF-8") ; Pashto, Pushto
+    ("pas" . "UTF-8") ; MS-Windows Pashto
+    ("pt_BR" "Brazilian Portuguese" iso-8859-1) ; Brazilian Portuguese
     ("pt" . "Latin-1") ; Portuguese
     ; qu Quechua
     ("rm" . "Latin-1") ; Rhaeto-Romanic
     ; rn Kirundi
     ("ro" "Romanian" iso-8859-2)
+    ("ru_RU.koi8r" "Cyrillic-KOI8" koi8-r)
     ("ru_RU" "Russian" iso-8859-5)
     ("ru_UA" "Russian" koi8-u)
-    ; rw Kinyarwanda
+    ("rw" . "UTF-8") ; Kinyarwanda
     ("sa" . "Devanagari") ; Sanskrit
     ; sd Sindhi
     ("se" . "UTF-8") ; Northern Sami
     ; sg Sangho
     ("sh" . "Latin-2") ; Serbo-Croatian
-    ; si Sinhalese
+    ("si" "Sinhala" utf-8) ; Sinhalese
     ("sid" . "UTF-8") ; Sidamo
     ("sk" "Slovak" iso-8859-2)
     ("sl" "Slovenian" iso-8859-2)
@@ -2342,39 +2360,46 @@ See `set-language-info-alist' for use in programs."
     ; sn Shona
     ("so_ET" "UTF-8") ; Somali
     ("so" "Latin-1") ; Somali
-    ("sq" . "Latin-1") ; Albanian
+    ("sq" . "Latin-2") ; Albanian
     ("sr" . "Latin-2") ; Serbian (Latin alphabet)
     ; ss Siswati
     ("st" . "Latin-1") ;  Sesotho
     ; su Sundanese
     ("sv" "Swedish" iso-8859-1)		; Swedish
     ("sw" . "Latin-1") ; Swahili
+    ("taj" "Tajik" koi8-t) ; MS-Windows Tajik w/Cyrillic script
     ("ta" "Tamil" utf-8)
-    ("te" . "UTF-8") ; Telugu
+    ("te" "Telugu" utf-8) ; Telugu
     ("tg" "Tajik" koi8-t)
-    ("th" "Thai" tis-620)
+    ("th_TH.tis620" "Thai" tis-620)
+    ("th_TH.TIS-620" "Thai" tis-620)
+    ("th_TH" "Thai" iso-8859-11)
+    ("th" "Thai" iso-8859-11)
     ("ti" "Ethiopic" utf-8) ; Tigrinya
     ("tig_ER" . "UTF-8") ; Tigre
-    ; tk Turkmen
+    ("tk" . "Latin-5") ; Turkmen
+    ("tuk" . "Latin-5") ; MS-Windows Turkmen
     ("tl" . "Latin-1") ; Tagalog
-    ; tn Setswana
+    ("tn" . "Latin-9") ; Setswana, Tswana
     ; to Tonga
     ("tr" "Turkish" iso-8859-9)
-    ; ts Tsonga
+    ("tsn" . "Latin-9") ; MS-Windows Tswana
+    ("ts" . "Latin-1") ; Tsonga
     ("tt" . "UTF-8") ; Tatar
     ; tw Twi
-    ; ug Uighur
+    ("ug" . "UTF-8") ; Uighur
     ("uk" "Ukrainian" koi8-u)
     ("ur" . "UTF-8") ; Urdu
     ("uz_UZ@cyrillic" . "UTF-8"); Uzbek
     ("uz" . "Latin-1") ; Uzbek
+    ("ve" . "UTF-8") ; Venda
     ("vi" "Vietnamese" utf-8)
     ; vo Volapuk
     ("wa" . "Latin-1") ; Walloon
-    ; wo Wolof
+    ("wo" . "UTF-8") ; Wolof
     ("xh" . "Latin-1") ; Xhosa
     ("yi" . "Windows-1255") ; Yiddish
-    ; yo Yoruba
+    ("yo" . "UTF-8") ; Yoruba
     ; za Zhuang
     ("zh_HK" . "Chinese-Big5")
     ; zh_HK/BIG5-HKSCS \
@@ -2384,6 +2409,9 @@ See `set-language-info-alist' for use in programs."
     ("zh_CN.GB18030" "Chinese-GB18030")
     ("zh_CN.UTF-8" . "Chinese-GBK")
     ("zh_CN" . "Chinese-GB")
+    ("zhh" . "Chinese-Big5") ; MS-Windows Chinese (Hong Kong S.A.R.)
+    ("zhi" . "Chinese-GBK") ; MS-Windows Chinese (Singapore)
+    ("zhm" . "Chinese-Big5") ; MS-Windows Chinese (Macao S.A.R.)
     ("zh" . "Chinese-GB")
     ("zu" . "Latin-1") ; Zulu
 
@@ -2397,26 +2425,36 @@ See `set-language-info-alist' for use in programs."
 
     ;; Nonstandard or obsolete language codes
     ("cz" . "Czech") ; e.g. Solaris 2.6
-    ("ee" . "Latin-4") ; Estonian, e.g. X11R6.4
     ("iw" . "Hebrew") ; e.g. X11R6.4
     ("sp" . "Cyrillic-ISO") ; Serbian (Cyrillic alphabet), e.g. X11R6.4
     ("su" . "Latin-1") ; Finnish, e.g. Solaris 2.6
     ("jp" . "Japanese") ; e.g. MS Windows
-    ("chs" . "Chinese-GBK") ; MS Windows Chinese Simplified
-    ("cht" . "Chinese-BIG5") ; MS Windows Chinese Traditional
+    ("chs" . "Chinese-GBK") ; MS Windows Chinese Simplified (PRC)
+    ("cht" . "Chinese-BIG5") ; MS Windows Chinese Traditional (Taiwan)
     ("gbz" . "UTF-8") ; MS Windows Dari Persian
     ("div" . "UTF-8") ; MS Windows Divehi (Maldives)
     ("wee" . "Latin-2") ; MS Windows Lower Sorbian
     ("wen" . "Latin-2") ; MS Windows Upper Sorbian
+    ("ind" . "Latin-1") ; MS-Windows Indonesian
+    ("sme" . "UTF-8") ; MS-Windows Northern Sami (Norway)
+    ("smf" . "UTF-8") ; MS-Windows Northern Sami (Sweden)
+    ("smg" . "UTF-8") ; MS-Windows Northern Sami (Finland)
+    ("kdi" "Kannada" utf-8) ; MS-Windows Kannada
+    ("mar" "Devanagari" utf-8) ; MS-Windows Marathi
+    ("khm" "Khmer" utf-8) ; MS-Windows Khmer
+    ("iri" . "Latin-1") ; MS-Windows Irish Gaelic
+    ; mwk  MS-Windows Mohawk (Canada)
+    ("uig" . "UTF-8") ; MS-Windows Uighur
+    ("kin" . "UTF-8") ;  MS-Windows Kinyarwanda
     ))
   "Alist of locale regexps vs the corresponding languages and coding systems.
 Each element has this form:
-  \(LOCALE-REGEXP LANG-ENV CODING-SYSTEM)
+  (LOCALE-REGEXP LANG-ENV CODING-SYSTEM)
 The first element whose LOCALE-REGEXP matches the start of a
 downcased locale specifies the LANG-ENV \(language environment)
 and CODING-SYSTEM corresponding to that locale.  If there is no
 appropriate language environment, the element may have this form:
-  \(LOCALE-REGEXP . LANG-ENV)
+  (LOCALE-REGEXP . LANG-ENV)
 In this case, LANG-ENV is one of generic language environments for an
 specific encoding such as \"Latin-1\" and \"UTF-8\".")
 
@@ -2518,6 +2556,9 @@ is returned.  Thus, for instance, if charset \"ISO8859-2\",
 ;; too, for setting things such as calendar holidays, ps-print paper
 ;; size, spelling dictionary.
 
+(declare-function w32-get-console-codepage "w32proc.c" ())
+(declare-function w32-get-console-output-codepage "w32proc.c" ())
+
 (defun locale-translate (locale)
   "Expand LOCALE according to `locale-translation-file-name', if possible.
 For example, translate \"swedish\" into \"sv_SE.ISO8859-1\"."
@@ -2599,7 +2640,18 @@ See also `locale-charset-language-names', `locale-language-names',
 	(setq system-time-locale locale))
 
       (if (string-match "^[a-z][a-z]" locale)
-	  (setq current-iso639-language (intern (match-string 0 locale)))))
+          ;; The value of 'current-iso639-language' is matched against
+          ;; the ':lang' property of font-spec objects when selecting
+          ;; and prioritizing available fonts for displaying
+          ;; characters; see fontset.c.
+	  (setq current-iso639-language
+                ;; The call to 'downcase' is for w32, where the
+                ;; MS-Windows locale names are in caps, as in "ENU",
+                ;; the equivalent of the Posix "en_US".  Since the
+                ;; match mentioned above uses memq, and ':lang'
+                ;; properties have lower-case values, the letter-case
+                ;; must match exactly.
+                (intern (downcase (match-string 0 locale))))))
 
     (setq woman-locale
           (or system-messages-locale
@@ -2652,12 +2704,8 @@ See also `locale-charset-language-names', `locale-language-names',
 	  (unless frame
 	    (set-language-environment language-name))
 
-	  ;; If the default enable-multibyte-characters is nil,
-	  ;; we are using single-byte characters,
-	  ;; so the display table and terminal coding system are irrelevant.
-	  (when (default-value 'enable-multibyte-characters)
-	    (set-display-table-and-terminal-coding-system
-	     language-name coding-system frame))
+	  (set-display-table-and-terminal-coding-system
+	   language-name coding-system frame)
 
 	  ;; Set the `keyboard-coding-system' if appropriate (tty
 	  ;; only).  At least X and MS Windows can generate
@@ -2687,21 +2735,41 @@ See also `locale-charset-language-names', `locale-language-names',
 
     ;; On Windows, override locale-coding-system,
     ;; default-file-name-coding-system, keyboard-coding-system,
-    ;; terminal-coding-system with system codepage.
+    ;; terminal-coding-system with the ANSI or console codepage.
     (when (and (eq system-type 'windows-nt)
                (boundp 'w32-ansi-code-page))
-      (let ((code-page-coding (intern (format "cp%d" w32-ansi-code-page))))
-	(when (coding-system-p code-page-coding)
-	  (unless frame (setq locale-coding-system code-page-coding))
+      (let* ((ansi-code-page-coding
+              (intern (format "cp%d" w32-ansi-code-page)))
+             (code-page-coding
+              (if noninteractive
+                  (intern (format "cp%d" (w32-get-console-codepage)))
+                ansi-code-page-coding))
+             (output-coding
+              (if noninteractive
+                  (intern (format "cp%d" (w32-get-console-output-codepage)))
+                code-page-coding))
+             (multibyte-code-page-coding
+              (or (and (boundp 'w32-multibyte-code-page)
+                       (not (zerop w32-multibyte-code-page))
+                       (intern (format "cp%d" w32-multibyte-code-page)))
+                  code-page-coding))
+             (locale-coding
+              (if noninteractive
+                  code-page-coding
+                multibyte-code-page-coding)))
+	(when (and (coding-system-p code-page-coding)
+                   (coding-system-p locale-coding))
+          (or output-coding (setq output-coding code-page-coding))
+	  (unless frame (setq locale-coding-system locale-coding))
 	  (set-keyboard-coding-system code-page-coding frame)
-	  (set-terminal-coding-system code-page-coding frame)
-	  (setq default-file-name-coding-system code-page-coding))))
+	  (set-terminal-coding-system output-coding frame)
+	  (setq default-file-name-coding-system ansi-code-page-coding))))
 
     (when (eq system-type 'darwin)
       ;; On Darwin, file names are always encoded in utf-8, no matter
       ;; the locale.
-      (setq default-file-name-coding-system 'utf-8)
-      ;; Mac OS X's Terminal.app by default uses utf-8 regardless of
+      (setq default-file-name-coding-system 'utf-8-unix)
+      ;; macOS's Terminal.app by default uses utf-8 regardless of
       ;; the locale.
       (when (and (null window-system)
 		 (equal (getenv "TERM_PROGRAM" frame) "Apple_Terminal"))
@@ -2711,10 +2779,9 @@ See also `locale-charset-language-names', `locale-language-names',
     ;; Default to A4 paper if we're not in a C, POSIX or US locale.
     ;; (See comments in Flocale_info.)
     (unless frame
-      (let ((locale locale)
-	    (paper (locale-info 'paper)))
+      (let ((paper (locale-info 'paper))
+            locale)
 	(if paper
-	    ;; This will always be null at the time of writing.
 	    (cond
 	     ((equal paper '(216 279))
 	      (setq ps-paper-type 'letter))
@@ -2833,8 +2900,9 @@ If there's no description string for VALUE, return nil."
     (?\x9b . "CSI")))
 
 (defun encoded-string-description (str coding-system)
-  "Return a pretty description of STR that is encoded by CODING-SYSTEM."
-  (setq str (string-as-unibyte str))
+  "Return a pretty description of STR that is encoded by CODING-SYSTEM.
+STR should be a unibyte string."
+  (cl-assert (not (multibyte-string-p str)))
   (mapconcat
    (if (and coding-system (eq (coding-system-type coding-system) 'iso-2022))
        ;; Try to get a pretty description for ISO 2022 escape sequences.
@@ -2848,13 +2916,13 @@ If there's no description string for VALUE, return nil."
 If CODING-SYSTEM can't safely encode CHAR, return nil.
 The 3rd optional argument CHARSET, if non-nil, is a charset preferred
 on encoding."
-  (let* ((str1 (string-as-multibyte (string char)))
-	 (str2 (string-as-multibyte (string char char)))
+  (let* ((str1 (string char))
+	 (str2 (string char char))
 	 (found (find-coding-systems-string str1))
 	enc1 enc2 i1 i2)
-    (if (and (consp found)
-	     (eq (car found) 'undecided))
-	str1
+    (if (eq (car-safe found) 'undecided) ;Aka (not (multibyte-string-p str1))
+        ;; `char' is ASCII.
+	(encode-coding-string str1 coding-system)
       (when (memq (coding-system-base coding-system) found)
 	;; We must find the encoded string of CHAR.  But, just encoding
 	;; CHAR will put extra control sequences (usually to designate
@@ -2900,10 +2968,10 @@ on encoding."
 (make-obsolete-variable 'nonascii-translation-table "do not use it." "23.1")
 
 (defvar ucs-names nil
-  "Alist of cached (CHAR-NAME . CHAR-CODE) pairs.")
+  "Hash table of cached CHAR-NAME keys to CHAR-CODE values.")
 
 (defun ucs-names ()
-  "Return alist of (CHAR-NAME . CHAR-CODE) pairs cached in `ucs-names'."
+  "Return table of CHAR-NAME keys and CHAR-CODE values cached in `ucs-names'."
   (or ucs-names
       (let ((ranges
 	     '((#x0000 . #x33FF)
@@ -2911,35 +2979,75 @@ on encoding."
 	       (#x4DC0 . #x4DFF)
 	       ;; (#x4E00 . #x9FFF) CJK Unified Ideographs
 	       (#xA000 . #xD7FF)
-	       ;; (#xD800 . #xFAFF) Surrogate/Private
+	       ;; (#xD800 . #xF8FF) Surrogate/Private
 	       (#xFB00 . #x134FF)
-	       ;; (#x13500 . #x167FF) unused
-	       (#x16800 . #x16A3F)
-	       ;; (#x16A40 . #x1AFFF) unused
-	       (#x1B000 . #x1B0FF)
-	       ;; (#x1B100 . #x1CFFF) unused
+	       ;; (#x13500 . #x143FF) unused
+               (#x14400 . #x14646)
+	       ;; (#x14647 . #x167FF) unused
+	       (#x16800 . #x16F9F)
+               (#x16FE0 . #x16FE3)
+               ;; (#x17000 . #x187FF) Tangut Ideographs
+               ;; (#x18800 . #x18AFF) Tangut Components
+	       ;; (#x18B00 . #x1AFFF) unused
+	       (#x1B000 . #x1B11F)
+               ;; (#x1B120 . #x1B14F) unused
+               (#x1B150 . #x1B16F)
+               (#x1B170 . #x1B2FF)
+	       ;; (#x1B300 . #x1BBFF) unused
+               (#x1BC00 . #x1BCAF)
+	       ;; (#x1BCB0 . #x1CFFF) unused
 	       (#x1D000 . #x1FFFF)
 	       ;; (#x20000 . #xDFFFF) CJK Ideograph Extension A, B, etc, unused
 	       (#xE0000 . #xE01FF)))
 	    (gc-cons-threshold 10000000)
-	    names)
-	(dolist (range ranges)
-	  (let ((c (car range))
-		(end (cdr range)))
-	  (while (<= c end)
+	    (names (make-hash-table :size 42943 :test #'equal)))
+        (dolist (range ranges)
+          (let ((c (car range))
+	        (end (cdr range)))
+	    (while (<= c end)
 	      (let ((new-name (get-char-code-property c 'name))
 		    (old-name (get-char-code-property c 'old-name)))
-		;; In theory this code could end up pushing an "old-name" that
-		;; shadows a "new-name" but in practice every time an
-		;; `old-name' conflicts with a `new-name', the newer one has a
-		;; higher code, so it gets pushed later!
-		(if new-name (push (cons new-name c) names))
-		(if old-name (push (cons old-name c) names))
-		(setq c (1+ c))))))
-	;; Special case for "BELL" which is apparently the only char which
-	;; doesn't have a new name and whose old-name is shadowed by a newer
-	;; char with that name.
-	(setq ucs-names `(("BELL (BEL)" . 7) ,@names)))))
+	        ;; In theory this code could end up pushing an "old-name" that
+	        ;; shadows a "new-name" but in practice every time an
+	        ;; `old-name' conflicts with a `new-name', the newer one has a
+	        ;; higher code, so it gets pushed later!
+	        (if new-name (puthash new-name c names))
+	        (if old-name (puthash old-name c names))
+	        (setq c (1+ c))))))
+        ;; Special case for "BELL" which is apparently the only char which
+        ;; doesn't have a new name and whose old-name is shadowed by a newer
+        ;; char with that name.
+        (puthash "BELL (BEL)" ?\a names)
+        (setq ucs-names names))))
+
+(defun mule--ucs-names-annotation (name)
+  ;; FIXME: It would be much better to add this annotation before rather than
+  ;; after the char name, so the annotations are aligned.
+  ;; FIXME: The default behavior of displaying annotations in italics
+  ;; doesn't work well here.
+  (let ((char (gethash name ucs-names)))
+    (when char (format " (%c)" char))))
+
+(defun char-from-name (string &optional ignore-case)
+  "Return a character as a number from its Unicode name STRING.
+If optional IGNORE-CASE is non-nil, ignore case in STRING.
+Return nil if STRING does not name a character."
+  (or (gethash (if ignore-case (upcase string) string) (ucs-names))
+      (let ((minus (string-match-p "-[0-9A-F]+\\'" string)))
+        (when minus
+          ;; Parse names like "VARIATION SELECTOR-17" and "CJK
+          ;; COMPATIBILITY IDEOGRAPH-F900" that are not in ucs-names.
+          (ignore-errors
+            (let* ((case-fold-search ignore-case)
+                   (vs (string-match-p "\\`VARIATION SELECTOR-" string))
+                   (minus-num (string-to-number (substring string minus)
+                                                (if vs 10 16)))
+                   (vs-offset (if vs (if (< minus-num -16) #xE00EF #xFDFF) 0))
+                   (code (- vs-offset minus-num))
+                   (name (get-char-code-property code 'name)))
+              (when (eq t (compare-strings string nil nil name nil nil
+                                           ignore-case))
+                code)))))))
 
 (defun read-char-by-name (prompt)
   "Read a character by its Unicode name or hex number string.
@@ -2954,9 +3062,11 @@ preceded by an asterisk `*' and use completion, it will show all
 the characters whose names include that substring, not necessarily
 at the beginning of the name.
 
-This function also accepts a hexadecimal number of Unicode code
-point or a number in hash notation, e.g. #o21430 for octal,
-#x2318 for hex, or #10r8984 for decimal."
+Accept a name like \"CIRCULATION FUNCTION\", a hexadecimal
+number like \"2A10\", or a number in hash notation (e.g.,
+\"#x2a10\" for hex, \"10r10768\" for decimal, or \"#o25020\" for
+octal).  Treat otherwise-ambiguous strings like \"BED\" (U+1F6CF)
+as names, not numbers."
   (let* ((enable-recursive-minibuffers t)
 	 (completion-ignore-case t)
 	 (input
@@ -2964,16 +3074,18 @@ point or a number in hash notation, e.g. #o21430 for octal,
 	   prompt
 	   (lambda (string pred action)
 	     (if (eq action 'metadata)
-		 '(metadata (category . unicode-name))
+		 '(metadata
+		   (annotation-function . mule--ucs-names-annotation)
+		   (category . unicode-name))
 	       (complete-with-action action (ucs-names) string pred)))))
 	 (char
-	  (cond
-	   ((string-match-p "\\`[0-9a-fA-F]+\\'" input)
-	    (string-to-number input 16))
-	   ((string-match-p "\\`#" input)
-	    (read input))
-	   (t
-	    (cdr (assoc-string input (ucs-names) t))))))
+          (cond
+           ((char-from-name input t))
+           ((string-match-p "\\`[[:xdigit:]]+\\'" input)
+            (ignore-errors (string-to-number input 16)))
+           ((string-match-p "\\`#\\([bBoOxX]\\|[0-9]+[rR]\\)[0-9a-zA-Z]+\\'"
+                            input)
+            (ignore-errors (read input))))))
     (unless (characterp char)
       (error "Invalid character"))
     char))

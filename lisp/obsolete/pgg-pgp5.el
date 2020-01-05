@@ -1,6 +1,6 @@
 ;;; pgg-pgp5.el --- PGP 5.* support for PGG.
 
-;; Copyright (C) 1999-2000, 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2000, 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Created: 1999/11/02
@@ -21,12 +21,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 
-(eval-when-compile
-  (require 'cl))
+(eval-when-compile (require 'cl-lib))
 
 (require 'pgg)
 
@@ -35,22 +34,22 @@
   :group 'pgg)
 
 (defcustom pgg-pgp5-pgpe-program "pgpe"
-  "PGP 5.* 'pgpe' executable."
+  "PGP 5.* `pgpe' executable."
   :group 'pgg-pgp5
   :type 'string)
 
 (defcustom pgg-pgp5-pgps-program "pgps"
-  "PGP 5.* 'pgps' executable."
+  "PGP 5.* `pgps' executable."
   :group 'pgg-pgp5
   :type 'string)
 
 (defcustom pgg-pgp5-pgpk-program "pgpk"
-  "PGP 5.* 'pgpk' executable."
+  "PGP 5.* `pgpk' executable."
   :group 'pgg-pgp5
   :type 'string)
 
 (defcustom pgg-pgp5-pgpv-program "pgpv"
-  "PGP 5.* 'pgpv' executable."
+  "PGP 5.* `pgpv' executable."
   :group 'pgg-pgp5
   :type 'string)
 
@@ -115,7 +114,7 @@ Bourne shell or its equivalent \(not tcsh) is needed for \"2>\"."
 	    (pgg-convert-lbt-region (point-min)(point-max) 'LF)
 
 	    (if (memq status '(stop signal))
-		(error "%s exited abnormally: '%s'" program exit-status))
+		(error "%s exited abnormally: `%s'" program exit-status))
 	    (if (= 127 exit-status)
 		(error "%s could not be found" program))
 

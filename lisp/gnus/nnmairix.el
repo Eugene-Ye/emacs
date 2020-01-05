@@ -1,8 +1,8 @@
 ;;; nnmairix.el --- Mairix back end for Gnus, the Emacs newsreader
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
-;; Author: David Engster <dengste@eml.cc>
+;; Author: David Engster <deng@randomsample.de>
 ;; Keywords: mail searching
 ;; Old-Version: 0.6
 
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -134,8 +134,6 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))       ;For (pop (cdr ogroup)).
-
 (require 'nnoo)
 (require 'gnus-group)
 (require 'gnus-sum)
@@ -146,11 +144,6 @@
 (nnoo-declare nnmairix)
 
 ;;; === Keymaps
-
-(eval-when-compile
-  (when (featurep 'xemacs)
-    ;; The `kbd' macro requires that the `read-kbd-macro' macro is available.
-    (require 'edmacro)))
 
 ;; Group mode
 (defun nnmairix-group-mode-hook ()
@@ -243,7 +236,7 @@ unused nnmairix groups on the back end using
 
 (defcustom nnmairix-mairix-update-options '("-F" "-Q")
   "Options when calling mairix for updating the database.
-The default is '-F' and '-Q' for making updates faster.  You
+The default is \"-F\" and \"-Q\" for making updates faster.  You
 should call mairix without these options from time to
 time (e.g. via cron job)."
   :version "23.1"
@@ -252,7 +245,7 @@ time (e.g. via cron job)."
 
 (defcustom nnmairix-mairix-search-options '("-Q")
   "Options when calling mairix for searching.
-The default is '-Q' for making searching faster."
+The default is \"-Q\" for making searching faster."
   :version "23.1"
   :type '(repeat string)
   :group 'nnmairix)
@@ -308,10 +301,10 @@ The default chooses the largest window in the current frame."
 
 (defcustom nnmairix-propagate-marks-upon-close t
   "Flag if marks should be propagated upon closing a group.
-The default of this variable is t.  If set to 'ask, the
+The default of this variable is t.  If set to `ask', the
 user will be asked if the flags should be propagated when the
 group is closed.  If set to nil, the user will have to manually
-call 'nnmairix-propagate-marks'."
+call `nnmairix-propagate-marks'."
   :version "23.1"
   :type '(choice (const :tag "always" t)
 		 (const :tag "ask" ask)
@@ -388,7 +381,7 @@ wrong count of total articles shown by Gnus.")
 its maildir mail folders (e.g. the Dovecot IMAP server or mutt).")
 
 (defvoo nnmairix-default-group nil
-  "Default search group. This is the group which is used for all
+  "Default search group.  This is the group which is used for all
 temporary searches, e.g. nnmairix-search.")
 
 ;;; === Internal variables
@@ -417,7 +410,7 @@ Other back ends might or might not work.")
 
 (nnoo-define-basics nnmairix)
 
-(gnus-declare-backend "nnmairix" 'mail 'address)
+(gnus-declare-backend "nnmairix" 'mail 'address 'virtual)
 
 (deffoo nnmairix-open-server (server &optional definitions)
   ;; just set server variables
@@ -718,29 +711,29 @@ Other back ends might or might not work.")
 	    (nnimap-request-update-info-internal folder folderinfo nnmairix-backend-server)
 	  (nnmairix-call-backend "request-update-info" folder folderinfo nnmairix-backend-server))
 	;; set range of read articles
-	(gnus-info-set-read
-	 info
-	 (if docorr
-	     (nnmairix-map-range
-	      `(lambda (x) (+ x ,(cadr corr)))
-	      (gnus-info-read folderinfo))
-	   (gnus-info-read folderinfo)))
+	(setf (gnus-info-read info)
+	      (if docorr
+	          (nnmairix-map-range
+		   ;; FIXME: Use lexical-binding.
+	           `(lambda (x) (+ x ,(cadr corr)))
+	           (gnus-info-read folderinfo))
+	        (gnus-info-read folderinfo)))
 	;; set other marks
-	(gnus-info-set-marks
-	 info
-	 (if docorr
-	     (mapcar (lambda (cur)
-			 (cons
-			  (car cur)
-			  (nnmairix-map-range
-			   `(lambda (x) (+ x ,(cadr corr)))
-			   (list (cadr cur)))))
-		     (gnus-info-marks folderinfo))
-	   (gnus-info-marks folderinfo))))
+	(setf (gnus-info-marks info)
+	      (if docorr
+		  (mapcar (lambda (cur)
+			    (cons
+			     (car cur)
+			     (nnmairix-map-range
+			      ;; FIXME: Use lexical-binding.
+			      `(lambda (x) (+ x ,(cadr corr)))
+			      (list (cadr cur)))))
+			  (gnus-info-marks folderinfo))
+		(gnus-info-marks folderinfo))))
       (when (eq readmarks 'unread)
-	(gnus-info-set-read info nil))
+	(setf (gnus-info-read info) nil))
       (when (eq readmarks 'read)
-	(gnus-info-set-read info (gnus-active qualgroup))))
+	(setf (gnus-info-read info) (gnus-active qualgroup))))
   t)
 
 (nnoo-define-skeleton nnmairix)
@@ -1103,7 +1096,7 @@ show wrong article counts."
 (defun nnmairix-propagate-marks (&optional server)
   "Propagate marks from nnmairix group to original articles.
 Unless SERVER is explicitly specified, will use the last opened
-nnmairix server. Only marks from current session will be set."
+nnmairix server.  Only marks from current session will be set."
   (interactive)
   (if server
       (nnmairix-open-server server)
@@ -1407,7 +1400,7 @@ nnmairix with nnml backends."
   "Replace folder names in Xref header and correct article numbers.
 Do this for all ARTICLES on BACKENDGROUP.  Replace using
 MAIRIXGROUP.  NUMC contains values for article number correction.
-TYPE is either 'nov or 'headers."
+TYPE is either `nov' or `headers'."
   (nnheader-message 7 "nnmairix: Rewriting headers...")
   (cond
    ((eq type 'nov)
@@ -1426,12 +1419,12 @@ TYPE is either 'nov or 'headers."
 	     (setq cur (nnheader-parse-nov))
 	     (when corr
 	       (setq article (+ (mail-header-number cur) numc))
-	       (mail-header-set-number cur article))
+	       (setf (mail-header-number cur) article))
 	     (setq xref (mail-header-xref cur))
 	     (when (and (stringp xref)
 			(string-match (format "[ \t]%s:[0-9]+" backendgroup) xref))
 	       (setq xref (replace-match (format " %s:%d" mairixgroup article) t nil xref))
-	       (mail-header-set-xref cur xref))
+	       (setf (mail-header-xref cur) xref))
 	     (set-buffer buf)
 	     (nnheader-insert-nov cur)
 	     (set-buffer nntp-server-buffer)
@@ -1456,7 +1449,7 @@ TYPE is either 'nov or 'headers."
 (defun nnmairix-backend-to-server (server)
   "Return nnmairix server most probably responsible for back end SERVER.
 User will be asked if this cannot be determined.  Result is saved in
-parameter 'indexed-servers of corresponding default search
+parameter `indexed-servers' of corresponding default search
 group."
   (let ((allservers (nnmairix-get-nnmairix-servers))
 	mairixserver found defaultgroup)
@@ -1635,7 +1628,7 @@ search in raw mode."
 
 (defun nnmairix-determine-original-group-from-registry (mid)
   "Try to determine original group for message-id MID from the registry."
-  (when (gnus-bound-and-true-p 'gnus-registry-enabled)
+  (when (bound-and-true-p gnus-registry-enabled)
     (unless (string-match "^<" mid)
       (set mid (concat "<" mid)))
     (unless (string-match ">$" mid)
@@ -1781,7 +1774,7 @@ If VERSION is a string: must be contained in mairix version output."
 	(setq versionstring
 	      (let* ((commandsplit (split-string nnmairix-mairix-command))
 		     (args (append (list (car commandsplit))
-				  `(nil t nil) (cdr commandsplit) '("-V"))))
+				   '(nil t nil) (cdr commandsplit) '("-V"))))
 	      (apply 'call-process args)
 	      (goto-char (point-min))
 	      (re-search-forward "mairix.*")
@@ -1943,7 +1936,9 @@ Fill in VALUES if based on an article."
     (kill-all-local-variables)
     (erase-buffer)
     (widget-insert "Specify your query for Mairix (check boxes for activating fields):\n\n")
-    (widget-insert "(Whitespaces will be converted to ',' (i.e. AND). Use '/' for OR.)\n\n")
+    (widget-insert
+     (substitute-command-keys
+      "(Whitespaces will be converted to `,' (i.e. AND). Use `/' for OR.)\n\n"))
 ;    (make-local-variable 'nnmairix-widgets)
     (setq nnmairix-widgets (nnmairix-widget-build-editable-fields values))
     (when (member 'flags nnmairix-widget-other)

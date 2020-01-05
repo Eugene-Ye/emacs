@@ -1,6 +1,6 @@
 ;;; vc-svn.el --- non-resident support for Subversion version-control  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2003-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author:      FSF (see vc.el for full credits)
 ;; Maintainer:  Stefan Monnier <monnier@gnu.org>
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -83,7 +83,7 @@ If t, use no switches."
   t			   ;`svn' doesn't support common args like -c or -b.
   "String or list of strings specifying extra switches for svn diff under VC.
 If nil, use the value of `vc-diff-switches' (or `diff-switches'),
-together with \"-x --diff-cmd=\"`diff-command' (since 'svn diff'
+together with \"-x --diff-cmd=\"`diff-command' (since `svn diff'
 does not support the default \"-c\" value of `diff-switches').
 If you want to force an empty list of arguments, use t."
   :type '(choice (const :tag "Unspecified" nil)
@@ -95,7 +95,18 @@ If you want to force an empty list of arguments, use t."
   :version "22.1"
   :group 'vc-svn)
 
-(defcustom vc-svn-header '("\$Id\$")
+(defcustom vc-svn-annotate-switches nil
+  "String or list of strings specifying switches for svn annotate under VC.
+If nil, use the value of `vc-annotate-switches'.  If t, use no
+switches."
+  :type '(choice (const :tag "Unspecified" nil)
+		 (const :tag "None" t)
+		 (string :tag "Argument String")
+		 (repeat :tag "Argument List" :value ("") string))
+  :version "25.1"
+  :group 'vc-svn)
+
+(defcustom vc-svn-header '("$Id\ $")
   "Header keywords to be inserted by `vc-insert-headers'."
   :version "24.1"     ; no longer consult the obsolete vc-header-alist
   :type '(repeat string)
@@ -116,6 +127,7 @@ If you want to force an empty list of arguments, use t."
 
 (defun vc-svn-revision-granularity () 'repository)
 (defun vc-svn-checkout-model (_files) 'implicit)
+(defun vc-svn-update-on-retrieve-tag () nil)
 
 ;;;
 ;;; State-querying functions
@@ -135,7 +147,9 @@ If you want to force an empty list of arguments, use t."
 
 (defun vc-svn-registered (file)
   "Check if FILE is SVN registered."
-  (when (vc-svn-root file)
+  (setq file (expand-file-name file))
+  (when (and (vc-svn-root file)
+             (file-accessible-directory-p (file-name-directory file)))
     (with-temp-buffer
       (cd (file-name-directory file))
       (let* (process-file-side-effects
@@ -153,36 +167,17 @@ If you want to force an empty list of arguments, use t."
 	  (let ((parsed (vc-svn-parse-status file)))
 	    (and parsed (not (memq parsed '(ignored unregistered))))))))))
 
-(defun vc-svn-state (file &optional localp)
+(defun vc-svn-state (file)
   "SVN-specific version of `vc-state'."
   (let (process-file-side-effects)
-    (setq localp (or localp (vc-stay-local-p file 'SVN)))
     (with-temp-buffer
       (cd (file-name-directory file))
-      (vc-svn-command t 0 file "status" (if localp "-v" "-u"))
+      (vc-svn-command t 0 file "status" "-v")
       (vc-svn-parse-status file))))
-
-;; NB this does not handle svn properties, which can be changed
-;; without changing the file timestamp.
-;; Note that unlike vc-cvs-state-heuristic, this is not called from
-;; vc-svn-state.  AFAICS, it is only called from vc-state-refresh via
-;; vc-after-save (bug#7850).  Therefore the fact that it ignores
-;; properties is irrelevant.  If you want to make vc-svn-state call
-;; this, it should be extended to handle svn properties.
-(defun vc-svn-state-heuristic (file)
-  "SVN-specific state heuristic."
-  ;; If the file has not changed since checkout, consider it `up-to-date'.
-  ;; Otherwise consider it `edited'.  Copied from vc-cvs-state-heuristic.
-  (let ((checkout-time (vc-file-getprop file 'vc-checkout-time))
-        (lastmod (nth 5 (file-attributes file))))
-    (cond
-     ((equal checkout-time lastmod) 'up-to-date)
-     ((string= (vc-working-revision file) "0") 'added)
-     ((null checkout-time) 'unregistered)
-     (t 'edited))))
 
 ;; FIXME it would be better not to have the "remote" argument,
 ;; but to distinguish the two output formats based on content.
+;; FIXME: the local format isn't used by the (sole) caller anymore.
 (defun vc-svn-after-dir-status (callback &optional remote)
   (let ((state-map '((?A . added)
                      (?C . conflict)
@@ -190,6 +185,7 @@ If you want to force an empty list of arguments, use t."
                      (?M . edited)
                      (?D . removed)
                      (?R . removed)
+                     (?! . needs-update)
                      (?? . unregistered)
                      ;; This is what vc-svn-parse-status does.
                      (?~ . edited)))
@@ -215,29 +211,19 @@ If you want to force an empty list of arguments, use t."
          (setq result (cons (list filename state) result)))))
     (funcall callback result)))
 
-;; -dir-status called from vc-dir, which loads vc, which loads vc-dispatcher.
+;; dir-status-files called from vc-dir, which loads vc,
+;; which loads vc-dispatcher.
 (declare-function vc-exec-after "vc-dispatcher" (code))
 
-(defun vc-svn-dir-status (dir callback)
+(autoload 'vc-expand-dirs "vc")
+
+(defun vc-svn-dir-status-files (_dir files callback)
   "Run 'svn status' for DIR and update BUFFER via CALLBACK.
 CALLBACK is called as (CALLBACK RESULT BUFFER), where
 RESULT is a list of conses (FILE . STATE) for directory DIR."
-  ;; FIXME should this rather be all the files in dir?
-  ;; FIXME: the vc-stay-local-p logic below is disabled, it ends up
-  ;; calling synchronously (vc-svn-registered DIR) => calling svn status -v DIR
-  ;; which is VERY SLOW for big trees and it makes emacs
-  ;; completely unresponsive during that time.
-  (let* ((local (and nil (vc-stay-local-p dir 'SVN)))
-	 (remote (or t (not local) (eq local 'only-file))))
-    (vc-svn-command (current-buffer) 'async nil "status"
-		    (if remote "-u"))
-  (vc-run-delayed
-   (vc-svn-after-dir-status callback remote))))
-
-(defun vc-svn-dir-status-files (_dir files _default-state callback)
-  (apply 'vc-svn-command (current-buffer) 'async nil "status" files)
-  (vc-run-delayed
-   (vc-svn-after-dir-status callback)))
+  ;; FIXME shouldn't this rather default to all the files in dir?
+  (apply #'vc-svn-command (current-buffer) 'async nil "status" "-u" files)
+  (vc-run-delayed (vc-svn-after-dir-status callback t)))
 
 (defun vc-svn-dir-extra-headers (_dir)
   "Generate extra status headers for a Subversion working copy."
@@ -296,11 +282,25 @@ RESULT is a list of conses (FILE . STATE) for directory DIR."
   ;; Expand default-directory because svn gets confused by eg
   ;; file://~/path/to/file.  (Bug#15446).
   (vc-svn-command "*vc*" 0 "." "checkout"
-                  (concat "file://" (expand-file-name default-directory) "SVN")))
+                  (let ((defdir (expand-file-name default-directory))
+                        (svn-prog (executable-find "svn")))
+                    (when (and (fboundp 'w32-application-type)
+                               (eq (w32-application-type svn-prog) 'msys))
+                      (setq defdir
+                            (replace-regexp-in-string "^\\(.\\):/" "/\\1/"
+                                                      defdir)))
+                    (concat (if (and (stringp defdir)
+                                     (eq (aref defdir 0) ?/))
+                                "file://"
+                              ;; MS-Windows files d:/foo/bar need to
+                              ;; begin with 3 leading slashes.
+                              "file:///")
+                            defdir
+                            "SVN"))))
 
 (autoload 'vc-switches "vc")
 
-(defun vc-svn-register (files &optional _rev _comment)
+(defun vc-svn-register (files &optional _comment)
   "Register FILES into the SVN version-control system.
 The COMMENT argument is ignored  This does an add but not a commit.
 Passes either `vc-svn-register-switches' or `vc-register-switches'
@@ -312,15 +312,14 @@ to the SVN command."
 
 (defalias 'vc-svn-responsible-p 'vc-svn-root)
 
-(defalias 'vc-svn-could-register 'vc-svn-root
-  "Return non-nil if FILE could be registered in SVN.
-This is only possible if SVN is responsible for FILE's directory.")
+(declare-function log-edit-extract-headers "log-edit" (headers string))
 
 (defun vc-svn-checkin (files comment &optional _extra-args-ignored)
   "SVN-specific version of `vc-backend-checkin'."
   (let ((status (apply
                  'vc-svn-command nil 1 files "ci"
-                 (nconc (list "-m" comment) (vc-switches 'SVN 'checkin)))))
+                 (nconc (cons "-m" (log-edit-extract-headers nil comment))
+                        (vc-switches 'SVN 'checkin)))))
     (set-buffer "*vc*")
     (goto-char (point-min))
     (unless (equal status 0)
@@ -355,21 +354,25 @@ This is only possible if SVN is responsible for FILE's directory.")
 
 (defun vc-svn-ignore (file &optional directory remove)
   "Ignore FILE under Subversion.
-FILE is a file wildcard, relative to the root directory of DIRECTORY."
-  (let* ((ignores (vc-svn-ignore-completion-table directory))
-         (file (file-relative-name file directory))
+FILE is a wildcard specification, either relative to
+DIRECTORY or absolute."
+  (let* ((path (directory-file-name (expand-file-name file directory)))
+         (directory (file-name-directory path))
+         (file (file-name-nondirectory path))
+         (ignores (vc-svn-ignore-completion-table directory))
          (ignores (if remove
                       (delete file ignores)
                     (push file ignores))))
     (vc-svn-command nil 0 nil nil "propset" "svn:ignore"
                     (mapconcat #'identity ignores "\n")
-                    (expand-file-name directory))))
+                    directory)))
 
 (defun vc-svn-ignore-completion-table (directory)
   "Return the list of ignored files in DIRECTORY."
   (with-temp-buffer
-    (vc-svn-command t t nil "propget" "svn:ignore" (expand-file-name directory))
-    (split-string (buffer-string))))
+    (when (zerop (vc-svn-command
+                  t t nil "propget" "svn:ignore" (expand-file-name directory)))
+      (split-string (buffer-string) "\n"))))
 
 (defun vc-svn-find-admin-dir (file)
   "Return the administrative directory of FILE."
@@ -406,6 +409,31 @@ FILE is a file wildcard, relative to the root directory of DIRECTORY."
   "Revert FILE to the version it was based on."
   (unless contents-done
     (vc-svn-command nil 0 file "revert")))
+
+(autoload 'vc-read-revision "vc")
+
+(defun vc-svn-merge-file (file)
+  "Accept a file merge request, prompting for revisions."
+  (let* ((first-revision
+        (vc-read-revision
+         (concat "Merge " file
+                 " from SVN revision "
+                 "(default news on current branch): ")
+         (list file)
+         'SVN))
+        second-revision
+        status)
+    (cond
+     ((string= first-revision "")
+      (setq status (vc-svn-merge-news file)))
+     (t
+      (setq second-revision
+           (vc-read-revision
+            "Second SVN revision: "
+            (list file) 'SVN nil
+            first-revision))
+      (setq status (vc-svn-merge file first-revision second-revision))))
+    status))
 
 (defun vc-svn-merge (file first-version &optional second-version)
   "Merge changes into current working copy of FILE.
@@ -456,7 +484,8 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
                ((string= (match-string 2) "U")
                 (vc-file-setprop file 'vc-state 'up-to-date)
                 (vc-file-setprop file 'vc-checkout-time
-                                 (nth 5 (file-attributes file)))
+                                 (file-attribute-modification-time
+				  (file-attributes file)))
                 0);; indicate success to the caller
                ;; Merge successful, but our own changes are still in the file
                ((string= (match-string 2) "G")
@@ -539,7 +568,6 @@ If LIMIT is non-nil, show no more than this many entries."
 		   'vc-svn-command
 		   buffer
 		   'async
-		   ;; (if (and (= (length files) 1) (vc-stay-local-p file 'SVN)) 'async 0)
 		   (list file)
 		   "log"
 		   (append
@@ -551,15 +579,19 @@ If LIMIT is non-nil, show no more than this many entries."
 		       ;; subsequent commits.  At least that's what the
 		       ;; vc-cvs.el code does.
 		       "-rHEAD:0"))
-		    (when limit (list "--limit" (format "%s" limit))))))
+                    (if (eq vc-log-view-type 'with-diff)
+                        (list "--diff"))
+                    (when limit (list "--limit" (format "%s" limit))))))
 	;; Dump log for the entire directory.
 	(apply 'vc-svn-command buffer 0 nil "log"
 	       (append
 		(list
 		 (if start-revision (format "-r%s" start-revision) "-rHEAD:0"))
-		(when limit (list "--limit" (format "%s" limit)))))))))
+                (if (eq vc-log-view-type 'with-diff)
+                    (list "--diff"))
+                (when limit (list "--limit" (format "%s" limit)))))))))
 
-(defun vc-svn-diff (files &optional oldvers newvers buffer)
+(defun vc-svn-diff (files &optional oldvers newvers buffer async)
   "Get a difference report using SVN between two revisions of fileset FILES."
   (and oldvers
        (not newvers)
@@ -574,14 +606,12 @@ If LIMIT is non-nil, show no more than this many entries."
        ;; has a different revision, we fetch the lot, which is
        ;; obviously sub-optimal.
        (setq oldvers nil))
+  (setq async (and async (or oldvers newvers)))	; Svn diffs those locally.
   (let* ((switches
 	    (if vc-svn-diff-switches
 		(vc-switches 'SVN 'diff)
 	      (list (concat "--diff-cmd=" diff-command) "-x"
-		    (mapconcat 'identity (vc-switches nil 'diff) " "))))
-	   (async (and (not vc-disable-async-diff)
-                       (vc-stay-local-p files 'SVN)
-		       (or oldvers newvers)))) ; Svn diffs those locally.
+		    (mapconcat 'identity (vc-switches nil 'diff) " ")))))
       (apply 'vc-svn-command buffer
 	     (if async 'async 0)
 	     files "diff"
@@ -623,7 +653,7 @@ NAME is assumed to be a URL."
 ;; Subversion makes backups for us, so don't bother.
 ;; (defun vc-svn-make-version-backups-p (file)
 ;;   "Return non-nil if version backups should be made for FILE."
-;;  (vc-stay-local-p file 'SVN))
+;;  nil)
 
 (defun vc-svn-check-headers ()
   "Check if the current file has any headers in it."
@@ -645,17 +675,6 @@ and that it passes `vc-svn-global-switches' to it before FLAGS."
          (if (stringp vc-svn-global-switches)
              (cons vc-svn-global-switches flags)
            (append vc-svn-global-switches flags))))
-
-(defun vc-svn-repository-hostname (dirname)
-  (with-temp-buffer
-    (let (process-file-side-effects)
-      (vc-svn-command t t dirname "info" "--xml"))
-    (goto-char (point-min))
-    (when (re-search-forward "<url>\\(.*\\)</url>" nil t)
-      ;; This is not a hostname but a URL.  This may actually be considered
-      ;; as a feature since it allows vc-svn-stay-local to specify different
-      ;; behavior for different modules on the same server.
-      (match-string 1))))
 
 (defun vc-svn-resolve-when-done ()
   "Call \"svn resolved\" if the conflict markers have been removed."
@@ -684,7 +703,7 @@ and that it passes `vc-svn-global-switches' to it before FLAGS."
       ;; use conflict markers in which case we don't really know what to do.
       ;; So let's just punt for now.
       nil)
-    (message "There are unresolved conflicts in this file")))
+    (vc-message-unresolved-conflicts buffer-file-name)))
 
 (defun vc-svn-parse-status (&optional filename)
   "Parse output of \"svn status\" command in the current buffer.
@@ -692,8 +711,7 @@ Set file properties accordingly.  If FILENAME is non-nil, return its status."
   (let (multifile file status propstat)
     (goto-char (point-min))
     (while (re-search-forward
-            ;; Ignore the files with status X.
-	    "^\\(?:\\?\\|[ ACDGIMR!~][ MC][ L][ +][ S]..\\([ *]\\) +\\([-0-9]+\\) +\\([0-9?]+\\) +\\([^ ]+\\)\\) +" nil t)
+            "^\\(?:\\?\\|[ ACDGIMR!~][ MC][ L][ +][ SX]..\\([ *]\\) +\\([-0-9]+\\) +\\([0-9?]+\\) +\\([^ ]+\\)\\) +" nil t)
       ;; If the username contains spaces, the output format is ambiguous,
       ;; so don't trust the output's filename unless we have to.
       (setq file (or (unless multifile filename)
@@ -721,7 +739,8 @@ Set file properties accordingly.  If FILENAME is non-nil, return its status."
 	   (if (eq (char-after (match-beginning 1)) ?*)
 	       'needs-update
              (vc-file-setprop file 'vc-checkout-time
-                              (nth 5 (file-attributes file)))
+                              (file-attribute-modification-time
+			       (file-attributes file)))
 	     'up-to-date))
 	  ((eq status ?A)
 	   ;; If the file was actually copied, (match-string 2) is "-".
@@ -749,7 +768,7 @@ Set file properties accordingly.  If FILENAME is non-nil, return its status."
   ;; an uppercase or lowercase letter and can contain uppercase and
   ;; lowercase letters, digits, `-', and `_'.
   (and (string-match "^[a-zA-Z]" tag)
-       (not (string-match "[^a-z0-9A-Z-_]" tag))))
+       (not (string-match "[^a-z0-9A-Z_-]" tag))))
 
 (defun vc-svn-valid-revision-number-p (tag)
   "Return non-nil if TAG is a valid revision number."
@@ -759,7 +778,9 @@ Set file properties accordingly.  If FILENAME is non-nil, return its status."
 ;; Support for `svn annotate'
 
 (defun vc-svn-annotate-command (file buf &optional rev)
-  (vc-svn-command buf 'async file "annotate" (if rev (concat "-r" rev))))
+  (apply #'vc-svn-command buf 'async file "annotate"
+	 (append (vc-switches 'svn 'annotate)
+		 (if rev (list (concat "-r" rev))))))
 
 (defun vc-svn-annotate-time-of-rev (rev)
   ;; Arbitrarily assume 10 commits per day.

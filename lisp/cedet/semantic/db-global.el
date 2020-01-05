@@ -1,6 +1,6 @@
 ;;; semantic/db-global.el --- Semantic database extensions for GLOBAL
 
-;; Copyright (C) 2002-2006, 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2006, 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: tags
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -39,6 +39,8 @@
 
 ;;; Code:
 
+(defvar semanticdb--ih)
+
 ;;;###autoload
 (defun semanticdb-enable-gnu-global-databases (mode &optional noerror)
   "Enable the use of the GNU Global SemanticDB back end for all files of MODE.
@@ -47,7 +49,7 @@ in a GNU Global supported hierarchy.
 
 Two sanity checks are performed to assure (a) that GNU global program exists
 and (b) that the GNU global program version is compatibility with the database
-version.  If optional NOERROR is nil, then an error may be signalled on version
+version.  If optional NOERROR is nil, then an error may be signaled on version
 mismatch.  If NOERROR is not nil, then no error will be signaled.  Instead
 return value will indicate success or failure with non-nil or nil respective
 values."
@@ -64,10 +66,10 @@ values."
     (when (stringp mode)
       (setq mode (intern mode)))
 
-    (let ((ih (mode-local-value mode 'semantic-init-mode-hook)))
+    (let ((semanticdb--ih (mode-local-value mode 'semantic-init-mode-hook)))
       (eval `(setq-mode-local
               ,mode semantic-init-mode-hook
-              (cons 'semanticdb-enable-gnu-global-hook ih))))
+              (cons 'semanticdb-enable-gnu-global-hook semanticdb--ih))))
     t
     )
   )
@@ -94,7 +96,7 @@ if optional DONT-ERR-IF-NOT-AVAILABLE is non-nil; else throw an error."
       (setq
        ;; Add to the system database list.
        semanticdb-project-system-databases
-       (cons (semanticdb-project-database-global "global")
+       (cons (make-instance 'semanticdb-project-database-global)
 	     semanticdb-project-system-databases)
        ;; Apply the throttle.
        semanticdb-find-default-throttle
@@ -112,12 +114,16 @@ if optional DONT-ERR-IF-NOT-AVAILABLE is non-nil; else throw an error."
    )
   "A table for returning search results from GNU Global.")
 
-(defmethod object-print ((obj semanticdb-table-global) &rest strings)
+(cl-defmethod semanticdb-debug-info ((obj semanticdb-table-global))
+  (list "(proxy)"))
+
+(cl-defmethod cl-print-object ((obj semanticdb-table-global) stream)
   "Pretty printer extension for `semanticdb-table-global'.
 Adds the number of tags in this file to the object print name."
-  (apply 'call-next-method obj (cons " (proxy)" strings)))
+  (princ (eieio-object-name obj (semanticdb-debug-info obj))
+         stream))
 
-(defmethod semanticdb-equivalent-mode ((table semanticdb-table-global) &optional buffer)
+(cl-defmethod semanticdb-equivalent-mode ((table semanticdb-table-global) &optional buffer)
   "Return t, pretend that this table's mode is equivalent to BUFFER.
 Equivalent modes are specified by the `semantic-equivalent-major-modes'
 local variable."
@@ -126,21 +132,21 @@ local variable."
 
 ;;; Filename based methods
 ;;
-(defmethod semanticdb-get-database-tables ((obj semanticdb-project-database-global))
+(cl-defmethod semanticdb-get-database-tables ((obj semanticdb-project-database-global))
   "For a global database, there are no explicit tables.
 For each file hit, get the traditional semantic table from that file."
   ;; We need to return something since there is always the "master table"
   ;; The table can then answer file name type questions.
   (when (not (slot-boundp obj 'tables))
-    (let ((newtable (semanticdb-table-global "GNU Global Search Table")))
+    (let ((newtable (make-instance 'semanticdb-table-global)))
       (oset obj tables (list newtable))
       (oset newtable parent-db obj)
       (oset newtable tags nil)
       ))
 
-  (call-next-method))
+  (cl-call-next-method))
 
-(defmethod semanticdb-file-table ((obj semanticdb-project-database-global) filename)
+(cl-defmethod semanticdb-file-table ((obj semanticdb-project-database-global) filename)
   "From OBJ, return FILENAME's associated table object."
   ;; We pass in "don't load".  I wonder if we need to avoid that or not?
   (car (semanticdb-get-database-tables obj))
@@ -150,13 +156,13 @@ For each file hit, get the traditional semantic table from that file."
 ;;
 ;; Only NAME based searches work with GLOBAL as that is all it tracks.
 ;;
-(defmethod semanticdb-find-tags-by-name-method
+(cl-defmethod semanticdb-find-tags-by-name-method
   ((table semanticdb-table-global) name &optional tags)
   "Find all tags named NAME in TABLE.
 Return a list of tags."
   (if tags
       ;; If TAGS are passed in, then we don't need to do work here.
-      (call-next-method)
+      (cl-call-next-method)
     ;; Call out to GNU Global for some results.
     (let* ((semantic-symref-tool 'global)
 	   (result (semantic-symref-find-tags-by-name name 'project))
@@ -167,12 +173,12 @@ Return a list of tags."
 	(semantic-symref-result-get-tags result))
       )))
 
-(defmethod semanticdb-find-tags-by-name-regexp-method
+(cl-defmethod semanticdb-find-tags-by-name-regexp-method
   ((table semanticdb-table-global) regex &optional tags)
   "Find all tags with name matching REGEX in TABLE.
 Optional argument TAGS is a list of tags to search.
 Return a list of tags."
-  (if tags (call-next-method)
+  (if tags (cl-call-next-method)
     (let* ((semantic-symref-tool 'global)
 	   (result (semantic-symref-find-tags-by-regexp regex 'project))
 	   )
@@ -180,18 +186,18 @@ Return a list of tags."
 	(semantic-symref-result-get-tags result))
       )))
 
-(defmethod semanticdb-find-tags-for-completion-method
+(cl-defmethod semanticdb-find-tags-for-completion-method
   ((table semanticdb-table-global) prefix &optional tags)
   "In TABLE, find all occurrences of tags matching PREFIX.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
-  (if tags (call-next-method)
+  (if tags (cl-call-next-method)
     (let* ((semantic-symref-tool 'global)
 	   (result (semantic-symref-find-tags-by-completion prefix 'project))
 	   (faketags nil)
 	   )
       (when result
-	(dolist (T (oref result :hit-text))
+	(dolist (T (oref result hit-text))
 	  ;; We should look up each tag one at a time, but I'm lazy!
 	  ;; Doing this may be good enough.
 	  (setq faketags (cons
@@ -206,21 +212,21 @@ Returns a table of all matching tags."
 ;; alone, otherwise replace with implementations similar to those
 ;; above.
 ;;
-(defmethod semanticdb-deep-find-tags-by-name-method
+(cl-defmethod semanticdb-deep-find-tags-by-name-method
   ((table semanticdb-table-global) name &optional tags)
   "Find all tags name NAME in TABLE.
 Optional argument TAGS is a list of tags to search.
 Like `semanticdb-find-tags-by-name-method' for global."
   (semanticdb-find-tags-by-name-method table name tags))
 
-(defmethod semanticdb-deep-find-tags-by-name-regexp-method
+(cl-defmethod semanticdb-deep-find-tags-by-name-regexp-method
   ((table semanticdb-table-global) regex &optional tags)
   "Find all tags with name matching REGEX in TABLE.
 Optional argument TAGS is a list of tags to search.
 Like `semanticdb-find-tags-by-name-method' for global."
   (semanticdb-find-tags-by-name-regexp-method table regex tags))
 
-(defmethod semanticdb-deep-find-tags-for-completion-method
+(cl-defmethod semanticdb-deep-find-tags-for-completion-method
   ((table semanticdb-table-global) prefix &optional tags)
   "In TABLE, find all occurrences of tags matching PREFIX.
 Optional argument TAGS is a list of tags to search.

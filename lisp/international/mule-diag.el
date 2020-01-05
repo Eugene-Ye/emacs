@@ -1,6 +1,6 @@
 ;;; mule-diag.el --- show diagnosis of multilingual environment (Mule)
 
-;; Copyright (C) 1997-1998, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2000-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -204,13 +204,6 @@ Character sets for defining other charsets, or for backward compatibility
   "Obsolete.")
 (make-obsolete-variable 'non-iso-charset-alist "no longer relevant." "23.1")
 
-(defun decode-codepage-char (codepage code)
-  "Decode a character that has code CODE in CODEPAGE.
-Return a decoded character string.  Each CODEPAGE corresponds to a
-coding system cpCODEPAGE."
-  (declare (obsolete decode-char "23.1"))
-  (decode-char (intern (format "cp%d" codepage)) code))
-
 ;; A variable to hold charset input history.
 (defvar charset-history nil)
 
@@ -332,7 +325,7 @@ meanings of these arguments."
       (let ((char (charset-iso-final-char charset)))
 	(when (> char 0)
 	  (insert "Final char of ISO2022 designation sequence: ")
-	  (insert (format "`%c'\n" char))))
+	  (insert (format-message "`%c'\n" char))))
       (let (aliases)
 	(dolist (c charset-list)
 	  (if (and (not (eq c charset))
@@ -362,7 +355,8 @@ meanings of these arguments."
 		     (:iso-revision-number "ISO revision number: "
 					   number-to-string)
 		     (:supplementary-p
-		      "Used only as a parent of some other charset." nil)))
+		      "Used only as a parent or a subset of some other charset,
+or provided just for backward compatibility." nil)))
 	(let ((val (get-charset-property charset (car elt))))
 	  (when val
 	    (if (cadr elt) (insert (cadr elt)))
@@ -581,7 +575,7 @@ docstring, and print only the first line of the docstring."
 	    (if (string-match "\n" doc)
 		(setq doc (substring doc 0 (match-beginning 0))))
 	    (setq doc (concat "  " doc)))
-	  (princ (format "%s\n" doc))))))
+	  (princ (format "%s\n" (substitute-command-keys doc)))))))
 
 ;;;###autoload
 (defun describe-current-coding-system ()
@@ -683,7 +677,8 @@ Priority order for recognizing coding systems when reading files:\n")
 			(princ (cdr (car alist)))
 			(princ "\n")
 			(setq alist (cdr alist)))))))
-	(funcall func "File I/O" file-coding-system-alist)
+	(funcall func "File I/O" (append auto-coding-alist
+                                         file-coding-system-alist))
 	(funcall func "Process I/O" process-coding-system-alist)
 	(funcall func "Network I/O" network-coding-system-alist))
       (help-mode))))
@@ -770,7 +765,7 @@ but still contains full information about each coding system."
 # MNEMONIC-LETTER -- CODING-SYSTEM-NAME
 #   DOC-STRING
 ")
-    (princ "\
+    (princ (substitute-command-keys "\
 #########################
 ## LIST OF CODING SYSTEMS
 ## Each line corresponds to one coding system
@@ -794,7 +789,7 @@ but still contains full information about each coding system."
 ##      0
 ##  POST-READ-CONVERSION, PRE-WRITE-CONVERSION = function name to be called
 ##
-"))
+")))
   (dolist (coding-system (sort-coding-systems (coding-system-list 'base-only)))
     (if (null arg)
 	(print-coding-system-briefly coding-system 'tightly)
@@ -825,30 +820,46 @@ but still contains full information about each coding system."
 The IGNORED argument is ignored."
   (print-list "name (opened by):" (aref font-info 0))
   (print-list "       full name:" (aref font-info 1))
+  (and (aref font-info 12)
+       (print-list "       file name:" (aref font-info 12)))
   (print-list "            size:" (format "%2d" (aref font-info 2)))
   (print-list "          height:" (format "%2d" (aref font-info 3)))
   (print-list " baseline-offset:" (format "%2d" (aref font-info 4)))
-  (print-list "relative-compose:" (format "%2d" (aref font-info 5))))
+  (print-list "relative-compose:" (format "%2d" (aref font-info 5)))
+  (print-list "  default-ascent:" (format "%2d" (aref font-info 6)))
+  (print-list "          ascent:" (format "%2d" (aref font-info 8)))
+  (print-list "         descent:" (format "%2d" (aref font-info 9)))
+  (print-list "   average-width:" (format "%2d" (aref font-info 11)))
+  (print-list "     space-width:" (format "%2d" (aref font-info 10)))
+  (print-list "       max-width:" (format "%2d" (aref font-info 7))))
 
 ;;;###autoload
 (defun describe-font (fontname)
-  "Display information about a font whose name is FONTNAME.
-The font must be already used by Emacs."
-  (interactive "sFont name (default current choice for ASCII chars): ")
+  "Display information about a font whose name is FONTNAME."
+  (interactive
+   (list (completing-read
+          "Font name (default current choice for ASCII chars): "
+          (and window-system
+               (fboundp 'fontset-list)
+               ;; The final element in `fontset-list' is a default
+               ;; (generic) one, so don't include that.
+               (nconc (butlast (fontset-list))
+                      (x-list-fonts "*"))))))
   (or (and window-system (fboundp 'fontset-list))
       (error "No fonts being used"))
-  (let (font-info)
+  (let ((xref-item (list #'describe-font fontname))
+        font-info)
     (if (or (not fontname) (= (length fontname) 0))
 	(setq fontname (face-attribute 'default :font)))
     (setq font-info (font-info fontname))
     (if (null font-info)
 	(if (fontp fontname 'font-object)
-	    ;; The font should be surely used.  So, there's some
-	    ;; problem about getting information about it.  It is
-	    ;; better to print the fontname to show which font has
+	    ;; If there's some problem with getting information about
+	    ;; the font, print the font name to show which font has
 	    ;; this problem.
 	    (message "No information about \"%s\"" (font-xlfd-name fontname))
 	  (message "No matching font found"))
+      (help-setup-xref xref-item (called-interactively-p 'interactive))
       (with-output-to-temp-buffer "*Help*"
 	(describe-font-internal font-info)))))
 
@@ -1030,7 +1041,8 @@ see the function `describe-fontset' for the format of the list."
       (save-excursion
 	(goto-char (point-min))
 	(while (re-search-forward
-		"^  \\([^ ]+\\) (`.*' in mode line)$" nil t)
+		(substitute-command-keys "^  \\([^ ]+\\) (`.*' in mode line)$")
+                nil t)
 	  (help-xref-button 1 'help-input-method (match-string 1)))))))
 
 (defun list-input-methods-1 ()
@@ -1038,7 +1050,8 @@ see the function `describe-fontset' for the format of the list."
       (princ "
 No input method is available, perhaps because you have not
 installed LEIM (Libraries of Emacs Input Methods).")
-    (princ "LANGUAGE\n  NAME (`TITLE' in mode line)\n")
+    (princ (substitute-command-keys
+            "LANGUAGE\n  NAME (`TITLE' in mode line)\n"))
     (princ "    SHORT-DESCRIPTION\n------------------------------\n")
     (setq input-method-alist
 	  (sort input-method-alist
@@ -1050,16 +1063,18 @@ installed LEIM (Libraries of Emacs Input Methods).")
 	  (setq language (nth 1 elt))
 	  (princ language)
 	  (terpri))
-	(princ (format "  %s (`%s' in mode line)\n    %s\n"
-		       (car elt)
-		       (let ((title (nth 3 elt)))
-			 (if (and (consp title) (stringp (car title)))
-			     (car title)
-			   title))
-		       ;; If the doc is multi-line, indent all
-		       ;; non-blank lines. (Bug#8066)
-		       (replace-regexp-in-string "\n\\(.\\)" "\n    \\1"
-						 (or (nth 4 elt) ""))))))))
+	(princ (format-message
+                "  %s (`%s' in mode line)\n    %s\n"
+                (car elt)
+                (let ((title (nth 3 elt)))
+                  (if (and (consp title) (stringp (car title)))
+                      (car title)
+                    title))
+                ;; If the doc is multi-line, indent all
+                ;; non-blank lines. (Bug#8066)
+                (replace-regexp-in-string
+                 "\n\\(.\\)" "\n    \\1"
+                 (substitute-command-keys (or (nth 4 elt) "")))))))))
 
 ;;; DIAGNOSIS
 
@@ -1096,8 +1111,6 @@ system which uses fontsets)."
       (insert "Version of this emacs:\n  " (emacs-version) "\n\n")
       (insert "Configuration options:\n  " system-configuration-options "\n\n")
       (insert "Multibyte characters awareness:\n"
-	      (format "  default: %S\n" (default-value
-					  'enable-multibyte-characters))
 	      (format "  current-buffer: %S\n\n" enable-multibyte-characters))
       (insert "Current language environment: " current-language-environment
 	      "\n\n")
@@ -1109,7 +1122,7 @@ system which uses fontsets)."
       (insert "\n\n")
 
       (if window-system
-	  (let ((font (cdr (assq 'font (frame-parameters)))))
+	  (let ((font (frame-parameter nil 'font)))
 	    (insert "The font and fontset of the selected frame are:\n"
 		    "     font: " font "\n"
 		    "  fontset: " (face-attribute 'default :fontset) "\n"))

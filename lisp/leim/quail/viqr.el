@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -52,8 +52,8 @@
   circumflex |    ^    | a^ -> â
     horn     |    +    | o+ -> ơ
  ------------+---------+----------
-    acute    |    '    | a' -> á
-    grave    |    `    | a` -> à
+    acute    |    \\='    | a\\=' -> á
+    grave    |    \\=`    | a\\=` -> à
   hook above |    ?    | a? -> ả
     tilde    |    ~    | a~ -> ã
    dot below |    .    | a. -> ạ

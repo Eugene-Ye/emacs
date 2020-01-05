@@ -1,7 +1,7 @@
 /* A general interface to the widgets of different toolkits.
 
 Copyright (C) 1992, 1993 Lucid, Inc.
-Copyright (C) 1994-1996, 1999-2014 Free Software Foundation, Inc.
+Copyright (C) 1994-1996, 1999-2020 Free Software Foundation, Inc.
 
 This file is part of the Lucid Widget Library.
 
@@ -16,7 +16,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
@@ -720,13 +720,13 @@ instantiate_widget_instance (widget_instance *instance)
     {
       printf ("No creation function for widget type %s\n",
 	      instance->info->type);
-      abort ();
+      emacs_abort ();
     }
 
   instance->widget = (*function) (instance);
 
   if (!instance->widget)
-    abort ();
+    emacs_abort ();
 
   /*   XtRealizeWidget (instance->widget);*/
 }
@@ -771,7 +771,7 @@ lw_make_widget (LWLIB_ID id, Widget parent, Boolean pop_up_p)
       initialize_widget_instance (instance);
     }
   if (!instance->widget)
-    abort ();
+    emacs_abort ();
   return instance->widget;
 }
 
@@ -1042,11 +1042,13 @@ widget_value*
 lw_get_all_values (LWLIB_ID id)
 {
   widget_info* info = get_widget_info (id, False);
-  widget_value* val = info->val;
-  if (lw_get_some_values (id, val))
-    return val;
-  else
-    return NULL;
+  if (info)
+    {
+      widget_value* val = info->val;
+      if (lw_get_some_values (id, val))
+	return val;
+    }
+  return NULL;
 }
 
 /* internal function used by the library dependent implementation to get the
@@ -1231,8 +1233,7 @@ lw_separator_p (const char *label, enum menu_separator *type, int motif_p)
 {
   int separator_p = 0;
 
-  if (strlen (label) >= 3
-      && memcmp (label, "--:", 3) == 0)
+  if (strncmp (label, "--:",  3) == 0)
     {
       static struct separator_table
       {
@@ -1274,7 +1275,7 @@ lw_separator_p (const char *label, enum menu_separator *type, int motif_p)
 	    break;
 	  }
     }
-  else if (strlen (label) > 3
+  else if (strnlen (label, 4) == 4
 	   && memcmp (label, "--", 2) == 0
 	   && label[2] != '-')
     {

@@ -1,6 +1,6 @@
 ;;; make-mode.el --- makefile editing commands for Emacs -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992, 1994, 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992, 1994, 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Thomas Neumann <tom@smart.bo.open.de>
 ;;	Eric S. Raymond <esr@snark.thyrsus.com>
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -103,7 +103,6 @@
     (t (:reverse-video t)))
   "Face to use for highlighting leading spaces in Font-Lock mode."
   :group 'makefile)
-(define-obsolete-face-alias 'makefile-space-face 'makefile-space "22.1")
 
 (defface makefile-targets
   ;; This needs to go along both with foreground and background colors (i.e. shell)
@@ -291,7 +290,7 @@ not be enclosed in { } or ( )."
   ;; (spanning potentially several lines).
   ;; "^ *\\([^ \n\t][^:#= \t\n]*\\)[ \t]*\\(?:!=[ \t]*\\(\\(?:.+\\\\\n\\)*.+\\)\\|[*:+]?[:?]?=[ \t]*\\(\\(?:.*\\\\\n\\)*.*\\)\\)"
   ;; What about the define statement?  What about differentiating this for makepp?
-  "\\(?:^\\|^export\\|^override\\|:\\|: *override\\) *\\([^ \n\t][^:#= \t\n]*\\)[ \t]*\\(?:!=\\|[*:+]?[:?]?=\\)"
+  "\\(?:^\\|^export\\|^override\\|:\\|:[ \t]*override\\)[ \t]*\\([^ \n\t][^:#= \t\n]*\\)[ \t]*\\(?:!=\\|[*:+]?[:?]?=\\)"
   "Regex used to find macro assignment lines in a makefile.")
 
 (defconst makefile-var-use-regex
@@ -344,7 +343,7 @@ not be enclosed in { } or ( )."
   "List of keywords understood by gmake.")
 
 (defconst makefile-bsdmake-statements
-  `(".elif" ".elifdef" ".elifmake" ".elifndef" ".elifnmake" ".else" ".endfor"
+  '(".elif" ".elifdef" ".elifmake" ".elifndef" ".elifnmake" ".else" ".endfor"
     ".endif" ".for" ".if" ".ifdef" ".ifmake" ".ifndef" ".ifnmake" ".undef")
   "List of keywords understood by BSD make.")
 
@@ -558,6 +557,9 @@ This should identify a `make' command that can handle the `-q' option."
   :type 'string
   :group 'makefile)
 
+(defvaralias 'makefile-query-one-target-method
+  'makefile-query-one-target-method-function)
+
 (defcustom makefile-query-one-target-method-function
   'makefile-query-by-make-minus-q
   "Function to call to determine whether a make target is up to date.
@@ -575,8 +577,6 @@ The function must satisfy this calling convention:
   makefile, any nonzero integer value otherwise."
   :type 'function
   :group 'makefile)
-(defvaralias 'makefile-query-one-target-method
-  'makefile-query-one-target-method-function)
 
 (defcustom makefile-up-to-date-buffer-name "*Makefile Up-to-date overview*"
   "Name of the Up-to-date overview buffer."
@@ -713,6 +713,7 @@ The function must satisfy this calling convention:
     (modify-syntax-entry ?#  "<     " st)
     (modify-syntax-entry ?\n ">     " st)
     (modify-syntax-entry ?= "." st)
+    (modify-syntax-entry ?$ "." st)
     st)
   "Syntax table used in `makefile-mode'.")
 
@@ -1312,7 +1313,7 @@ Fill comments, backslashed lines, and variable definitions specially."
 	  ;; which back-to-indentation (called via fill-newline ->
 	  ;; fill-indent-to-left-margin -> indent-line-to) thinks are real code
 	  ;; (bug#13179).
-	  (remove-text-properties (point-min) (point-max) '(syntax-table))
+          (remove-text-properties (point-min) (point-max) '(syntax-table nil))
 	  (let ((fill-paragraph-function nil)
                 ;; Adjust fill-column to allow space for the backslash.
                 (fill-column (- fill-column 1)))
@@ -1455,7 +1456,7 @@ Fill comments, backslashed lines, and variable definitions specially."
 
 (defun makefile-browser-insert-continuation ()
   "Insert a makefile continuation.
-In the makefile buffer, go to (end-of-line), insert a \'\\\'
+In the makefile buffer, go to (end-of-line), insert a `\\'
 character, insert a new blank line, go to that line and indent by one TAB.
 This is most useful in the process of creating continued lines when copying
 large dependencies from the browser to the client buffer.
@@ -1502,7 +1503,7 @@ Insertion takes place at point."
   (if (zerop (+ (length targets) (length macros)))
       (progn
 	(beep)
-	(message "No macros or targets to browse! Consider running 'makefile-pickup-everything\'"))
+	(message "No macros or targets to browse! Consider running `makefile-pickup-everything'"))
     (let ((browser-buffer (get-buffer-create makefile-browser-buffer-name)))
 	(pop-to-buffer browser-buffer)
 	(makefile-browser-fill targets macros)

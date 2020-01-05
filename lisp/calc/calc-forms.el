@@ -1,9 +1,8 @@
 ;;; calc-forms.el --- data format conversion functions for Calc
 
-;; Copyright (C) 1990-1993, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
-;; Maintainer: Jay Belanger <jay.p.belanger@gmail.com>
 
 ;; This file is part of GNU Emacs.
 
@@ -18,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -38,13 +37,13 @@
 (defun calc-time ()
   (interactive)
   (calc-wrapper
-   (let ((time (current-time-string)))
+   (let ((time (decode-time nil nil 'integer))) ;; FIXME: Support subseconds.
      (calc-enter-result 0 "time"
 			(list 'mod
 			      (list 'hms
-				    (string-to-number (substring time 11 13))
-				    (string-to-number (substring time 14 16))
-				    (string-to-number (substring time 17 19)))
+				    (decoded-time-hour time)
+                                    (decoded-time-minute time)
+                                    (decoded-time-second time))
 			      (list 'hms 24 0 0))))))
 
 (defun calc-to-hms (arg)
@@ -273,7 +272,7 @@
 	(m (math-normalize (nth 2 a)))
 	(s (let ((calc-internal-prec (max (- calc-internal-prec 4) 3)))
 	     (math-normalize (nth 3 a)))))
-    (if (or 
+    (if (or
          (math-negp h)
          (and (= h 0) (math-negp m))
          (and (= h 0) (= m 0) (math-negp s)))
@@ -318,7 +317,9 @@
 	 (list 'calcFunc-hms a))
 	((math-negp a)
 	 (math-neg (math-to-hms (math-neg a) ang)))
-	((eq (or ang calc-angle-mode) 'rad)
+	((eq (or ang
+                 (and (not math-simplifying-units) calc-angle-mode))
+                 'rad)
 	 (math-to-hms (math-div a (math-pi-over-180)) 'deg))
 	((memq (car-safe a) '(cplx polar)) a)
 	(t
@@ -355,12 +356,16 @@
 	   (if (eq (car-safe a) 'sdev)
 	       (math-make-sdev (math-from-hms (nth 1 a) ang)
 			       (math-from-hms (nth 2 a) ang))
-	     (if (eq (or ang calc-angle-mode) 'rad)
+	     (if (eq (or ang
+                         (and (not math-simplifying-units) calc-angle-mode))
+                     'rad)
 		 (list 'calcFunc-rad a)
 	       (list 'calcFunc-deg a)))))
 	((math-negp a)
 	 (math-neg (math-from-hms (math-neg a) ang)))
-	((eq (or ang calc-angle-mode) 'rad)
+	((eq (or ang
+                 (and (not math-simplifying-units) calc-angle-mode))
+             'rad)
 	 (math-mul (math-from-hms a 'deg) (math-pi-over-180)))
 	(t
 	 (math-add (math-div (math-add (math-div (nth 3 a)
@@ -376,17 +381,17 @@
 ;;; These versions are rewritten to use arbitrary-size integers.
 
 ;;; A numerical date is the number of days since midnight on
-;;; the morning of December 31, 1 B.C. (Gregorian) or January 2, 1 A.D. (Julian).
+;;; the morning of December 31, 1 BC (Gregorian) or January 2, 1 AD (Julian).
 ;;; Emacs's calendar refers to such a date as an absolute date, some Calc function
-;;; names also use that terminology.  If the date is a non-integer, it represents 
-;;; a specific date and time. 
+;;; names also use that terminology.  If the date is a non-integer, it represents
+;;; a specific date and time.
 ;;; A "dt" is a list of the form, (year month day), corresponding to
 ;;; an integer code, or (year month day hour minute second), corresponding
 ;;; to a non-integer code.
 
 (defun math-date-to-gregorian-dt (date)
   "Return the day (YEAR MONTH DAY) in the Gregorian calendar.
-DATE is the number of days since December 31, -1 in the Gregorian calendar." 
+DATE is the number of days since December 31, -1 in the Gregorian calendar."
   (let* ((month 1)
          day
          (year (math-quotient (math-add date (if (Math-lessp date 711859)
@@ -399,7 +404,7 @@ DATE is the number of days since December 31, -1 in the Gregorian calendar."
         (setq year (math-add year -1)))
     (if (eq year 0) (setq year -1))
     (setq date (1+ (math-sub date temp)))
-    (setq temp 
+    (setq temp
           (if (math-leap-year-p year)
               [1 32 61 92 122 153 183 214 245 275 306 336 999]
             [1 32 60 91 121 152 182 213 244 274 305 335 999]))
@@ -410,7 +415,7 @@ DATE is the number of days since December 31, -1 in the Gregorian calendar."
 
 (defun math-date-to-julian-dt (date)
   "Return the day (YEAR MONTH DAY) in the Julian calendar.
-DATE is the number of days since December 31, -1 in the Gregorian calendar." 
+DATE is the number of days since December 31, -1 in the Gregorian calendar."
   (let* ((month 1)
          day
          (year (math-quotient (math-add date (if (Math-lessp date 711859)
@@ -423,7 +428,7 @@ DATE is the number of days since December 31, -1 in the Gregorian calendar."
         (setq year (math-add year -1)))
     (if (eq year 0) (setq year -1))
     (setq date (1+ (math-sub date temp)))
-    (setq temp 
+    (setq temp
           (if (math-leap-year-p year t)
               [1 32 61 92 122 153 183 214 245 275 306 336 999]
             [1 32 60 91 121 152 182 213 244 274 305 335 999]))
@@ -444,7 +449,7 @@ in the Gregorian calendar and the remaining part determines the time."
 	 (date (car parts))
 	 (time (nth 1 parts))
          (dt (if (and calc-gregorian-switch
-                      (Math-lessp value 
+                      (Math-lessp value
                                   (or
                                    (nth 3 calc-gregorian-switch)
                                    (apply 'math-absolute-from-gregorian-dt calc-gregorian-switch))
@@ -453,7 +458,7 @@ in the Gregorian calendar and the remaining part determines the time."
                (math-date-to-gregorian-dt date))))
     (if (math-integerp value)
         dt
-      (append dt 
+      (append dt
               (list
                (/ time 3600)
                (% (/ time 60) 60)
@@ -467,13 +472,13 @@ in the Gregorian calendar and the remaining part determines the time."
          (year (math-add approx
                          (let ((y approx)
                                (sum 0))
-                           (while (>= (math-compare date 
+                           (while (>= (math-compare date
                                                     (math-absolute-from-iso-dt (setq y (math-add y 1)) 1 1)) 0)
                              (setq sum (+ sum 1)))
                            sum))))
-    (list 
+    (list
      year
-     (math-add (car (math-idivmod 
+     (math-add (car (math-idivmod
                      (math-sub date (math-absolute-from-iso-dt year 1 1))
                      7))
                1)
@@ -494,7 +499,8 @@ in the Gregorian calendar and the remaining part determines the time."
 	(math-add (math-float date)
 		  (math-div (math-add (+ (* (nth 3 dt) 3600)
 					 (* (nth 4 dt) 60))
-				      (nth 5 dt))
+				      ;; FIXME: Support subseconds.
+				      (time-convert (nth 5 dt) 'integer))
 			    '(float 864 2)))
       date)))
 
@@ -520,12 +526,12 @@ in the Gregorian calendar and the remaining part determines the time."
 
 
 (defun math-this-year ()
-  (nth 5 (decode-time)))
+  (decoded-time-year (decode-time)))
 
 (defun math-leap-year-p (year &optional julian)
   "Non-nil if YEAR is a leap year.
 If JULIAN is non-nil, then use the criterion for leap years
-in the Julian calendar, otherwise use the criterion in the 
+in the Julian calendar, otherwise use the criterion in the
 Gregorian calendar."
   (if julian
       (if (math-negp year)
@@ -582,29 +588,15 @@ A DT is a list of the form (YEAR MONTH DAY)."
   "Return the DATE of the day given by the Gregorian day YEAR MONTH DAY.
 Recall that DATE is the number of days since December 31, -1
 in the Gregorian calendar."
-  (if (eq year 0) (setq year -1))
-  (let ((yearm1 (math-sub year 1)))
-    (math-sub 
-     ;; Add the number of days of the year and the numbers of days
-     ;; in the previous years (leap year days to be added separately)
-     (math-add (math-day-in-year year month day)
-               (math-add (math-mul 365 yearm1)
-                         ;; Add the number of Julian leap years
-                         (if (math-posp year)
-                             (math-quotient yearm1 4)
-                           (math-sub 365
-                                     (math-quotient (math-sub 3 year)
-                                                    4)))))
-     ;; Subtract the number of Julian leap years which are not 
-     ;; Gregorian leap years.  In C=4N+r centuries, there will 
-     ;; be 3N+r of these days.  The following will compute 
-     ;; 3N+r.
-     (let* ((correction (math-mul (math-quotient yearm1 100) 3))
-            (res (math-idivmod correction 4)))
-       (math-add (if (= (cdr res) 0)
-                     0
-                   1)
-                 (car res))))))
+  (when (zerop year)                    ; Year -1 precedes year 1.
+    (setq year -1))
+  (let* ((y (if (> year 0) year (+ year 1)))  ; Astronomical year (with 0).
+         (y1 (- y 1)))                        ; Previous year.
+    (+ (* y1 365)                    ; Days up to the previous year...
+       (floor y1 4)                  ; ... including leap days.
+       (- (floor y1 100))
+       (floor y1 400)
+       (math-day-in-year year month day))))
 
 (defun math-absolute-from-julian-dt (year month day)
   "Return the DATE of the day given by the Julian day YEAR MONTH DAY.
@@ -612,10 +604,10 @@ Recall that DATE is the number of days since December 31, -1
 in the Gregorian calendar."
   (if (eq year 0) (setq year -1))
   (let ((yearm1 (math-sub year 1)))
-    (math-sub 
+    (math-sub
      ;; Add the number of days of the year and the numbers of days
      ;; in the previous years (leap year days to be added separately)
-     (math-add (math-day-in-year year month day)
+     (math-add (math-day-in-year year month day t)
                (math-add (math-mul 365 yearm1)
                          ;; Add the number of Julian leap years
                          (if (math-posp year)
@@ -709,11 +701,11 @@ in the Gregorian calendar."
 	       (setcdr math-fd-dt nil))
 	  fmt))))
 
-(defconst math-julian-date-beginning '(float 17214225 -1)
+(defconst math-julian-date-beginning '(float 17214245 -1)
   "The beginning of the Julian date calendar,
 as measured in the number of days before December 31, 1 BC (Gregorian).")
 
-(defconst math-julian-date-beginning-int 1721423
+(defconst math-julian-date-beginning-int 1721425
   "The beginning of the Julian date calendar,
 as measured in the integer number of days before December 31, 1 BC (Gregorian).")
 
@@ -731,11 +723,11 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
 	((eq x 'n)
 	 (math-format-number (math-floor math-fd-date)))
 	((eq x 'J)
-	 (math-format-number 
+	 (math-format-number
           (math-add math-fd-date math-julian-date-beginning)))
 	((eq x 'j)
-	 (math-format-number (math-add 
-                              (math-floor math-fd-date) 
+	 (math-format-number (math-add
+                              (math-floor math-fd-date)
                               math-julian-date-beginning-int)))
 	((eq x 'U)
 	 (math-format-number (nth 1 (math-date-parts math-fd-date 719164))))
@@ -1082,7 +1074,7 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
       (throw 'syntax "Day value is out of range"))
   (and hour
        (progn
-	 (if (or (< hour 0) 
+	 (if (or (< hour 0)
                  (> hour 24)
                  (and (= hour 24)
                       (not (= minute 0))
@@ -1102,7 +1094,7 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
       (throw 'syntax "Weekday value is out of range"))
   (and hour
        (progn
-	 (if (or (< hour 0) 
+	 (if (or (< hour 0)
                  (> hour 24)
                  (and (= hour 24)
                       (not (= minute 0))
@@ -1336,16 +1328,20 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
           (math-parse-iso-date-validate isoyear isoweek isoweekday hour minute second)))))
 
 (defun calcFunc-now (&optional zone)
-  (let ((date (let ((calc-date-format nil))
-		(math-parse-date (current-time-string)))))
-    (if (consp date)
-	(if zone
-	    (math-add date (math-div (math-sub (calcFunc-tzone nil date)
-					       (calcFunc-tzone zone date))
-				     '(float 864 2)))
-	  date)
-      (calc-record-why "*Unable to interpret current date from system")
-      (append (list 'calcFunc-now) (and zone (list zone))))))
+  ;; FIXME: Support subseconds.
+  (let ((date (let ((now (decode-time nil nil 'integer)))
+		(list 'date (math-dt-to-date
+			     (list (decoded-time-year now)
+                                   (decoded-time-month now)
+                                   (decoded-time-day now)
+				   (decoded-time-hour now)
+                                   (decoded-time-minute now)
+                                   (decoded-time-second now)))))))
+    (if zone
+	(math-add date (math-div (math-sub (calcFunc-tzone nil date)
+					   (calcFunc-tzone zone date))
+				 '(float 864 2)))
+      date)))
 
 (defun calcFunc-year (date)
   (car (math-date-to-dt date)))
@@ -1438,11 +1434,11 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
 (defun calcFunc-unixtime (date &optional zone)
   (if (math-realp date)
       (progn
-	(setq date (math-add 719164 (math-div date '(float 864 2))))
+	(setq date (math-add 719163 (math-div date '(float 864 2))))
 	(list 'date (math-sub date (math-div (calcFunc-tzone zone date)
 					     '(float 864 2)))))
     (if (eq (car date) 'date)
-	(math-add (nth 1 (math-date-parts (nth 1 date) 719164))
+	(math-add (nth 1 (math-date-parts (nth 1 date) 719163))
 		  (calcFunc-tzone zone date))
       (math-reject-arg date 'datep))))
 
@@ -1466,14 +1462,11 @@ as measured in the integer number of days before December 31, 1 BC (Gregorian)."
     ( "PGT" 8 "PST" "PDT" ) ( "PST" 8 0 ) ( "PDT" 8 -1 )  ; Pacific
     ( "YGT" 9 "YST" "YDT" ) ( "YST" 9 0 ) ( "YDT" 9 -1 )  ; Yukon
     )
-  "No doc yet.  See calc manual for now. ")
+  "No doc yet.  See calc manual for now.")
 
 (defvar var-TimeZone nil)
 
-;; From cal-dst
-(defvar calendar-current-time-zone-cache)
-
-(defvar math-calendar-tzinfo 
+(defvar math-calendar-tzinfo
   nil
   "Information about the timezone, retrieved from the calendar.")
 
@@ -1485,11 +1478,9 @@ second, the number of seconds offset for daylight savings."
   (if math-calendar-tzinfo
       math-calendar-tzinfo
     (require 'cal-dst)
-    (let ((tzinfo (progn
-                    (calendar-current-time-zone)
-                    calendar-current-time-zone-cache)))
+    (let ((tzinfo (calendar-current-time-zone)))
       (setq math-calendar-tzinfo
-            (list (* 60 (abs (nth 0 tzinfo)))
+            (list (* 60 (- (nth 0 tzinfo)))
                   (* 60 (nth 1 tzinfo)))))))
 
 (defun calcFunc-tzone (&optional zone date)
@@ -1523,7 +1514,7 @@ second, the number of seconds offset for daylight savings."
     (if (calc-var-value 'var-TimeZone)
 	(calcFunc-tzone (calc-var-value 'var-TimeZone) date)
       (let ((tzinfo (math-get-calendar-tzinfo)))
-        (+ (nth 0 tzinfo) 
+        (+ (nth 0 tzinfo)
            (* (math-cal-daylight-savings-adjust date) (nth 1 tzinfo)))))))
 
 (defvar math-daylight-savings-hook 'math-std-daylight-savings)
@@ -1559,8 +1550,8 @@ second, the number of seconds offset for daylight savings."
                  (+ (nth 3 dt) (/ (nth 4 dt) 60.0)))
                 (t
                  0)))
-         (rounded-abs-date 
-          (+ 
+         (rounded-abs-date
+          (+
            (calendar-absolute-from-gregorian
             (list (nth 1 dt) (nth 2 dt) (nth 0 dt)))
            (/ (round (* 60 time)) 60.0 24.0))))
@@ -1700,7 +1691,7 @@ and ends on the last Sunday of October at 2 a.m."
   (let* ((dt (math-date-to-dt date))
          (dim (math-days-in-month (car dt) (nth 1 dt)))
          (julian (if calc-gregorian-switch
-                     (math-date-to-dt (math-sub 
+                     (math-date-to-dt (math-sub
                                        (or (nth 3 calc-gregorian-switch)
                                            (apply 'math-absolute-from-gregorian-dt calc-gregorian-switch))
                                        1)))))
@@ -1727,14 +1718,14 @@ and ends on the last Sunday of October at 2 a.m."
               (list 'date (math-dt-to-date (list (car dt) (nth 1 dt) (1+ day))))
             ;; Otherwise do some computations
             (let ((tm (+ day (- (nth 2 calc-gregorian-switch) (nth 2 julian)))))
-              (list 'date (math-dt-to-date 
+              (list 'date (math-dt-to-date
                            (list (car dt)
                                  (nth 1 dt)
-                                 ;; 
+                                 ;;
                                  (if (> tm dim) dim tm)))))))
          ((and (eq (car dt) (car julian))
                (= (nth 1 dt) (nth 1 julian)))
-          ;; In this case, the current month is truncated because of the switch 
+          ;; In this case, the current month is truncated because of the switch
           ;; to the Gregorian calendar
           (list 'date (math-dt-to-date
                        (list (car dt)
@@ -1742,7 +1733,7 @@ and ends on the last Sunday of October at 2 a.m."
                              (if (>= day (nth 2 julian))
                                  (nth 2 julian)
                                (1+ day))))))
-         (t 
+         (t
           ;; The default
           (list 'date (math-add (math-dt-to-date (list (car dt) (nth 1 dt) 1)) day))))
       (list 'date (math-add (math-dt-to-date (list (car dt) (nth 1 dt) 1)) day)))))
@@ -1779,7 +1770,7 @@ and ends on the last Sunday of October at 2 a.m."
                   ;; Otherwise, just make sure the date doesn't go past the end of the year
                   (list 'date (math-min (math-add (math-dt-to-date (list (car dt) 1 1)) (1- day))
                                         (math-dt-to-date (list (car dt) 12 31))))))
-               (t 
+               (t
                 (list 'date (math-add (math-dt-to-date (list (car dt) 1 1))
                                       (1- day)))))
             (list 'date (math-add (math-dt-to-date (list (car dt) 1 1))

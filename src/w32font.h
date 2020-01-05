@@ -1,12 +1,12 @@
 /* Shared GDI and Uniscribe Font backend declarations for the Windows API.
-   Copyright (C) 2007-2014 Free Software Foundation, Inc.
+   Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #ifndef EMACS_W32FONT_H
 #define EMACS_W32FONT_H
@@ -37,7 +37,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 struct w32_metric_cache
 {
-  short lbearing, rbearing, width;
+  short lbearing, rbearing, width, ascent, descent;
   unsigned char status;
 };
 
@@ -66,15 +66,15 @@ struct w32font_info
 Lisp_Object w32font_get_cache (struct frame *fe);
 Lisp_Object w32font_list_internal (struct frame *f,
                                    Lisp_Object font_spec,
-                                   int opentype_only);
+                                   bool opentype_only);
 Lisp_Object w32font_match_internal (struct frame *f,
                                     Lisp_Object font_spec,
-                                    int opentype_only);
+                                    bool opentype_only);
 int w32font_open_internal (struct frame *f, Lisp_Object font_entity,
                            int pixel_size, Lisp_Object font_object);
 void w32font_close (struct font *font);
 int w32font_has_char (Lisp_Object entity, int c);
-void w32font_text_extents (struct font *font, unsigned *code, int nglyphs,
+void w32font_text_extents (struct font *font, const unsigned *code, int nglyphs,
 			   struct font_metrics *metrics);
 int w32font_draw (struct glyph_string *s, int from, int to,
                   int x, int y, bool with_background);
@@ -84,7 +84,6 @@ int uniscribe_check_otf (LOGFONT *font, Lisp_Object otf_spec);
 
 Lisp_Object intern_font_name (char *);
 
-extern void syms_of_w32font (void);
 extern void globals_of_w32font (void);
 
 #endif

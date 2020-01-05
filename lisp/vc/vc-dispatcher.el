@@ -1,9 +1,8 @@
 ;;; vc-dispatcher.el -- generic command-dispatcher facility.  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
-;; Author:     FSF (see below for full credits)
-;; Maintainer: Eric S. Raymond <esr@thyrsus.com>
+;; Author: FSF (see below for full credits)
 ;; Keywords: vc tools
 ;; Package: vc
 
@@ -20,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Credits:
 
@@ -171,6 +170,12 @@ Another is that undo information is not kept."
   (let ((camefrom (current-buffer))
 	(olddir default-directory))
     (set-buffer (get-buffer-create buf))
+    (let ((oldproc (get-buffer-process (current-buffer))))
+      ;; If we wanted to wait for oldproc to finish before doing
+      ;; something, we'd have used vc-eval-after.
+      ;; Use `delete-process' rather than `kill-process' because we don't
+      ;; want any of its output to appear from now on.
+      (when oldproc (delete-process oldproc)))
     (kill-all-local-variables)
     (set (make-local-variable 'vc-parent-buffer) camefrom)
     (set (make-local-variable 'vc-parent-buffer-name)
@@ -262,6 +267,14 @@ and is passed 3 arguments: the COMMAND, the FILES and the FLAGS.")
   ;; FIXME what about file names with spaces?
   (if (not filelist) "."  (mapconcat 'identity filelist " ")))
 
+(defcustom vc-tor nil
+  "If non-nil, communicate with the repository site via Tor.
+See https://2019.www.torproject.org/about/overview.html.en and
+the man pages for \"torsocks\" for more details about Tor."
+  :type 'boolean
+  :version "27.1"
+  :group 'vc)
+
 ;;;###autoload
 (defun vc-do-command (buffer okstatus command file-or-list &rest flags)
   "Execute a slave command, notifying user and checking for errors.
@@ -284,16 +297,17 @@ case, and the process object in the asynchronous case."
   (let* ((files
 	  (mapcar (lambda (f) (file-relative-name (expand-file-name f)))
 		  (if (listp file-or-list) file-or-list (list file-or-list))))
+	 ;; Keep entire commands in *Messages* but avoid resizing the
+	 ;; echo area.  Messages in this function are formatted in
+	 ;; a such way that the important parts are at the beginning,
+	 ;; due to potential truncation of long messages.
+	 (message-truncate-lines t)
 	 (full-command
-	  ;; What we're doing here is preparing a version of the command
-	  ;; for display in a debug-progress message.  If it's fewer than
-	  ;; 20 characters display the entire command (without trailing
-	  ;; newline).  Otherwise display the first 20 followed by an ellipsis.
-	  (concat (if (string= (substring command -1) "\n")
+	  (concat (if vc-tor "torsocks " "")
+                  (if (string= (substring command -1) "\n")
 		      (substring command 0 -1)
 		    command)
-		  " "
-		  (vc-delistify (mapcar (lambda (s) (if (> (length s) 20) (concat (substring s 0 2) "...")  s)) flags))
+		  " " (vc-delistify flags)
 		  " " (vc-delistify files))))
     (save-current-buffer
       (unless (or (eq buffer t)
@@ -302,12 +316,6 @@ case, and the process object in the asynchronous case."
 		  (eq buffer (current-buffer)))
 	(vc-setup-buffer buffer))
       ;; If there's some previous async process still running, just kill it.
-      (let ((oldproc (get-buffer-process (current-buffer))))
-        ;; If we wanted to wait for oldproc to finish before doing
-        ;; something, we'd have used vc-eval-after.
-        ;; Use `delete-process' rather than `kill-process' because we don't
-        ;; want any of its output to appear from now on.
-        (when oldproc (delete-process oldproc)))
       (let ((squeezed (remq nil flags))
 	    (inhibit-read-only t)
 	    (status 0))
@@ -324,7 +332,8 @@ case, and the process object in the asynchronous case."
 		       (apply 'start-file-process command (current-buffer)
                               command squeezed))))
 		(when vc-command-messages
-		  (message "Running %s in background..." full-command))
+		  (let ((inhibit-message (eq (selected-window) (active-minibuffer-window))))
+		    (message "Running in background: %s" full-command)))
                 ;; Get rid of the default message insertion, in case we don't
                 ;; set a sentinel explicitly.
 		(set-process-sentinel proc #'ignore)
@@ -332,10 +341,13 @@ case, and the process object in the asynchronous case."
 		(setq status proc)
 		(when vc-command-messages
 		  (vc-run-delayed
-		   (message "Running %s in background... done" full-command))))
+		    (let ((message-truncate-lines t)
+			  (inhibit-message (eq (selected-window) (active-minibuffer-window))))
+		      (message "Done in background: %s" full-command)))))
 	    ;; Run synchronously
 	    (when vc-command-messages
-	      (message "Running %s in foreground..." full-command))
+	      (let ((inhibit-message (eq (selected-window) (active-minibuffer-window))))
+		(message "Running in foreground: %s" full-command)))
 	    (let ((buffer-undo-list t))
 	      (setq status (apply 'process-file command nil t nil squeezed)))
 	    (when (and (not (eq t okstatus))
@@ -345,13 +357,15 @@ case, and the process object in the asynchronous case."
                 (pop-to-buffer (current-buffer))
                 (goto-char (point-min))
                 (shrink-window-if-larger-than-buffer))
-	      (error "Running %s...FAILED (%s)" full-command
-		     (if (integerp status) (format "status %d" status) status)))
+	      (error "Failed (%s): %s"
+		     (if (integerp status) (format "status %d" status) status)
+		     full-command))
 	    (when vc-command-messages
-	      (message "Running %s...OK = %d" full-command status))))
+	      (let ((inhibit-message (eq (selected-window) (active-minibuffer-window))))
+		(message "Done (status=%d): %s" status full-command)))))
 	(vc-run-delayed
-	 (run-hook-with-args 'vc-post-command-functions
-                             command file-or-list flags))
+	  (run-hook-with-args 'vc-post-command-functions
+			      command file-or-list flags))
 	status))))
 
 (defun vc-do-async-command (buffer root command &rest args)
@@ -580,12 +594,20 @@ editing!"
 (defun vc-buffer-sync (&optional not-urgent)
   "Make sure the current buffer and its working file are in sync.
 NOT-URGENT means it is ok to continue if the user says not to save."
-  (when (buffer-modified-p)
-    (if (or vc-suppress-confirm
-	    (y-or-n-p (format "Buffer %s modified; save it? " (buffer-name))))
-	(save-buffer)
-      (unless not-urgent
-	(error "Aborted")))))
+  (let (missing)
+    (when (cond
+           ((buffer-modified-p))
+           ((not (file-exists-p buffer-file-name))
+            (setq missing t)))
+      (if (or vc-suppress-confirm
+              (y-or-n-p (format "Buffer %s %s; save it? "
+                                (buffer-name)
+                                (if missing
+                                    "is missing on disk"
+                                  "modified"))))
+          (save-buffer)
+        (unless not-urgent
+          (error "Aborted"))))))
 
 ;; Command closures
 
@@ -604,11 +626,24 @@ NOT-URGENT means it is ok to continue if the user says not to save."
 	    (or (log-edit-empty-buffer-p)
 		(and (local-variable-p 'vc-log-fileset)
 		     (not (equal vc-log-fileset fileset))))
-	    `((log-edit-listfun . (lambda ()
-                                    ;; FIXME: Should expand the list
-                                    ;; for directories.
-                                    (mapcar 'file-relative-name
-                                            ',fileset)))
+	    `((log-edit-listfun
+               . (lambda ()
+                   ;; FIXME: When fileset includes directories, and
+                   ;; there are relevant ChangeLog files inside their
+                   ;; children, we don't find them.  Either handle it
+                   ;; in `log-edit-insert-changelog-entries' by
+                   ;; walking down the file trees, or somehow pass
+                   ;; `fileset-only-files' from `vc-next-action'
+                   ;; through to this function.
+                   (let ((root (vc-root-dir)))
+                     ;; Returns paths relative to the root, so that
+                     ;; `log-edit-changelog-insert-entries'
+                     ;; substitutes them in correctly later, even when
+                     ;; `vc-checkin' was called from a file buffer, or
+                     ;; a non-root VC-Dir buffer.
+                     (mapcar
+                      (lambda (file) (file-relative-name file root))
+                      ',fileset))))
 	      (log-edit-diff-function . vc-diff)
 	      (log-edit-vc-backend . ,backend)
 	      (vc-log-fileset . ,fileset))
@@ -648,7 +683,7 @@ BACKEND, if non-nil, specifies a VC backend for the Log Edit buffer."
     (make-local-variable 'vc-log-after-operation-hook)
     (when after-hook
       (setq vc-log-after-operation-hook after-hook))
-    (setq vc-log-operation action)
+    (set (make-local-variable 'vc-log-operation) action)
     (when comment
       (erase-buffer)
       (when (stringp comment) (insert comment)))
@@ -690,6 +725,7 @@ the buffer contents as a comment."
       (funcall log-operation
 	       log-fileset
 	       log-entry))
+    (setq vc-log-operation nil)
 
     ;; Quit windows on logbuf.
     (cond
@@ -702,7 +738,7 @@ the buffer contents as a comment."
     ;; Now make sure we see the expanded headers
     (when log-fileset
       (mapc
-       (lambda (file) (vc-resynch-buffer file vc-keep-workfiles t))
+       (lambda (file) (vc-resynch-buffer file t t))
        log-fileset))
     (when (vc-dispatcher-browsing)
       (vc-dir-move-to-goal-column))

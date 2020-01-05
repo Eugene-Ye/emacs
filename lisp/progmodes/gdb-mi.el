@@ -1,6 +1,6 @@
 ;;; gdb-mi.el --- User Interface for running GDB  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Nick Roberts <nickrob@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Credits:
 
@@ -69,12 +69,12 @@
 ;;   2) Use MinGW GDB instead.
 ;;   3) Use cygwin-mount.el
 
-;;; Mac OSX:
+;;; macOS:
 
-;; GDB in Emacs on Mac OSX works best with FSF GDB as Apple have made
-;; some changes to the version that they include as part of Mac OSX.
-;; This requires GDB version 7.0 or later (estimated release date Aug 2009)
-;; as earlier versions do not compile on Mac OSX.
+;; GDB in Emacs on macOS works best with FSF GDB as Apple have made
+;; some changes to the version that they include as part of macOS.
+;; This requires GDB version 7.0 or later as earlier versions do not
+;; compile on macOS.
 
 ;;; Known Bugs:
 
@@ -154,7 +154,7 @@ May be manually changed by user with `gdb-select-frame'.")
   "Associative list of threads provided by \"-thread-info\" MI command.
 
 Keys are thread numbers (in strings) and values are structures as
-returned from -thread-info by `gdb-json-partial-output'. Updated in
+returned from -thread-info by `gdb-json-partial-output'.  Updated in
 `gdb-thread-list-handler-custom'.")
 
 (defvar gdb-running-threads-count nil
@@ -378,18 +378,18 @@ Must be a list of pairs with cars being buffers and cdr's being
 valid signal handlers.")
 
 (defgroup gdb nil
-  "GDB graphical interface"
+  "GDB graphical interface."
   :group 'tools
   :link '(info-link "(emacs)GDB Graphical Interface")
   :version "23.2")
 
 (defgroup gdb-non-stop nil
-  "GDB non-stop debugging settings"
+  "GDB non-stop debugging settings."
   :group 'gdb
   :version "23.2")
 
 (defgroup gdb-buffers nil
-  "GDB buffers"
+  "GDB buffers."
   :group 'gdb
   :version "23.2")
 
@@ -400,14 +400,22 @@ valid signal handlers.")
           (const   :tag "Unlimited" nil))
   :version "22.1")
 
-(defcustom gdb-non-stop-setting t
-  "When in non-stop mode, stopped threads can be examined while
+(defcustom gdb-non-stop-setting (not (eq system-type 'windows-nt))
+  "If non-nil, GDB sessions are expected to support the non-stop mode.
+When in the non-stop mode, stopped threads can be examined while
 other threads continue to execute.
+
+If this is non-nil, GDB will be sent the \"set non-stop 1\" command,
+and if that results in an error, the non-stop setting will be
+turned off automatically.
+
+On MS-Windows, this is off by default, because MS-Windows targets
+don't support the non-stop mode.
 
 GDB session needs to be restarted for this setting to take effect."
   :type 'boolean
   :group 'gdb-non-stop
-  :version "23.2")
+  :version "26.1")
 
 ;; TODO Some commands can't be called with --all (give a notice about
 ;; it in setting doc)
@@ -649,7 +657,7 @@ When `gdb-non-stop' is nil, return COMMAND unchanged."
   "`gud-call' wrapper which adds --thread/--all options between
 CMD1 and CMD2.  NOALL is the same as in `gdb-gud-context-command'.
 
-NOARG must be t when this macro is used outside `gud-def'"
+NOARG must be t when this macro is used outside `gud-def'."
   `(gud-call
     (concat (gdb-gud-context-command ,cmd1 ,noall) " " ,cmd2)
     ,(when (not noarg) 'arg)))
@@ -673,14 +681,18 @@ NOARG must be t when this macro is used outside `gud-def'"
 
 ;;;###autoload
 (defun gdb (command-line)
-  "Run gdb on program FILE in buffer *gud-FILE*.
-The directory containing FILE becomes the initial working directory
-and source-file directory for your debugger.
+  "Run gdb passing it COMMAND-LINE as arguments.
 
-COMMAND-LINE is the shell command for starting the gdb session.
-It should be a string consisting of the name of the gdb
-executable followed by command line options.  The command line
-options should include \"-i=mi\" to use gdb's MI text interface.
+If COMMAND-LINE names a program FILE to debug, gdb will run in
+a buffer named *gud-FILE*, and the directory containing FILE
+becomes the initial working directory and source-file directory
+for your debugger.
+If COMMAND-LINE requests that gdb attaches to a process PID, gdb
+will run in *gud-PID*, otherwise it will run in *gud*; in these
+cases the initial working directory is the default-directory of
+the buffer in which this command was invoked.
+
+COMMAND-LINE should include \"-i=mi\" to use gdb's MI text interface.
 Note that the old \"--annotate\" option is no longer supported.
 
 If option `gdb-many-windows' is nil (the default value) then gdb just
@@ -780,7 +792,7 @@ detailed description of this mode.
   (gud-def gud-tbreak "tbreak %f:%l" "\C-t"
 	   "Set temporary breakpoint at current line.")
   (gud-def gud-jump
-	   (progn (gud-call "tbreak %f:%l") (gud-call "jump %f:%l"))
+	   (progn (gud-call "tbreak %f:%l" arg) (gud-call "jump %f:%l"))
 	   "\C-j" "Set execution address to current line.")
 
   (gud-def gud-up     "up %p"     "<" "Up N stack frames (numeric arg).")
@@ -943,6 +955,7 @@ detailed description of this mode.
     (gdb-input "-gdb-set non-stop 1" 'gdb-non-stop-handler))
 
   (gdb-input "-enable-pretty-printing" 'ignore)
+  (gdb-input "-enable-frame-filters" 'ignore)
 
   ;; Find source file and compilation directory here.
   (if gdb-create-source-file-list
@@ -1108,13 +1121,15 @@ line, and no execution takes place."
 (defcustom gdb-show-changed-values t
   "If non-nil change the face of out of scope variables and changed values.
 Out of scope variables are suppressed with `shadow' face.
-Changed values are highlighted with the face `font-lock-warning-face'."
+Changed values are highlighted with the face `font-lock-warning-face'.
+Used by Speedbar."
   :type 'boolean
   :group 'gdb
   :version "22.1")
 
 (defcustom gdb-max-children 40
-  "Maximum number of children before expansion requires confirmation."
+  "Maximum number of children before expansion requires confirmation.
+Used by Speedbar."
   :type 'integer
   :group 'gdb
   :version "22.1")
@@ -1126,9 +1141,7 @@ Changed values are highlighted with the face `font-lock-warning-face'."
   :version "22.2")
 
 (define-minor-mode gdb-speedbar-auto-raise
-  "Minor mode to automatically raise the speedbar for watch expressions.
-With prefix argument ARG, automatically raise speedbar if ARG is
-positive, otherwise don't automatically raise it."
+  "Minor mode to automatically raise the speedbar for watch expressions."
   :global t
   :group 'gdb
   :version "22.1")
@@ -1361,7 +1374,7 @@ With arg, enter name of variable to be watched in the minibuffer."
 TEXT is the text of the button we clicked on, a + or - item.
 TOKEN is data related to this node.
 INDENT is the current indentation depth."
-  (cond ((string-match "+" text)        ;expand this node
+  (cond ((string-match "\\+" text)        ;expand this node
 	 (let* ((var (assoc token gdb-var-list))
 		(expr (nth 1 var)) (children (nth 2 var)))
 	   (if (or (<= (string-to-number children) gdb-max-children)
@@ -1629,9 +1642,19 @@ this trigger is subscribed to `gdb-buf-publisher' and called with
   :syntax-table nil :abbrev-table nil
   (make-comint-in-buffer "gdb-inferior" (current-buffer) nil))
 
+(defcustom gdb-display-io-nopopup nil
+  "When non-nil, and the `gdb-inferior-io' buffer is buried, don't pop it up."
+  :type 'boolean
+  :group 'gdb
+  :version "25.1")
+
 (defun gdb-inferior-filter (proc string)
   (unless (string-equal string "")
-    (gdb-display-buffer (gdb-get-buffer-create 'gdb-inferior-io)))
+    (let (buf)
+      (unless (and gdb-display-io-nopopup
+                   (setq buf (gdb-get-buffer 'gdb-inferior-io))
+                   (null (get-buffer-window buf)))
+        (gdb-display-buffer (gdb-get-buffer-create 'gdb-inferior-io)))))
   (with-current-buffer (gdb-get-buffer-create 'gdb-inferior-io)
     (comint-output-filter proc string)))
 
@@ -1721,16 +1744,12 @@ static char *magick[] = {
 (defvar breakpoint-disabled-icon nil
   "Icon for disabled breakpoint in display margin.")
 
-(declare-function define-fringe-bitmap "fringe.c"
-		  (bitmap bits &optional height width align))
-
-(and (display-images-p)
-     ;; Bitmap for breakpoint in fringe
-     (define-fringe-bitmap 'breakpoint
-       "\x3c\x7e\xff\xff\xff\xff\x7e\x3c")
-     ;; Bitmap for gud-overlay-arrow in fringe
-     (define-fringe-bitmap 'hollow-right-triangle
-       "\xe0\x90\x88\x84\x84\x88\x90\xe0"))
+;; Bitmap for breakpoint in fringe
+(define-fringe-bitmap 'breakpoint
+  "\x3c\x7e\xff\xff\xff\xff\x7e\x3c")
+;; Bitmap for gud-overlay-arrow in fringe
+(define-fringe-bitmap 'hollow-right-triangle
+  "\xe0\x90\x88\x84\x84\x88\x90\xe0")
 
 (defface breakpoint-enabled
   '((t
@@ -1753,12 +1772,18 @@ static char *magick[] = {
   :group 'gdb)
 
 
+(defvar gdb-python-guile-commands-regexp
+  "python\\|python-interactive\\|pi\\|guile\\|guile-repl\\|gr"
+  "Regexp that matches Python and Guile commands supported by GDB.")
+
 (defvar gdb-control-commands-regexp
   (concat
    "^\\("
-   "commands\\|if\\|while\\|define\\|document\\|python\\|"
-   "while-stepping\\|stepping\\|ws\\|actions"
-   "\\)\\([[:blank:]]+.*\\)?$")
+   "comm\\(a\\(n\\(ds?\\)?\\)?\\)?\\|if\\|while"
+   "\\|def\\(i\\(ne?\\)?\\)?\\|doc\\(u\\(m\\(e\\(nt?\\)?\\)?\\)?\\)?\\|"
+   gdb-python-guile-commands-regexp
+   "\\|while-stepping\\|stepp\\(i\\(ng?\\)?\\)?\\|ws\\|actions"
+   "\\)\\([[:blank:]]+\\([^[:blank:]]*\\)\\)?$")
   "Regexp matching GDB commands that enter a recursive reading loop.
 As long as GDB is in the recursive reading loop, it does not expect
 commands to be prefixed by \"-interpreter-exec console\".")
@@ -1770,23 +1795,29 @@ commands to be prefixed by \"-interpreter-exec console\".")
   "A comint send filter for gdb."
   (with-current-buffer gud-comint-buffer
     (let ((inhibit-read-only t))
-      (remove-text-properties (point-min) (point-max) '(face))))
+      (remove-text-properties (point-min) (point-max) '(face nil))))
   ;; mimic <RET> key to repeat previous command in GDB
-  (if (not (string= "" string))
-      (if gdb-continuation
-	  (setq gdb-last-command (concat gdb-continuation
-					 (gdb-strip-string-backslash string)
-					 " "))
-	(setq gdb-last-command (gdb-strip-string-backslash string)))
-    (if gdb-last-command (setq string gdb-last-command))
-    (setq gdb-continuation nil))
-  (if (and (not gdb-continuation) (or (string-match "^-" string)
-	  (> gdb-control-level 0)))
+  (when (= gdb-control-level 0)
+    (if (not (string= "" string))
+        (if gdb-continuation
+            (setq gdb-last-command (concat gdb-continuation
+                                           (gdb-strip-string-backslash string)
+                                           " "))
+          (setq gdb-last-command (gdb-strip-string-backslash string)))
+      (if gdb-last-command (setq string gdb-last-command))
+      (setq gdb-continuation nil)))
+  (if (and (not gdb-continuation)
+           (or (string-match "^-" string)
+               (> gdb-control-level 0)))
       ;; Either MI command or we are feeding GDB's recursive reading loop.
       (progn
 	(setq gdb-first-done-or-error t)
 	(process-send-string proc (concat string "\n"))
-	(if (and (string-match "^end$" string)
+	(if (and (string-match
+                  (concat "^\\("
+                          (if (eq system-type 'windows-nt) "\026" "\004")
+                          "\\|,q\\|,quit\\|end\\)$")
+                  string)
 		 (> gdb-control-level 0))
 	    (setq gdb-control-level (1- gdb-control-level))))
     ;; CLI command
@@ -1797,17 +1828,30 @@ commands to be prefixed by \"-interpreter-exec console\".")
 		      " "))
       (setq gdb-first-done-or-error t)
       (let ((to-send (concat "-interpreter-exec console "
-                             (gdb-mi-quote (concat gdb-continuation string " "))
+                             (gdb-mi-quote (concat gdb-continuation string))
                              "\n")))
         (if gdb-enable-debug
             (push (cons 'mi-send to-send) gdb-debug-log))
         (process-send-string proc to-send))
-      (if (and (string-match "^end$" string)
+      (if (and (string-match
+                  (concat "^\\("
+                          (if (eq system-type 'windows-nt) "\026" "\004")
+                          "\\|,q\\|,quit\\|end\\)$")
+                  string)
 	       (> gdb-control-level 0))
 	  (setq gdb-control-level (1- gdb-control-level)))
       (setq gdb-continuation nil)))
-  (if (string-match gdb-control-commands-regexp string)
-      (setq gdb-control-level (1+ gdb-control-level))))
+  ;; Python and Guile commands that have an argument don't enter the
+  ;; recursive reading loop.
+  (let* ((control-command-p (string-match gdb-control-commands-regexp string))
+         (command-arg (and control-command-p (match-string 3 string)))
+         (python-or-guile-p (string-match gdb-python-guile-commands-regexp
+                                          string)))
+    (if (and control-command-p
+             (or (not python-or-guile-p)
+                 (null command-arg)
+                 (zerop (length command-arg))))
+        (setq gdb-control-level (1+ gdb-control-level)))))
 
 (defun gdb-mi-quote (string)
   "Return STRING quoted properly as an MI argument.
@@ -1890,10 +1934,10 @@ If NO-PROC is non-nil, do not try to contact the GDB process."
   ;; gdb-break-list is maintained in breakpoints handler
   (gdb-get-buffer-create 'gdb-breakpoints-buffer)
 
+  (gdb-get-changed-registers)
   (unless no-proc
     (gdb-emit-signal gdb-buf-publisher 'update))
 
-  (gdb-get-changed-registers)
   (when (and (boundp 'speedbar-frame) (frame-live-p speedbar-frame))
     (dolist (var gdb-var-list)
       (setcar (nthcdr 5 var) nil))
@@ -1951,6 +1995,7 @@ is running."
             (not gdb-non-stop))
            gud-running)
       (and gdb-gud-control-all-threads
+           (not (null gdb-running-threads-count))
            (> gdb-running-threads-count 0))))
 
 ;; GUD displays the selected GDB frame.  This might might not be the current
@@ -2055,7 +2100,7 @@ a GDB/MI reply message."
 (defun gdbmi-bnf-gdb-prompt ()
   "Implementation of the following GDB/MI output grammar rule:
   gdb-prompt ==>
-       '(gdb)' nl
+       `(gdb)' nl
 
   nl ==>
        CR | CR-LF"
@@ -2075,7 +2120,7 @@ a GDB/MI reply message."
   "Implementation of the following GDB/MI output grammar rule:
 
   result-record ==>
-       [ token ] '^' result-class ( ',' result )* nl
+       [ token ] `^' result-class ( `,' result )* nl
 
   token ==>
        any sequence of digits."
@@ -2100,16 +2145,16 @@ a GDB/MI reply message."
        exec-async-output | status-async-output | notify-async-output
 
   exec-async-output ==>
-       [ token ] '*' async-output
+       [ token ] `*' async-output
 
   status-async-output ==>
-       [ token ] '+' async-output
+       [ token ] `+' async-output
 
   notify-async-output ==>
-       [ token ] '=' async-output
+       [ token ] `=' async-output
 
   async-output ==>
-       async-class ( ',' result )* nl"
+       async-class ( `,' result )* nl"
 
   (gdbmi-bnf-result-and-async-record-impl))
 
@@ -2120,13 +2165,13 @@ a GDB/MI reply message."
        console-stream-output | target-stream-output | log-stream-output
 
   console-stream-output ==>
-       '~' c-string
+       `~' c-string
 
   target-stream-output ==>
-       '@' c-string
+       `@' c-string
 
   log-stream-output ==>
-       '&' c-string"
+       `&' c-string"
   (when (< gdbmi-bnf-offset (length gud-marker-acc))
     (if (and (member (aref gud-marker-acc gdbmi-bnf-offset) '(?~ ?@ ?&))
              (string-match (concat "\\([~@&]\\)\\(" gdb--string-regexp "\\)\n")
@@ -2149,7 +2194,10 @@ a GDB/MI reply message."
 
 (defun gdbmi-bnf-console-stream-output (c-string)
   "Handler for the console-stream-output GDB/MI output grammar rule."
-  (gdb-console c-string))
+  (gdb-console c-string)
+  ;; We've written to the GUD console, so we should print the prompt
+  ;; after the next result-class or async-class.
+  (setq gdb-first-done-or-error t))
 
 (defun gdbmi-bnf-target-stream-output (_c-string)
   "Handler for the target-stream-output GDB/MI output grammar rule."
@@ -2185,10 +2233,10 @@ value when the message is complete.
 
 Implement the following GDB/MI output grammar rule:
   result-class ==>
-       'done' | 'running' | 'connected' | 'error' | 'exit'
+       `done' | `running' | `connected' | `error' | `exit'
 
   async-class ==>
-       'stopped' | others (where others will be added depending on the needs
+       `stopped' | others (where others will be added depending on the needs
                            --this is still in development).")
 
 (defun gdbmi-bnf-result-and-async-record-impl ()
@@ -2305,9 +2353,66 @@ the end of the current result or async record is reached."
 ; list ==>
 ;      "[]" | "[" value ( "," value )* "]" | "[" result ( "," result )* "]"
 
+(defcustom gdb-mi-decode-strings nil
+  "When non-nil, decode octal escapes in GDB output into non-ASCII text.
+
+If the value is a coding-system, use that coding-system to decode
+the bytes reconstructed from octal escapes.  Any other non-nil value
+means to decode using the coding-system set for the GDB process.
+
+Warning: setting this non-nil might mangle strings reported by GDB
+that have literal substrings which match the \\nnn octal escape
+patterns, where nnn is an octal number between 200 and 377.  So
+we only recommend to set this variable non-nil if the program you
+are debugging really reports non-ASCII text, or some of its source
+file names include non-ASCII characters."
+  :type '(choice
+          (const :tag "Don't decode" nil)
+          (const :tag "Decode using default coding-system" t)
+          (coding-system :tag "Decode using this coding-system"))
+  :group 'gdb
+  :version "25.1")
+
+;; The idea of the following function was suggested
+;; by Kenichi Handa <handa@gnu.org>.
+;;
+;; FIXME: This is fragile: it relies on the assumption that all the
+;; non-ASCII strings output by GDB, including names of the source
+;; files, values of string variables in the inferior, etc., are all
+;; encoded in the same encoding.  It also assumes that the \nnn
+;; sequences are not split between chunks of output of the GDB process
+;; due to buffering, and arrive together.  Finally, if some string
+;; included literal \nnn strings (as opposed to non-ASCII characters
+;; converted by GDB/MI to octal escapes), this decoding will mangle
+;; those strings.  When/if GDB acquires the ability to not
+;; escape-protect non-ASCII characters in its MI output, this kludge
+;; should be removed.
+(defun gdb-mi-decode (string)
+  "Decode octal escapes in MI output STRING into multibyte text."
+  (let ((coding
+         (if (coding-system-p gdb-mi-decode-strings)
+             gdb-mi-decode-strings
+           (with-current-buffer
+               (gdb-get-buffer-create 'gdb-partial-output-buffer)
+             buffer-file-coding-system))))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (prin1 string (current-buffer))
+      (goto-char (point-min))
+      ;; prin1 quotes the octal escapes as well, which interferes with
+      ;; their interpretation by 'read' below.  Remove the extra
+      ;; backslashes to countermand that.
+      (while (re-search-forward "\\\\\\(\\\\[2-3][0-7][0-7]\\)" nil t)
+        (replace-match "\\1" nil nil))
+      (goto-char (point-min))
+      (decode-coding-string (read (current-buffer)) coding))))
 
 (defun gud-gdbmi-marker-filter (string)
   "Filter GDB/MI output."
+
+  ;; If required, decode non-ASCII text encoded with octal escapes.
+  (or (null gdb-mi-decode-strings)
+      (setq string (gdb-mi-decode string)))
 
   ;; Record transactions if logging is enabled.
   (when gdb-enable-debug
@@ -2366,9 +2471,9 @@ Sets `gdb-thread-number' to new id."
   (let* ((result (gdb-json-string output-field))
          (thread-id (bindat-get-field result 'id)))
     (gdb-setq-thread-number thread-id)
-    ;; Typing `thread N` in GUD buffer makes GDB emit `^done` followed
-    ;; by `=thread-selected` notification. `^done` causes `gdb-update`
-    ;; as usually. Things happen to fast and second call (from
+    ;; Typing `thread N' in GUD buffer makes GDB emit `^done' followed
+    ;; by `=thread-selected' notification. `^done' causes `gdb-update'
+    ;; as usually. Things happen too fast and second call (from
     ;; gdb-thread-selected handler) gets cut off by our beloved
     ;; pending triggers.
     ;; Solution is `gdb-wait-for-pending' macro: it guarantees that its
@@ -2410,7 +2515,9 @@ current thread and update GDB buffers."
   ;; Reason is available with target-async only
   (let* ((result (gdb-json-string output-field))
          (reason (bindat-get-field result 'reason))
-         (thread-id (bindat-get-field result 'thread-id)))
+         (thread-id (bindat-get-field result 'thread-id))
+         (retval (bindat-get-field result 'return-value))
+         (varnum (bindat-get-field result 'gdb-result-var)))
 
     ;; -data-list-register-names needs to be issued for any stopped
     ;; thread
@@ -2435,6 +2542,15 @@ current thread and update GDB buffers."
      (propertize gdb-inferior-status 'face font-lock-warning-face))
     (if (string-equal reason "exited-normally")
 	(setq gdb-active-process nil))
+
+    (when (and retval varnum
+               ;; When the user typed CLI commands, GDB/MI helpfully
+               ;; includes the "Value returned" response in the "~"
+               ;; record; here we avoid displaying it twice.
+               (not (string-match "^Value returned is " gdb-filter-output)))
+      (setq gdb-filter-output
+            (concat gdb-filter-output
+                    (format "Value returned is %s = %s\n" varnum retval))))
 
     ;; Select new current thread.
 
@@ -2566,10 +2682,17 @@ in MI messages, e.g.: [key=.., key=..].  -stack-list-frames and
 responses.
 
 If FIX-LIST is non-nil, \"FIX-LIST={..}\" is replaced with
-\"FIX-LIST=[..]\" prior to parsing. This is used to fix broken
+\"FIX-LIST=[..]\" prior to parsing.  This is used to fix broken
 -break-info output when it contains breakpoint script field
-incompatible with GDB/MI output syntax."
+incompatible with GDB/MI output syntax.
+
+If `default-directory' is remote, full file names are adapted accordingly."
   (save-excursion
+    (let ((remote (file-remote-p default-directory)))
+      (when remote
+        (goto-char (point-min))
+        (while (re-search-forward "[\\[,]fullname=\"\\(.+\\)\"" nil t)
+          (replace-match (concat remote "\\1") nil nil nil 1))))
     (goto-char (point-min))
     (when fix-key
       (save-excursion
@@ -2592,10 +2715,10 @@ incompatible with GDB/MI output syntax."
               (insert "]"))))))
     (goto-char (point-min))
     (insert "{")
-    (let ((re (concat "\\([[:alnum:]-_]+\\)=\\({\\|\\[\\|\"\"\\|"
-                      gdb--string-regexp "\\)")))
+    (let ((re (concat "\\([[:alnum:]_-]+\\)=")))
       (while (re-search-forward re nil t)
-        (replace-match "\"\\1\":\\2" nil nil)))
+        (replace-match "\"\\1\":" nil nil)
+        (if (eq (char-after) ?\") (forward-sexp) (forward-char))))
     (goto-char (point-max))
     (insert "}")))
 
@@ -2721,7 +2844,7 @@ buffer with `gdb-bind-function-to-buffer'.
 If SIGNAL-LIST is non-nil, GDB-COMMAND is sent only when the
 defined trigger is called with an argument from SIGNAL-LIST.  It's
 not recommended to define triggers with empty SIGNAL-LIST.
-Normally triggers should respond at least to 'update signal.
+Normally triggers should respond at least to the `update' signal.
 
 Normally the trigger defined by this command must be called from
 the buffer where HANDLER-NAME must work.  This should be done so
@@ -3185,7 +3308,7 @@ corresponding to the mode line clicked."
   "Define a NAME command which will act upon thread on the current line.
 
 CUSTOM-DEFUN may use locally bound `thread' variable, which will
-be the value of 'gdb-thread property of the current line.
+be the value of `gdb-thread' property of the current line.
 If `gdb-thread' is nil, error is signaled."
   `(defun ,name (&optional event)
      ,(when doc doc)
@@ -3383,7 +3506,7 @@ in `gdb-memory-format'."
 (defvar gdb-memory-mode-map
   (let ((map (make-sparse-keymap)))
     (suppress-keymap map t)
-    (define-key map "q" 'kill-this-buffer)
+    (define-key map "q" 'kill-current-buffer)
     (define-key map "n" 'gdb-memory-show-next-page)
     (define-key map "p" 'gdb-memory-show-previous-page)
     (define-key map "a" 'gdb-memory-set-address)
@@ -3737,7 +3860,7 @@ DOC is an optional documentation string."
   ;; TODO
   (let ((map (make-sparse-keymap)))
     (suppress-keymap map)
-    (define-key map "q" 'kill-this-buffer)
+    (define-key map "q" 'kill-current-buffer)
     map))
 
 (define-derived-mode gdb-disassembly-mode gdb-parent-mode "Disassembly"
@@ -3941,7 +4064,7 @@ member."
 (defvar gdb-frames-mode-map
   (let ((map (make-sparse-keymap)))
     (suppress-keymap map)
-    (define-key map "q" 'kill-this-buffer)
+    (define-key map "q" 'kill-current-buffer)
     (define-key map "\r" 'gdb-select-frame)
     (define-key map [mouse-2] 'gdb-select-frame)
     (define-key map [follow-link] 'mouse-face)
@@ -4028,8 +4151,10 @@ member."
       (let ((name (bindat-get-field local 'name))
             (value (bindat-get-field local 'value))
             (type (bindat-get-field local 'type)))
+        (when (not value)
+          (setq value "<complex data type>"))
         (if (or (not value)
-                (string-match "\\0x" value))
+                (string-match "0x" value))
             (add-text-properties 0 (length name)
                                  `(mouse-face highlight
                                               help-echo "mouse-2: create watch expression"
@@ -4065,7 +4190,7 @@ member."
 (defvar gdb-locals-mode-map
   (let ((map (make-sparse-keymap)))
     (suppress-keymap map)
-    (define-key map "q" 'kill-this-buffer)
+    (define-key map "q" 'kill-current-buffer)
     (define-key map "\t" (lambda ()
                            (interactive)
                            (gdb-set-window-buffer
@@ -4156,7 +4281,7 @@ member."
     (suppress-keymap map)
     (define-key map "\r" 'gdb-edit-register-value)
     (define-key map [mouse-2] 'gdb-edit-register-value)
-    (define-key map "q" 'kill-this-buffer)
+    (define-key map "q" 'kill-current-buffer)
     (define-key map "\t" (lambda ()
                            (interactive)
                            (gdb-set-window-buffer

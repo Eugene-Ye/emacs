@@ -1,13 +1,13 @@
-/* Dump an executable image.
-   Copyright (C) 1985-1988, 1999, 2001-2014 Free Software Foundation,
+/* Dump an executable file.
+   Copyright (C) 1985-1988, 1999, 2001-2020 Free Software Foundation,
    Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /*
 In other words, you are welcome to use, share and improve this program.
@@ -55,7 +55,6 @@ what you give them.   Help stamp out software-hoarding!  */
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -134,7 +133,7 @@ unexec (const char *new_name, const char *a_name)
     {
       PERROR (a_name);
     }
-  if ((new = emacs_open (new_name, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0)
+  if ((new = emacs_open (new_name, O_WRONLY | O_CREAT | O_TRUNC, 0777)) < 0)
     {
       PERROR (new_name);
     }
@@ -152,7 +151,6 @@ unexec (const char *new_name, const char *a_name)
   emacs_close (new);
   if (a_out >= 0)
     emacs_close (a_out);
-  mark_x (new_name);
 }
 
 /* ****************************************************************
@@ -247,15 +245,15 @@ make_hdr (int new, int a_out,
 
       if (f_thdr == 0)
 	{
-	  ERROR1 ("unexec: couldn't find \"%s\" section", (int) _TEXT);
+	  ERROR1 ("unexec: couldn't find \"%s\" section", _TEXT);
 	}
       if (f_dhdr == 0)
 	{
-	  ERROR1 ("unexec: couldn't find \"%s\" section", (int) _DATA);
+	  ERROR1 ("unexec: couldn't find \"%s\" section", _DATA);
 	}
       if (f_bhdr == 0)
 	{
-	  ERROR1 ("unexec: couldn't find \"%s\" section", (int) _BSS);
+	  ERROR1 ("unexec: couldn't find \"%s\" section", _BSS);
 	}
     }
   else
@@ -384,7 +382,7 @@ copy_text_and_data (int new)
   write_segment (new, ptr, end);
 
   lseek (new, data_scnptr, SEEK_SET);
-  ptr = (char *) f_ohdr.data_start;
+  ptr = (char *) (ptrdiff_t) f_ohdr.data_start;
   end = ptr + f_ohdr.dsize;
   write_segment (new, ptr, end);
 
@@ -401,7 +399,7 @@ write_segment (int new, char *ptr, char *end)
   for (i = 0; ptr < end;)
     {
       /* distance to next block.  */
-      nwrite = (((int) ptr + UnexBlockSz) & -UnexBlockSz) - (int) ptr;
+      nwrite = (((ptrdiff_t) ptr + UnexBlockSz) & -UnexBlockSz) - (ptrdiff_t) ptr;
       /* But not beyond specified end.  */
       if (nwrite > end - ptr) nwrite = end - ptr;
       ret = write (new, ptr, nwrite);
@@ -464,29 +462,6 @@ copy_sym (int new, int a_out, const char *a_name, const char *new_name)
       PERROR (a_name);
     }
   return 0;
-}
-
-/* ****************************************************************
- * mark_x
- *
- * After successfully building the new a.out, mark it executable
- */
-static void
-mark_x (const char *name)
-{
-  struct stat sbuf;
-  int um;
-  int new = 0;  /* for PERROR */
-
-  um = umask (777);
-  umask (um);
-  if (stat (name, &sbuf) == -1)
-    {
-      PERROR (name);
-    }
-  sbuf.st_mode |= 0111 & ~um;
-  if (chmod (name, sbuf.st_mode) == -1)
-    PERROR (name);
 }
 
 static int

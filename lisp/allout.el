@@ -1,9 +1,8 @@
 ;;; allout.el --- extensive outline mode for use alone and with other modes
 
-;; Copyright (C) 1992-1994, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992-1994, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Ken Manheimer <ken dot manheimer at gmail...>
-;; Maintainer: Ken Manheimer <ken dot manheimer at gmail...>
 ;; Created: Dec 1991 -- first release to usenet
 ;; Version: 2.3
 ;; Keywords: outlines, wp, languages, PGP, GnuPG
@@ -22,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -79,12 +78,7 @@
 
 ;;;_* Dependency loads
 (require 'overlay)
-(eval-when-compile
-  ;; `cl' is required for `assert'.  `assert' is not covered by a standard
-  ;; autoload, but it is a macro, so that eval-when-compile is sufficient
-  ;; to byte-compile it in, or to do the require when the buffer evalled.
-  (require 'cl)
-  )
+(eval-when-compile (require 'cl-lib))
 
 ;;;_* USER CUSTOMIZATION VARIABLES:
 
@@ -176,7 +170,7 @@ respective allout-mode keybinding variables, `allout-command-prefix',
 (defcustom allout-command-prefix "\C-c "
   "Key sequence to be used as prefix for outline mode command key bindings.
 
-Default is '\C-c<space>'; just '\C-c' is more short-and-sweet, if you're
+Default is `\C-c<space>'; just `\C-c' is more short-and-sweet, if you're
 willing to let allout use a bunch of \C-c keybindings."
   :type 'string
   :group 'allout-keybindings
@@ -229,7 +223,7 @@ See `allout-unprefixed-keybindings' for the list of keybindings
 that are not prefixed.
 
 Use vector format for the keys:
-  - put literal keys after a '?' question mark, eg: '?a', '?.'
+  - put literal keys after a `?' question mark, eg: `?a', `?.'
   - enclose control, shift, or meta-modified keys as sequences within
     parentheses, with the literal key, as above, preceded by the name(s)
     of the modifiers, eg: [(control ?a)]
@@ -257,7 +251,7 @@ This is in contrast to the majority of allout-mode bindings on
 preceding command key.
 
 Use vector format for the keys:
-  - put literal keys after a '?' question mark, eg: '?a', '?.'
+  - put literal keys after a `?' question mark, eg: `?a', `?.'
   - enclose control, shift, or meta-modified keys as sequences within
     parentheses, with the literal key, as above, preceded by the name(s)
     of the modifiers, eg: [(control ?a)]
@@ -322,7 +316,7 @@ With value nil, inhibit any automatic allout-mode activation."
   "Default allout outline layout specification.
 
 This setting specifies the outline exposure to use when
-`allout-layout' has the local value `t'.  This docstring describes the
+`allout-layout' has the local value t.  This docstring describes the
 layout specifications.
 
 A list value specifies a default layout for the current buffer,
@@ -357,7 +351,7 @@ Examples:
         grandchildren, but completely collapse the final top-level topic.
  (-1 () : 1 0)
 	Close the first topic so only the immediate subtopics are shown,
-        leave the subsequent topics exposed as they are until the second
+        leave the subsequent topics exposed as they are until the
 	second to last topic, which is exposed at least one level, and
         completely close the last topic.
  (-2 : -1 *)
@@ -592,7 +586,7 @@ software.  By default:
 See `allout-plain-bullets-string' for the standard, alternating
 bullets.
 
-You must run `set-allout-regexp' in order for outline mode to
+You must run `allout-set-regexp' in order for outline mode to
 adopt changes of this value.
 
 DO NOT include the close-square-bracket, `]', on either of the bullet
@@ -610,7 +604,7 @@ strings."
 Allout outline mode will use the mode-specific `allout-mode-leaders' or
 comment-start string, if any, to lead the topic prefix string, so topic
 headers look like comments in the programming language.  It will also use
-the comment-start string, with an '_' appended, for `allout-primary-bullet'.
+the comment-start string, with an `_' appended, for `allout-primary-bullet'.
 
 String values are used as literals, not regular expressions, so
 do not escape any regular-expression characters.
@@ -797,9 +791,9 @@ numbers are always used."
   :group 'allout)
 ;;;_  - allout-title
 (defcustom allout-title '(or buffer-file-name (buffer-name))
-  "Expression to be evaluated to determine the title for LaTeX
-formatted copy."
+  "Expression to evaluate to determine the title for LaTeX formatted copy."
   :type 'sexp
+  :risky t
   :group 'allout)
 ;;;_  - allout-line-skip
 (defcustom allout-line-skip ".05cm"
@@ -917,7 +911,7 @@ has been customized to enable this behavior), `allout-mode' will be
 automatically activated.  The layout dictated by the value will be used to
 set the initial exposure when `allout-mode' is activated.
 
-\*You should not setq-default this variable non-nil unless you want every
+*You should not setq-default this variable non-nil unless you want every
 visited file to be treated as an allout file.*
 
 The value would typically be set by a file local variable.  For
@@ -933,7 +927,7 @@ followed by the equivalent of `(allout-expose-topic 0 : -1 -1 0)'.
 \(This is the layout used for the allout.el source file.)
 
 `allout-default-layout' describes the specification format.
-`allout-layout' can additionally have the value `t', in which
+`allout-layout' can additionally have the value t, in which
 case the value of `allout-default-layout' is used.")
 (make-variable-buffer-local 'allout-layout)
 ;;;###autoload
@@ -947,13 +941,13 @@ case the value of `allout-default-layout' is used.")
 
 Any line whose beginning matches this regexp is considered a
 heading.  This var is set according to the user configuration vars
-by `set-allout-regexp'.")
+by `allout-set-regexp'.")
 (make-variable-buffer-local 'allout-regexp)
 ;;;_   = allout-bullets-string
 (defvar allout-bullets-string ""
   "A string dictating the valid set of outline topic bullets.
 
-This var should *not* be set by the user -- it is set by `set-allout-regexp',
+This var should *not* be set by the user -- it is set by `allout-set-regexp',
 and is produced from the elements of `allout-plain-bullets-string'
 and `allout-distinctive-bullets-string'.")
 (make-variable-buffer-local 'allout-bullets-string)
@@ -970,7 +964,7 @@ headers at depth 2 and greater.  Use `allout-depth-one-regexp'
 for to seek topics at depth one.
 
 This var is set according to the user configuration vars by
-`set-allout-regexp'.  It is prepared with format strings for two
+`allout-set-regexp'.  It is prepared with format strings for two
 decimal numbers, which should each be one less than the depth of the
 topic prefix to be matched.")
 (make-variable-buffer-local 'allout-depth-specific-regexp)
@@ -979,7 +973,7 @@ topic prefix to be matched.")
   "Regular expression to match a heading line prefix for depth one.
 
 This var is set according to the user configuration vars by
-`set-allout-regexp'.  It is prepared with format strings for two
+`allout-set-regexp'.  It is prepared with format strings for two
 decimal numbers, which should each be one less than the depth of the
 topic prefix to be matched.")
 (make-variable-buffer-local 'allout-depth-one-regexp)
@@ -987,7 +981,7 @@ topic prefix to be matched.")
 (defvar allout-line-boundary-regexp ()
   "`allout-regexp' prepended with a newline for the search target.
 
-This is properly set by `set-allout-regexp'.")
+This is properly set by `allout-set-regexp'.")
 (make-variable-buffer-local 'allout-line-boundary-regexp)
 ;;;_   = allout-bob-regexp
 (defvar allout-bob-regexp ()
@@ -999,7 +993,7 @@ This is properly set by `set-allout-regexp'.")
 (make-variable-buffer-local 'allout-header-subtraction)
 ;;;_   = allout-plain-bullets-string-len
 (defvar allout-plain-bullets-string-len (length allout-plain-bullets-string)
-  "Length of `allout-plain-bullets-string', updated by `set-allout-regexp'.")
+  "Length of `allout-plain-bullets-string', updated by `allout-set-regexp'.")
 (make-variable-buffer-local 'allout-plain-bullets-string-len)
 
 ;;;_   = allout-doublecheck-at-and-shallower
@@ -1012,9 +1006,9 @@ determination of aberrance is according to the mistaken item
 being followed by a legitimate item of excessively greater depth.
 
 The classic example of a mistaken item, for a standard allout
-outline configuration, is a body line that begins with an '...'
+outline configuration, is a body line that begins with an `...'
 ellipsis.  This happens to contain a legitimate depth-2 header
-prefix, constituted by two '..' dots at the beginning of the
+prefix, constituted by two `..' dots at the beginning of the
 line.  The only thing that can distinguish it *in principle* from
 a legitimate one is if the following real header is at a depth
 that is discontinuous from the depth of 2 implied by the
@@ -1034,7 +1028,7 @@ suitably economical.")
   (interactive "sNew lead string: ")
   (setq allout-header-prefix header-lead)
   (setq allout-header-subtraction (1- (length allout-header-prefix)))
-  (set-allout-regexp))
+  (allout-set-regexp))
 ;;;_   X allout-lead-with-comment-string (header-lead)
 (defun allout-lead-with-comment-string (&optional header-lead)
   "Set the topic-header leading string to specified string.
@@ -1114,8 +1108,8 @@ file is programming code."
 	   comment-start
 	   (not (eq 'force allout-reindent-bodies)))
       (setq allout-reindent-bodies nil)))
-;;;_   > set-allout-regexp ()
-(defun set-allout-regexp ()
+;;;_   > allout-set-regexp ()
+(defun allout-set-regexp ()
   "Generate proper topic-header regexp form for outline functions.
 
 Works with respect to `allout-plain-bullets-string' and
@@ -1242,12 +1236,13 @@ Also refresh various data structures that hinge on the regexp."
                             "[^" allout-primary-bullet "]"))
                   "\\)"
                   ))))
+(define-obsolete-function-alias 'set-allout-regexp 'allout-set-regexp "26.1")
 ;;;_  : Menu bar
 (defvar allout-mode-exposure-menu)
 (defvar allout-mode-editing-menu)
 (defvar allout-mode-navigation-menu)
 (defvar allout-mode-misc-menu)
-(defun produce-allout-mode-menubar-entries ()
+(defun allout-produce-mode-menubar-entries ()
   (require 'easymenu)
   (easy-menu-define allout-mode-exposure-menu
 		    allout-mode-map-value
@@ -1326,20 +1321,20 @@ scope of the variable is restored along with its value.  If it was a void
 buffer-local value, then it is left as nil on resumption.
 
 The pairs are lists whose car is the name of the variable and car of the
-cdr is the new value: '(some-var some-value)'.  The pairs can actually be
+cdr is the new value: `(some-var some-value)'.  The pairs can actually be
 triples, where the third element qualifies the disposition of the setting,
 as described further below.
 
-If the optional third element is the symbol 'extend, then the new value
+If the optional third element is the symbol `extend', then the new value
 created by `cons'ing the second element of the pair onto the front of the
 existing value.
 
-If the optional third element is the symbol 'append, then the new value is
+If the optional third element is the symbol `append', then the new value is
 extended from the existing one by `append'ing a list containing the second
 element of the pair onto the end of the existing value.
 
 Extension, and resumptions in general, should not be used for hook
-functions -- use the 'local mode of `add-hook' for that, instead.
+functions -- use the `local' mode of `add-hook' for that, instead.
 
 The settings are stored on `allout-mode-prior-settings'."
   (while pairs
@@ -1505,41 +1500,6 @@ wrapped within allout's automatic `fill-prefix' setting.")
 (make-variable-buffer-local 'allout-outside-normal-auto-fill-function)
 ;;;_   = prevent redundant activation by desktop mode:
 (add-to-list 'desktop-minor-mode-handlers '(allout-mode . nil))
-;;;_   = allout-passphrase-verifier-string
-(defvar allout-passphrase-verifier-string nil
-  "Setting used to test solicited encryption passphrases against the one
-already associated with a file.
-
-It consists of an encrypted random string useful only to verify that a
-passphrase entered by the user is effective for decryption.  The passphrase
-itself is \*not* recorded in the file anywhere, and the encrypted contents
-are random binary characters to avoid exposing greater susceptibility to
-search attacks.
-
-The verifier string is retained as an Emacs file variable, as well as in
-the Emacs buffer state, if file variable adjustments are enabled.  See
-`allout-enable-file-variable-adjustment' for details about that.")
-(make-variable-buffer-local 'allout-passphrase-verifier-string)
-(make-obsolete-variable 'allout-passphrase-verifier-string
-			'allout-passphrase-verifier-string "23.3")
-;;;###autoload
-(put 'allout-passphrase-verifier-string 'safe-local-variable 'stringp)
-;;;_   = allout-passphrase-hint-string
-(defvar allout-passphrase-hint-string ""
-  "Variable used to retain reminder string for file's encryption passphrase.
-
-See the description of `allout-passphrase-hint-handling' for details about how
-the reminder is deployed.
-
-The hint is retained as an Emacs file variable, as well as in the Emacs buffer
-state, if file variable adjustments are enabled.  See
-`allout-enable-file-variable-adjustment' for details about that.")
-(make-variable-buffer-local 'allout-passphrase-hint-string)
-(setq-default allout-passphrase-hint-string "")
-(make-obsolete-variable 'allout-passphrase-hint-string
-			'allout-passphrase-hint-string "23.3")
-;;;###autoload
-(put 'allout-passphrase-hint-string 'safe-local-variable 'stringp)
 ;;;_   = allout-after-save-decrypt
 (defvar allout-after-save-decrypt nil
   "Internal variable, is nil or has the value of two points:
@@ -1686,7 +1646,7 @@ from what it did before, for backwards compatibility.
 MODE is the activation mode - see `allout-auto-activation' for
 valid values."
   (declare (obsolete allout-auto-activation "23.3"))
-  (custom-set-variables (list 'allout-auto-activation (format "%s" mode)))
+  (customize-set-variable 'allout-auto-activation (format "%s" mode))
   (format "%s" mode))
 
 ;;;_  > allout-setup-menubar ()
@@ -1727,9 +1687,6 @@ valid values."
 (define-minor-mode allout-mode
 ;;;_    . Doc string:
   "Toggle Allout outline mode.
-With a prefix argument ARG, enable Allout outline mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 \\<allout-mode-map-value>
 Allout outline mode is a minor mode that provides extensive
@@ -1838,7 +1795,7 @@ M-x outlineify-sticky       Activate outline mode for current buffer,
                             buffer with name derived from derived from that
                             of current buffer -- \"*BUFFERNAME exposed*\".
 \\[allout-flatten-exposed-to-buffer] `allout-flatten-exposed-to-buffer'
-                            Like above 'copy-exposed', but convert topic
+                            Like above `copy-exposed', but convert topic
                             prefixes to section.subsection... numeric
                             format.
 \\[customize-variable] allout-auto-activation
@@ -1862,7 +1819,7 @@ symmetric decryption keys, preventing entry of the correct key on
 subsequent decryption attempts until the cache times-out.  That
 can take several minutes.  (Decryption of other entries is not
 affected.)  Upgrade your EasyPG version, if you can, and you can
-deliberately clear your gpg-agent's cache by sending it a '-HUP'
+deliberately clear your gpg-agent's cache by sending it a `-HUP'
 signal.
 
 See `allout-toggle-current-subtree-encryption' function docstring
@@ -2029,7 +1986,7 @@ OPEN:	A TOPIC that is not CLOSED, though its OFFSPRING or BODY may be."
       (allout-infer-header-lead-and-primary-bullet)
       (allout-infer-body-reindent)
 
-      (set-allout-regexp)
+      (allout-set-regexp)
       (allout-add-resumptions '(allout-encryption-ciphertext-rejection-regexps
                                 allout-line-boundary-regexp
                                 extend)
@@ -2038,7 +1995,7 @@ OPEN:	A TOPIC that is not CLOSED, though its OFFSPRING or BODY may be."
                                 extend))
 
       (allout-compose-and-institute-keymap)
-      (produce-allout-mode-menubar-entries)
+      (allout-produce-mode-menubar-entries)
 
       (add-to-invisibility-spec '(allout . t))
 
@@ -2080,21 +2037,21 @@ OPEN:	A TOPIC that is not CLOSED, though its OFFSPRING or BODY may be."
                  use-layout
                  (and (not (string= allout-auto-activation "activate"))
                       (if (string= allout-auto-activation "ask")
-                          (if (y-or-n-p (format "Expose %s with layout '%s'? "
-                                                (buffer-name)
-                                                use-layout))
+                          (if (y-or-n-p (format-message
+                                         "Expose %s with layout `%s'? "
+                                         (buffer-name) use-layout))
                               t
                             (message "Skipped %s layout." (buffer-name))
                             nil)
                         t)))
         (save-excursion
-          (message "Adjusting '%s' exposure..." (buffer-name))
+          (message "Adjusting `%s' exposure..." (buffer-name))
           (goto-char 0)
           (allout-this-or-next-heading)
           (condition-case err
               (progn
                 (apply 'allout-expose-topic (list use-layout))
-                (message "Adjusting '%s' exposure... done."
+                (message "Adjusting `%s' exposure... done."
                          (buffer-name)))
             ;; Problem applying exposure -- notify user, but don't
             ;; interrupt, eg, file visit:
@@ -2245,8 +2202,8 @@ the new value of `allout-recent-prefix-beginning'."
                                       allout-recent-prefix-beginning
                                       allout-header-subtraction)))
   allout-recent-prefix-beginning)
-;;;_  > nullify-allout-prefix-data ()
-(defsubst nullify-allout-prefix-data ()
+;;;_  > allout-nullify-prefix-data ()
+(defsubst allout-nullify-prefix-data ()
   "Mark allout prefix data as being uninformative."
   (setq allout-recent-prefix-end (point)
         allout-recent-prefix-beginning (point)
@@ -2381,7 +2338,7 @@ Like `allout-current-depth', but respects hidden as well as visible topics."
           allout-recent-depth
         (progn
           ;; Oops, no prefix, nullify it:
-          (nullify-allout-prefix-data)
+          (allout-nullify-prefix-data)
           ;; ... and return 0:
           0)))))
 ;;;_    > allout-current-depth ()
@@ -3478,14 +3435,15 @@ Offer one suitable for current depth DEPTH as default."
 
   (let* ((default-bullet (or (and (stringp current-bullet) current-bullet)
                              (allout-bullet-for-depth depth)))
-	 (sans-escapes (regexp-sans-escapes allout-bullets-string))
+	 (sans-escapes (allout-regexp-sans-escapes allout-bullets-string))
 	 choice)
     (save-excursion
       (goto-char (allout-current-bullet-pos))
-      (setq choice (solicit-char-in-string
-                    (format "Select bullet: %s ('%s' default): "
-                            sans-escapes
-                            (allout-substring-no-properties default-bullet))
+      (setq choice (allout-solicit-char-in-string
+                    (format-message
+                     "Select bullet: %s (`%s' default): "
+                     sans-escapes
+                     (allout-substring-no-properties default-bullet))
                     sans-escapes
                     t)))
     (message "")
@@ -3720,7 +3678,7 @@ Nuances:
   (save-match-data
     (let* ((inhibit-field-text-motion t)
            (depth (+ (allout-current-depth) relative-depth))
-           (opening-on-blank (if (looking-at "^\$")
+           (opening-on-blank (if (looking-at "^$")
                                  (not (setq before nil))))
            ;; bunch o vars set while computing ref-topic
            opening-numbered
@@ -4387,7 +4345,7 @@ subtopics into siblings of the item."
             (let ((children-chart (allout-chart-subtree 1)))
               (if (listp (car children-chart))
                   ;; whoops:
-                  (setq children-chart (allout-flatten children-chart)))
+                  (setq children-chart (flatten-tree children-chart)))
               (save-excursion
                 (dolist (child-point children-chart)
                   (goto-char child-point)
@@ -4460,7 +4418,7 @@ Topic exposure is marked with text-properties, to be used by
     (if (and (/= (current-column) 0) (not (eobp)))
         (forward-char 1))
     (if (not (eobp))
-	(if (and (save-match-data (looking-at "\n"))
+	(if (and (= (following-char) ?\n)
                  (or (save-excursion
                        (or (not (allout-next-heading))
                            (= depth allout-recent-depth)))
@@ -5134,15 +5092,15 @@ Simple (numeric and null-list) specs are interpreted as follows:
   -  - exposes the body of the corresponding topic.
 
 Examples:
-\(allout-expose-topic '(-1 : 0))
+\(allout-expose-topic \\='(-1 : 0))
 	Close this and all following topics at current level, exposing
 	only their immediate children, but close down the last topic
 	at this current level completely.
-\(allout-expose-topic '(-1 () : 1 0))
+\(allout-expose-topic \\='(-1 () : 1 0))
 	Close current topic so only the immediate subtopics are shown;
 	show the children in the second to last topic, and completely
 	close the last one.
-\(allout-expose-topic '(-2 : -1 *))
+\(allout-expose-topic \\='(-2 : -1 *))
         Expose children and grandchildren of all topics at current
 	level except the last two; expose children of the second to
 	last and completely open the last one."
@@ -5561,9 +5519,8 @@ Defaults:
 	  ;; Specified but not a buffer -- get it:
 	  (let ((got (get-buffer frombuf)))
 	    (if (not got)
-		(error (concat "allout-process-exposed: source buffer "
-			       frombuf
-			       " not found."))
+		(error "allout-process-exposed: source buffer %s not found."
+		       frombuf)
 	      (setq frombuf got))))
     ;; not specified -- default it:
     (setq frombuf (current-buffer)))
@@ -5589,9 +5546,9 @@ Defaults:
 
 LISTIFIED is a list representing each topic header and body:
 
- \`(depth prefix text)'
+ `(depth prefix text)'
 
-or \`(depth prefix text bullet-plus)'
+or `(depth prefix text bullet-plus)'
 
 If `bullet-plus' is specified, it is inserted just after the entire prefix."
   (setq listified (cdr listified))
@@ -5825,7 +5782,7 @@ BULLET string, and a list of TEXT strings for the body."
 					; "\end{verbatim}" in text,
 					; it's special:
 	(if (and body-content
-		 (setq bop (string-match "\\end{verbatim}" curr-line)))
+		 (setq bop (string-match "\\\\end{verbatim}" curr-line)))
 	    (setq curr-line (concat (substring curr-line 0 bop)
 				    ">"
 				    (substring curr-line bop))))
@@ -5878,7 +5835,7 @@ With repeat count, copy the exposed portions of entire buffer."
 (defun allout-toggle-current-subtree-encryption (&optional keymode-cue)
   "Encrypt clear or decrypt encoded topic text.
 
-Allout uses Emacs 'epg' library to perform encryption.  Symmetric
+Allout uses Emacs `epg' library to perform encryption.  Symmetric
 and keypair encryption are supported.  All encryption is ascii
 armored.
 
@@ -5908,7 +5865,7 @@ file with topics pending encryption is saved, topics pending
 encryption are encrypted.  See `allout-encrypt-unencrypted-on-saves'
 for auto-encryption specifics.
 
-\*NOTE WELL* that automatic encryption that happens during saves will
+*NOTE WELL* that automatic encryption that happens during saves will
 default to symmetric encryption -- you must deliberately (re)encrypt key-pair
 encrypted topics if you want them to continue to use the key-pair cipher.
 
@@ -5940,7 +5897,7 @@ associated with it.  This can be used to dissociate any
 recipients with the file, by selecting no recipients in the
 dialog.
 
-Encryption and decryption uses the Emacs 'epg' library.
+Encryption and decryption uses the Emacs `epg' library.
 
 Encrypted text will be ascii-armored.
 
@@ -6051,8 +6008,8 @@ See `allout-toggle-current-subtree-encryption' for more details."
 (declare-function epg-decrypt-string "epg" (context cipher))
 (declare-function epg-encrypt-string "epg"
                   (context plain recipients &optional sign always-trust))
-(declare-function epg-user-id-string "epg" (user-id))
-(declare-function epg-key-user-id-list "epg" (key))
+(declare-function epg-user-id-string "epg" (user-id) t)
+(declare-function epg-key-user-id-list "epg" (key) t)
 
 ;;;_  > allout-encrypt-string (text decrypt allout-buffer keymode-cue
 ;;;                                 &optional rejected)
@@ -6093,7 +6050,7 @@ symmetric decryption keys, preventing entry of the correct key on
 subsequent decryption attempts until the cache times-out.  That
 can take several minutes.  (Decryption of other entries is not
 affected.)  Upgrade your EasyPG version, if you can, and you can
-deliberately clear your gpg-agent's cache by sending it a '-HUP'
+deliberately clear your gpg-agent's cache by sending it a `-HUP'
 signal."
 
   (require 'epg)
@@ -6159,13 +6116,13 @@ signal."
                                                           (point-max))))
     ;; determine key mode and, if keypair, recipients:
     (setq recipients
-          (case keypair-mode
+          (pcase keypair-mode
 
-            (decrypting nil)
+            ('decrypting nil)
 
-            (default (if encrypt-to (epg-list-keys epg-context encrypt-to)))
+            ('default (if encrypt-to (epg-list-keys epg-context encrypt-to)))
 
-            ((prompt prompt-save)
+            ((or 'prompt 'prompt-save)
              (save-window-excursion
                (epa-select-keys epg-context keypair-message)))))
 
@@ -6263,7 +6220,7 @@ the decryption."
   "Return the point of the next topic pending encryption, or nil if none.
 
 Such a topic has the `allout-topic-encryption-bullet' without an
-immediately following '*' that would mark the topic as being encrypted.
+immediately following `*' that would mark the topic as being encrypted.
 It must also have content."
   (let (done got content-beg)
     (save-match-data
@@ -6277,8 +6234,7 @@ It must also have content."
             (setq got nil
                   done t)
           (goto-char (setq got (match-beginning 0)))
-          (if (save-match-data (looking-at "\n"))
-              (forward-char 1))
+          (when (= (following-char) ?\n) (forward-char 1))
           (setq got (point)))
 
         (cond ((not got)
@@ -6341,7 +6297,7 @@ save.  See `allout-encrypt-unencrypted-on-saves' for more info."
                   ;; we had to wait for this 'til now so prior topics are
                   ;; encrypted, any relevant text shifts are in place:
                   editing-point (- current-mark-position
-                                   (count-trailing-whitespace-region
+                                   (allout-count-trailing-whitespace-region
                                     bo-subtree current-mark-position))))
           (allout-toggle-subtree-encryption)
           (if (not was-modified)
@@ -6378,8 +6334,9 @@ for details on preparing Emacs for automatic allout activation."
     (if (allout-goto-prefix)
 	t
       (allout-open-topic 2)
-      (insert (concat "Dummy outline topic header -- see"
-                      "`allout-mode' docstring: `^Hm'."))
+      (insert (substitute-command-keys
+               (concat "Dummy outline topic header -- see"
+                       " `allout-mode' docstring: `\\[describe-mode]'.")))
       (allout-adjust-file-variable
        "allout-layout" (or allout-layout '(-1 : 0))))))
 ;;;_   > allout-file-vars-section-data ()
@@ -6488,8 +6445,9 @@ not its value."
         got)
     (dolist (sym configvar-value)
       (if (not (boundp sym))
-          (if (yes-or-no-p (format "%s entry `%s' is unbound -- remove it? "
-                                   configvar-name sym))
+          (if (yes-or-no-p (format-message
+			    "%s entry `%s' is unbound -- remove it? "
+			    configvar-name sym))
               (delq sym (symbol-value configvar-name)))
         (push (symbol-value sym) got)))
     (reverse got)))
@@ -6501,12 +6459,12 @@ not its value."
   (let ((inhibit-field-text-motion t))
     (beginning-of-line))
   (allout-goto-prefix-doublechecked)
-  (push-mark (point))
+  (push-mark)
   (allout-end-of-current-subtree)
   (exchange-point-and-mark))
 ;;;_  : UI:
-;;;_   > solicit-char-in-string (prompt string &optional do-defaulting)
-(defun solicit-char-in-string (prompt string &optional do-defaulting)
+;;;_   > allout-solicit-char-in-string (prompt string &optional do-defaulting)
+(defun allout-solicit-char-in-string (prompt string &optional do-defaulting)
   "Solicit (with first arg PROMPT) choice of a character from string STRING.
 
 Optional arg DO-DEFAULTING indicates to accept empty input (CR)."
@@ -6539,11 +6497,11 @@ Optional arg DO-DEFAULTING indicates to accept empty input (CR)."
       got)
   )
 ;;;_  : Strings:
-;;;_   > regexp-sans-escapes (string)
-(defun regexp-sans-escapes (regexp &optional successive-backslashes)
+;;;_   > allout-regexp-sans-escapes (string)
+(defun allout-regexp-sans-escapes (regexp &optional successive-backslashes)
   "Return a copy of REGEXP with all character escapes stripped out.
 
-Representations of actual backslashes -- '\\\\\\\\' -- are left as a
+Representations of actual backslashes -- `\\\\\\\\' -- are left as a
 single backslash.
 
 Optional arg SUCCESSIVE-BACKSLASHES is used internally for recursion."
@@ -6559,11 +6517,11 @@ Optional arg SUCCESSIVE-BACKSLASHES is used internally for recursion."
     (if (or (not successive-backslashes) (= 2 successive-backslashes))
 	;; Include first char:
 	(concat (substring regexp 0 1)
-		(regexp-sans-escapes (substring regexp 1)))
+		(allout-regexp-sans-escapes (substring regexp 1)))
       ;; Exclude first char, but maintain count:
-      (regexp-sans-escapes (substring regexp 1) successive-backslashes))))
-;;;_   > count-trailing-whitespace-region (beg end)
-(defun count-trailing-whitespace-region (beg end)
+      (allout-regexp-sans-escapes (substring regexp 1) successive-backslashes))))
+;;;_   > allout-count-trailing-whitespace-region (beg end)
+(defun allout-count-trailing-whitespace-region (beg end)
   "Return number of trailing whitespace chars between BEG and END.
 
 If BEG is bigger than END we return 0."
@@ -6583,14 +6541,7 @@ If BEG is bigger than END we return 0."
   (apply 'concat
          (mapcar (lambda (char) (if (= char ?%) "%%" (char-to-string char)))
                  string)))
-;;;_  : lists
-;;;_   > allout-flatten (list)
-(defun allout-flatten (list)
-  "Return a list of all atoms in list."
-  ;; classic.
-  (cond ((null list) nil)
-        ((atom (car list)) (cons (car list) (allout-flatten (cdr list))))
-        (t (append (allout-flatten (car list)) (allout-flatten (cdr list))))))
+(define-obsolete-function-alias 'allout-flatten #'flatten-tree "27.1")
 ;;;_  : Compatibility:
 ;;;_   : xemacs undo-in-progress provision:
 (unless (boundp 'undo-in-progress)
@@ -6795,9 +6746,9 @@ To ignore intangibility, bind `inhibit-point-motion-hooks' to t."
   "Isearch (regexp) for topic with bullet BULLET."
   (interactive)
   (if (not bullet)
-      (setq bullet (solicit-char-in-string
+      (setq bullet (allout-solicit-char-in-string
 		    "ISearch for topic with bullet: "
-		    (regexp-sans-escapes allout-bullets-string))))
+		    (allout-regexp-sans-escapes allout-bullets-string))))
 
   (let ((isearch-regexp t)
 	(isearch-string (concat "^"
@@ -6829,6 +6780,7 @@ To ignore intangibility, bind `inhibit-point-motion-hooks' to t."
 (defvar allout-tests-locally-true nil
   "Fodder for allout resumptions tests -- defvar just for byte compiler.")
 (defun allout-test-resumptions ()
+  ;; FIXME: Use ERT.
   "Exercise allout resumptions."
   ;; for each resumption case, we also test that the right local/global
   ;; scopes are affected during resumption effects:
@@ -6837,48 +6789,48 @@ To ignore intangibility, bind `inhibit-point-motion-hooks' to t."
   (with-temp-buffer
     (allout-tests-obliterate-variable 'allout-tests-globally-unbound)
     (allout-add-resumptions '(allout-tests-globally-unbound t))
-    (assert (not (default-boundp 'allout-tests-globally-unbound)))
-    (assert (local-variable-p 'allout-tests-globally-unbound (current-buffer)))
-    (assert (boundp 'allout-tests-globally-unbound))
-    (assert (equal allout-tests-globally-unbound t))
+    (cl-assert (not (default-boundp 'allout-tests-globally-unbound)))
+    (cl-assert (local-variable-p 'allout-tests-globally-unbound (current-buffer)))
+    (cl-assert (boundp 'allout-tests-globally-unbound))
+    (cl-assert (equal allout-tests-globally-unbound t))
     (allout-do-resumptions)
-    (assert (not (local-variable-p 'allout-tests-globally-unbound
+    (cl-assert (not (local-variable-p 'allout-tests-globally-unbound
                                    (current-buffer))))
-    (assert (not (boundp 'allout-tests-globally-unbound))))
+    (cl-assert (not (boundp 'allout-tests-globally-unbound))))
 
   ;; ensure that variable with prior global value is resumed
   (with-temp-buffer
     (allout-tests-obliterate-variable 'allout-tests-globally-true)
     (setq allout-tests-globally-true t)
     (allout-add-resumptions '(allout-tests-globally-true nil))
-    (assert (equal (default-value 'allout-tests-globally-true) t))
-    (assert (local-variable-p 'allout-tests-globally-true (current-buffer)))
-    (assert (equal allout-tests-globally-true nil))
+    (cl-assert (equal (default-value 'allout-tests-globally-true) t))
+    (cl-assert (local-variable-p 'allout-tests-globally-true (current-buffer)))
+    (cl-assert (equal allout-tests-globally-true nil))
     (allout-do-resumptions)
-    (assert (not (local-variable-p 'allout-tests-globally-true
+    (cl-assert (not (local-variable-p 'allout-tests-globally-true
                                    (current-buffer))))
-    (assert (boundp 'allout-tests-globally-true))
-    (assert (equal allout-tests-globally-true t)))
+    (cl-assert (boundp 'allout-tests-globally-true))
+    (cl-assert (equal allout-tests-globally-true t)))
 
   ;; ensure that prior local value is resumed
   (with-temp-buffer
     (allout-tests-obliterate-variable 'allout-tests-locally-true)
     (set (make-local-variable 'allout-tests-locally-true) t)
-    (assert (not (default-boundp 'allout-tests-locally-true))
+    (cl-assert (not (default-boundp 'allout-tests-locally-true))
             nil (concat "Test setup mistake -- variable supposed to"
                         " not have global binding, but it does."))
-    (assert (local-variable-p 'allout-tests-locally-true (current-buffer))
+    (cl-assert (local-variable-p 'allout-tests-locally-true (current-buffer))
             nil (concat "Test setup mistake -- variable supposed to have"
                         " local binding, but it lacks one."))
     (allout-add-resumptions '(allout-tests-locally-true nil))
-    (assert (not (default-boundp 'allout-tests-locally-true)))
-    (assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
-    (assert (equal allout-tests-locally-true nil))
+    (cl-assert (not (default-boundp 'allout-tests-locally-true)))
+    (cl-assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
+    (cl-assert (equal allout-tests-locally-true nil))
     (allout-do-resumptions)
-    (assert (boundp 'allout-tests-locally-true))
-    (assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
-    (assert (equal allout-tests-locally-true t))
-    (assert (not (default-boundp 'allout-tests-locally-true))))
+    (cl-assert (boundp 'allout-tests-locally-true))
+    (cl-assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
+    (cl-assert (equal allout-tests-locally-true t))
+    (cl-assert (not (default-boundp 'allout-tests-locally-true))))
 
   ;; ensure that last of multiple resumptions holds, for various scopes.
   (with-temp-buffer
@@ -6894,27 +6846,27 @@ To ignore intangibility, bind `inhibit-point-motion-hooks' to t."
                             '(allout-tests-globally-true 3)
                             '(allout-tests-locally-true 4))
     ;; reestablish many of the basic conditions are maintained after re-add:
-    (assert (not (default-boundp 'allout-tests-globally-unbound)))
-    (assert (local-variable-p 'allout-tests-globally-unbound (current-buffer)))
-    (assert (equal allout-tests-globally-unbound 2))
-    (assert (default-boundp 'allout-tests-globally-true))
-    (assert (local-variable-p 'allout-tests-globally-true (current-buffer)))
-    (assert (equal allout-tests-globally-true 3))
-    (assert (not (default-boundp 'allout-tests-locally-true)))
-    (assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
-    (assert (equal allout-tests-locally-true 4))
+    (cl-assert (not (default-boundp 'allout-tests-globally-unbound)))
+    (cl-assert (local-variable-p 'allout-tests-globally-unbound (current-buffer)))
+    (cl-assert (equal allout-tests-globally-unbound 2))
+    (cl-assert (default-boundp 'allout-tests-globally-true))
+    (cl-assert (local-variable-p 'allout-tests-globally-true (current-buffer)))
+    (cl-assert (equal allout-tests-globally-true 3))
+    (cl-assert (not (default-boundp 'allout-tests-locally-true)))
+    (cl-assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
+    (cl-assert (equal allout-tests-locally-true 4))
     (allout-do-resumptions)
-    (assert (not (local-variable-p 'allout-tests-globally-unbound
+    (cl-assert (not (local-variable-p 'allout-tests-globally-unbound
                                    (current-buffer))))
-    (assert (not (boundp 'allout-tests-globally-unbound)))
-    (assert (not (local-variable-p 'allout-tests-globally-true
+    (cl-assert (not (boundp 'allout-tests-globally-unbound)))
+    (cl-assert (not (local-variable-p 'allout-tests-globally-true
                                    (current-buffer))))
-    (assert (boundp 'allout-tests-globally-true))
-    (assert (equal allout-tests-globally-true t))
-    (assert (boundp 'allout-tests-locally-true))
-    (assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
-    (assert (equal allout-tests-locally-true t))
-    (assert (not (default-boundp 'allout-tests-locally-true))))
+    (cl-assert (boundp 'allout-tests-globally-true))
+    (cl-assert (equal allout-tests-globally-true t))
+    (cl-assert (boundp 'allout-tests-locally-true))
+    (cl-assert (local-variable-p 'allout-tests-locally-true (current-buffer)))
+    (cl-assert (equal allout-tests-locally-true t))
+    (cl-assert (not (default-boundp 'allout-tests-locally-true))))
 
   ;; ensure that deliberately unbinding registered variables doesn't foul things
   (with-temp-buffer

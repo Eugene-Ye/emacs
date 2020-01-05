@@ -1,12 +1,12 @@
-/* Copyright (C) 1985-1988, 1992-1994, 2001-2014 Free Software
+/* Copyright (C) 1985-1988, 1992-1994, 2001-2020 Free Software
  * Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 /*
@@ -56,7 +56,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #define PERROR(file) report_error (file, new)
 
-#ifndef CANNOT_DUMP  /* all rest of file!  */
+#ifdef HAVE_UNEXEC  /* all rest of file!  */
 
 #ifdef HAVE_COFF_H
 #include <coff.h>
@@ -96,8 +96,6 @@ struct aouthdr
 #ifndef makedev			/* Try to detect types.h already loaded */
 #include <sys/types.h>
 #endif /* makedev */
-#include <stdio.h>
-#include <sys/stat.h>
 #include <errno.h>
 
 #include <sys/file.h>
@@ -439,29 +437,6 @@ copy_sym (int new, int a_out, const char *a_name, const char *new_name)
   return 0;
 }
 
-/* ****************************************************************
- * mark_x
- *
- * After successfully building the new a.out, mark it executable
- */
-static void
-mark_x (const char *name)
-{
-  struct stat sbuf;
-  int um;
-  int new = 0;  /* for PERROR */
-
-  um = umask (777);
-  umask (um);
-  if (stat (name, &sbuf) == -1)
-    {
-      PERROR (name);
-    }
-  sbuf.st_mode |= 0111 & ~um;
-  if (chmod (name, sbuf.st_mode) == -1)
-    PERROR (name);
-}
-
 
 /*
  *	If the COFF file contains a symbol table and a line number section,
@@ -542,7 +517,7 @@ unexec (const char *new_name, const char *a_name)
     {
       PERROR (a_name);
     }
-  if ((new = emacs_open (new_name, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0)
+  if ((new = emacs_open (new_name, O_WRONLY | O_CREAT | O_TRUNC, 0777)) < 0)
     {
       PERROR (new_name);
     }
@@ -560,7 +535,6 @@ unexec (const char *new_name, const char *a_name)
   emacs_close (new);
   if (a_out >= 0)
     emacs_close (a_out);
-  mark_x (new_name);
 }
 
-#endif /* not CANNOT_DUMP */
+#endif /* HAVE_UNEXEC */

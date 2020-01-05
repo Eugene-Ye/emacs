@@ -1,8 +1,8 @@
 ;;; srecode/texi.el --- Srecode texinfo support.
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -156,7 +156,7 @@ Adds the following:
       (error "No tag to insert for :texitag template argument"))
 
     ;; Extract the tag out of the compound object.
-    (setq tag (oref tag :prime))
+    (setq tag (oref tag prime))
 
     ;; Extract the doc string
     (setq doc (semantic-documentation-for-tag tag))
@@ -241,11 +241,11 @@ This is to take advantage of TeXinfo's markup symbols."
 For instances where CLASS is the class being referenced, do not Xref
 that class.
 
- `function' => @dfn{function}
- `variable' => @code{variable}
- `class'    => @code{class} @xref{class}
- `unknown'  => @code{unknown}
- \"text\"     => ``text''
+ function   => @dfn{function}
+ variable   => @code{variable}
+ class      => @code{class} @xref{class}
+ unknown    => @code{unknown}
+ \"text\"     => \\=`\\=`text\\='\\='
  'quoteme   => @code{quoteme}
  non-nil    => non-@code{nil}
  t          => @code{t}
@@ -253,7 +253,7 @@ that class.
  [ stuff ]  => @code{[ stuff ]}
  Key        => @kbd{Key}     (key is C\\-h, M\\-h, SPC, RET, TAB and the like)
  ...        => @dots{}"
-  (while (string-match "`\\([-a-zA-Z0-9<>.]+\\)'" string)
+  (while (string-match "[`‘]\\([-a-zA-Z0-9<>.]+\\)['’]" string)
     (let* ((vs (substring string (match-beginning 1) (match-end 1)))
 	   (v (intern-soft vs)))
       (setq string

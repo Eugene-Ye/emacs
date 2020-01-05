@@ -1,6 +1,6 @@
 ;;; semantic/db-javascript.el --- Semantic database extensions for javascript
 
-;; Copyright (C) 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Joakim Verona
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -98,7 +98,7 @@ See bottom of this file for instructions on managing this list.")
 ;; Create the database, and add it to searchable databases for javascript mode.
 (defvar-mode-local javascript-mode semanticdb-project-system-databases
   (list
-   (semanticdb-project-database-javascript "Javascript"))
+   (semanticdb-project-database-javascript))
   "Search javascript for symbols.")
 
 ;; NOTE: Be sure to modify this to the best advantage of your
@@ -111,38 +111,38 @@ the omniscience database.")
 
 ;;; Filename based methods
 ;;
-(defmethod semanticdb-get-database-tables ((obj semanticdb-project-database-javascript))
+(cl-defmethod semanticdb-get-database-tables ((obj semanticdb-project-database-javascript))
   "For a javascript database, there are no explicit tables.
 Create one of our special tables that can act as an intermediary."
   ;; NOTE: This method overrides an accessor for the `tables' slot in
-  ;;       a database.  You can either construct your own (like tmp here
+  ;;       a database.  You can either construct your own (like newtable here
   ;;       or you can manage any number of tables.
 
   ;; We need to return something since there is always the "master table"
   ;; The table can then answer file name type questions.
   (when (not (slot-boundp obj 'tables))
-    (let ((newtable (semanticdb-table-javascript "tmp")))
+    (let ((newtable (semanticdb-table-javascript)))
       (oset obj tables (list newtable))
       (oset newtable parent-db obj)
       (oset newtable tags nil)
       ))
-  (call-next-method)
+  (cl-call-next-method)
   )
 
-(defmethod semanticdb-file-table ((obj semanticdb-project-database-javascript) filename)
+(cl-defmethod semanticdb-file-table ((obj semanticdb-project-database-javascript) filename)
   "From OBJ, return FILENAME's associated table object."
   ;; NOTE: See not for `semanticdb-get-database-tables'.
   (car (semanticdb-get-database-tables obj))
   )
 
-(defmethod semanticdb-get-tags ((table semanticdb-table-javascript ))
+(cl-defmethod semanticdb-get-tags ((table semanticdb-table-javascript ))
   "Return the list of tags belonging to TABLE."
   ;; NOTE: Omniscient databases probably don't want to keep large tables
   ;;       lolly-gagging about.  Keep internal Emacs tables empty and
   ;;       refer to alternate databases when you need something.
   semanticdb-javascript-tags)
 
-(defmethod semanticdb-equivalent-mode ((table semanticdb-table-javascript) &optional buffer)
+(cl-defmethod semanticdb-equivalent-mode ((table semanticdb-table-javascript) &optional buffer)
   "Return non-nil if TABLE's mode is equivalent to BUFFER.
 Equivalent modes are specified by the `semantic-equivalent-major-modes'
 local variable."
@@ -192,43 +192,43 @@ database (if available.)"
       (setq tags (cdr tags)))
     result))
 
-(defmethod semanticdb-find-tags-by-name-method
+(cl-defmethod semanticdb-find-tags-by-name-method
   ((table semanticdb-table-javascript) name &optional tags)
   "Find all tags named NAME in TABLE.
 Return a list of tags."
   (if tags
       ;; If TAGS are passed in, then we don't need to do work here.
-      (call-next-method)
+      (cl-call-next-method)
     (assoc-string name  semanticdb-javascript-tags)
     ))
 
-(defmethod semanticdb-find-tags-by-name-regexp-method
+(cl-defmethod semanticdb-find-tags-by-name-regexp-method
   ((table semanticdb-table-javascript) regex &optional tags)
   "Find all tags with name matching REGEX in TABLE.
 Optional argument TAGS is a list of tags to search.
 Return a list of tags."
-  (if tags (call-next-method)
+  (if tags (cl-call-next-method)
     ;; YOUR IMPLEMENTATION HERE
     (semanticdb-javascript-regexp-search regex)
 
     ))
 
-(defmethod semanticdb-find-tags-for-completion-method
+(cl-defmethod semanticdb-find-tags-for-completion-method
   ((table semanticdb-table-javascript) prefix &optional tags)
   "In TABLE, find all occurrences of tags matching PREFIX.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
-  (if tags (call-next-method)
+  (if tags (cl-call-next-method)
     ;; YOUR IMPLEMENTATION HERE
     (semanticdb-javascript-regexp-search (concat "^" prefix ".*"))
     ))
 
-(defmethod semanticdb-find-tags-by-class-method
+(cl-defmethod semanticdb-find-tags-by-class-method
   ((table semanticdb-table-javascript) class &optional tags)
   "In TABLE, find all occurrences of tags of CLASS.
 Optional argument TAGS is a list of tags to search.
 Returns a table of all matching tags."
-  (if tags (call-next-method)
+  (if tags (cl-call-next-method)
     ;; YOUR IMPLEMENTATION HERE
     ;;
     ;; Note: This search method could be considered optional in an
@@ -244,21 +244,21 @@ Returns a table of all matching tags."
 ;; alone, otherwise replace with implementations similar to those
 ;; above.
 ;;
-(defmethod semanticdb-deep-find-tags-by-name-method
+(cl-defmethod semanticdb-deep-find-tags-by-name-method
   ((table semanticdb-table-javascript) name &optional tags)
   "Find all tags name NAME in TABLE.
 Optional argument TAGS is a list of tags to search.
 Like `semanticdb-find-tags-by-name-method' for javascript."
   (semanticdb-find-tags-by-name-method table name tags))
 
-(defmethod semanticdb-deep-find-tags-by-name-regexp-method
+(cl-defmethod semanticdb-deep-find-tags-by-name-regexp-method
   ((table semanticdb-table-javascript) regex &optional tags)
   "Find all tags with name matching REGEX in TABLE.
 Optional argument TAGS is a list of tags to search.
 Like `semanticdb-find-tags-by-name-method' for javascript."
   (semanticdb-find-tags-by-name-regexp-method table regex tags))
 
-(defmethod semanticdb-deep-find-tags-for-completion-method
+(cl-defmethod semanticdb-deep-find-tags-for-completion-method
   ((table semanticdb-table-javascript) prefix &optional tags)
   "In TABLE, find all occurrences of tags matching PREFIX.
 Optional argument TAGS is a list of tags to search.
@@ -267,12 +267,12 @@ Like `semanticdb-find-tags-for-completion-method' for javascript."
 
 ;;; Advanced Searches
 ;;
-(defmethod semanticdb-find-tags-external-children-of-type-method
+(cl-defmethod semanticdb-find-tags-external-children-of-type-method
   ((table semanticdb-table-javascript) type &optional tags)
   "Find all nonterminals which are child elements of TYPE.
 Optional argument TAGS is a list of tags to search.
 Return a list of tags."
-  (if tags (call-next-method)
+  (if tags (cl-call-next-method)
     ;; YOUR IMPLEMENTATION HERE
     ;;
     ;; OPTIONAL: This could be considered an optional function.  It is

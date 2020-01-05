@@ -1,6 +1,6 @@
-;;; autoinsert.el --- automatic mode-dependent insertion of text into new files
+;;; autoinsert.el --- automatic mode-dependent insertion of text into new files  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1994-1995, 1998, 2000-2014 Free Software
+;; Copyright (C) 1985-1987, 1994-1995, 1998, 2000-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Charlie Martin <crm@cs.duke.edu>
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -32,7 +32,7 @@
 ;;  auto-mode-alist.
 ;;
 ;;  To use:
-;;     (add-hook 'find-file-hook 'auto-insert)
+;;     (auto-insert-mode t)
 ;;     setq auto-insert-directory to an appropriate slash-terminated value
 ;;
 ;;  You can also customize the variable `auto-insert-mode' to load the
@@ -48,6 +48,8 @@
 ;;	      (crm@cs.duke.edu,mcnc!duke!crm)
 
 ;;; Code:
+
+(require 'seq)
 
 (defgroup auto-insert nil
   "Automatic mode-dependent insertion of text into new files."
@@ -67,47 +69,45 @@ Insertion is possible when something appropriate is found in
 `auto-insert-alist'.  When the insertion is marked as unmodified, you can
 save it with  \\[write-file] RET.
 This variable is used when the function `auto-insert' is called, e.g.
-when you do (add-hook 'find-file-hook 'auto-insert).
+when you do (add-hook \\='find-file-hook \\='auto-insert).
 With \\[auto-insert], this is always treated as if it were t."
   :type '(choice (const :tag "Insert if possible" t)
                  (const :tag "Do nothing" nil)
                  (other :tag "insert if possible, mark as unmodified."
-                        not-modified))
-  :group 'auto-insert)
+                        not-modified)))
 
 (defcustom auto-insert-query 'function
   "Non-nil means ask user before auto-inserting.
 When this is `function', only ask when called non-interactively."
   :type '(choice (const :tag "Don't ask" nil)
                  (const :tag "Ask if called non-interactively" function)
-                 (other :tag "Ask" t))
-  :group 'auto-insert)
+                 (other :tag "Ask" t)))
 
 (defcustom auto-insert-prompt "Perform %s auto-insertion? "
   "Prompt to use when querying whether to auto-insert.
 If this contains a %s, that will be replaced by the matching rule."
-  :type 'string
-  :group 'auto-insert)
+  :type 'string)
 
 
 (defcustom auto-insert-alist
-  '((("\\.\\([Hh]\\|hh\\|hpp\\)\\'" . "C / C++ header")
-     (upcase (concat (file-name-nondirectory
-		      (file-name-sans-extension buffer-file-name))
-		     "_"
-		     (file-name-extension buffer-file-name)))
+  '((("\\.\\([Hh]\\|hh\\|hpp\\|hxx\\|h\\+\\+\\)\\'" . "C / C++ header")
+     (replace-regexp-in-string
+      "[^A-Z0-9]" "_"
+      (replace-regexp-in-string
+       "\\+" "P"
+       (upcase (file-name-nondirectory buffer-file-name))))
      "#ifndef " str \n
      "#define " str "\n\n"
      _ "\n\n#endif")
 
-    (("\\.\\([Cc]\\|cc\\|cpp\\)\\'" . "C / C++ program")
+    (("\\.\\([Cc]\\|cc\\|cpp\\|cxx\\|c\\+\\+\\)\\'" . "C / C++ program")
      nil
      "#include \""
-     (let ((stem (file-name-sans-extension buffer-file-name)))
-       (cond ((file-exists-p (concat stem ".h"))
-	      (file-name-nondirectory (concat stem ".h")))
-	     ((file-exists-p (concat stem ".hh"))
-	      (file-name-nondirectory (concat stem ".hh")))))
+     (let ((stem (file-name-sans-extension buffer-file-name))
+           ret)
+       (dolist (ext '("H" "h" "hh" "hpp" "hxx" "h++") ret)
+         (when (file-exists-p (concat stem "." ext))
+           (setq ret (file-name-nondirectory (concat stem "." ext))))))
      & ?\" | -10)
 
     (("[Mm]akefile\\'" . "Makefile") . "makefile.inc")
@@ -140,14 +140,14 @@ If this contains a %s, that will be replaced by the matching rule."
      "
 .\\\" You may distribute this file under the terms of the GNU Free
 .\\\" Documentation License.
-.TH " (file-name-base)
+.TH " (file-name-base (buffer-file-name))
      " " (file-name-extension (buffer-file-name))
      " " (format-time-string "%Y-%m-%d ")
      "\n.SH NAME\n"
-     (file-name-base)
+     (file-name-base (buffer-file-name))
      " \\- " str
      "\n.SH SYNOPSIS
-.B " (file-name-base)
+.B " (file-name-base (buffer-file-name))
      "\n"
      _
      "
@@ -161,6 +161,29 @@ If this contains a %s, that will be replaced by the matching rule."
      '(if (search-backward "&" (line-beginning-position) t)
 	  (replace-match (capitalize (user-login-name)) t t))
      '(end-of-line 1) " <" (progn user-mail-address) ">\n")
+
+    (".dir-locals.el"
+     nil
+     ";;; Directory Local Variables\n"
+     ";;; For more information see (info \"(emacs) Directory Variables\")\n\n"
+     "(("
+     '(setq v1 (let (modes)
+                 (mapatoms (lambda (mode)
+                             (let ((name (symbol-name mode)))
+                               (when (string-match "-mode$" name)
+                                 (add-to-list 'modes name)))))
+                 (sort modes 'string<)))
+     (completing-read "Local variables for mode: " v1 nil t)
+     " . (("
+     (let ((all-variables
+            (apropos-internal ".*"
+                              (lambda (symbol)
+			        (and (boundp symbol)
+				     (get symbol 'variable-documentation))))))
+       (completing-read "Variable to set: " all-variables))
+     " . "
+     (completing-read "Value to set it to: " nil)
+     "))))\n")
 
     (("\\.el\\'" . "Emacs Lisp header")
      "Short description: "
@@ -199,7 +222,7 @@ If this contains a %s, that will be replaced by the matching rule."
 \;; GNU General Public License for more details.
 
 \;; You should have received a copy of the GNU General Public License
-\;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+\;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 \;;; Commentary:
 
@@ -210,7 +233,7 @@ If this contains a %s, that will be replaced by the matching rule."
 
 
 \(provide '"
-       (file-name-base)
+       (file-name-base (buffer-file-name))
        ")
 \;;; " (file-name-nondirectory (buffer-file-name)) " ends here\n")
     (("\\.texi\\(nfo\\)?\\'" . "Texinfo file skeleton")
@@ -218,7 +241,7 @@ If this contains a %s, that will be replaced by the matching rule."
      "\\input texinfo   @c -*-texinfo-*-
 @c %**start of header
 @setfilename "
-     (file-name-base) ".info\n"
+     (file-name-base (buffer-file-name)) ".info\n"
       "@settitle " str "
 @c %**end of header
 @copying\n"
@@ -236,7 +259,7 @@ A copy of the license is included in the section entitled ``GNU
 Free Documentation License''.
 
 A copy of the license is also available from the Free Software
-Foundation Web site at @url{http://www.gnu.org/licenses/fdl.html}.
+Foundation Web site at @url{https://www.gnu.org/licenses/fdl.html}.
 
 @end quotation
 
@@ -283,7 +306,7 @@ The document was typeset with
 * GNU Free Documentation License::  License for copying this manual.
 @end menu
 
-@c Get fdl.texi from http://www.gnu.org/licenses/fdl.html
+@c Get fdl.texi from https://www.gnu.org/licenses/fdl.html
 @include fdl.texi
 
 @node Index
@@ -304,8 +327,18 @@ ACTION may be a skeleton to insert (see `skeleton-insert'), an absolute
 file-name or one relative to `auto-insert-directory' or a function to call.
 ACTION may also be a vector containing several successive single actions as
 described above, e.g. [\"header.insert\" date-and-author-update]."
-  :type 'sexp
-  :group 'auto-insert)
+  :type '(alist :key-type
+                (choice (regexp :tag "Regexp matching file name")
+                        (symbol :tag "Major mode")
+                        (cons :tag "Condition and description"
+                              (choice :tag "Condition"
+                               (regexp :tag "Regexp matching file name")
+                               (symbol :tag "Major mode"))
+                              (string :tag "Description")))
+                ;; There's no custom equivalent of "repeat" for vectors.
+                :value-type (choice file function
+                                    (sexp :tag "Skeleton or vector")))
+  :version "27.1")
 
 
 ;; Establish a default value for auto-insert-directory
@@ -313,8 +346,7 @@ described above, e.g. [\"header.insert\" date-and-author-update]."
   "Directory from which auto-inserted files are taken.
 The value must be an absolute directory name;
 thus, on a GNU or Unix system, it must end in a slash."
-  :type 'directory
-  :group 'auto-insert)
+  :type 'directory)
 
 
 ;;;###autoload
@@ -326,23 +358,23 @@ Matches the visited file name against the elements of `auto-insert-alist'."
        (or (eq this-command 'auto-insert)
 	   (and auto-insert
 		(bobp) (eobp)))
-       (let ((alist auto-insert-alist)
-	     case-fold-search cond desc action)
-	 (goto-char 1)
-	 ;; find first matching alist entry
-	 (while alist
-	   (if (atom (setq cond (car (car alist))))
-	       (setq desc cond)
-	     (setq desc (cdr cond)
-		   cond (car cond)))
-	   (if (if (symbolp cond)
-		   (eq cond major-mode)
-		 (and buffer-file-name
-		      (string-match cond buffer-file-name)))
-	       (setq action (cdr (car alist))
-		     alist nil)
-	     (setq alist (cdr alist))))
-
+       (let* ((case-fold-search nil)
+              (desc nil)
+              ;; Find first matching alist entry.
+              (action
+               (seq-some
+                (pcase-lambda (`(,cond . ,action))
+                  (if (atom cond)
+                      (setq desc cond)
+                    (setq desc (cdr cond)
+                          cond (car cond)))
+                  (when (if (symbolp cond)
+                            (derived-mode-p cond)
+                          (and buffer-file-name
+                               (string-match cond buffer-file-name)))
+                    action))
+                auto-insert-alist)))
+         (goto-char 1)
 	 ;; Now, if we found something, do it
 	 (and action
 	      (or (not (stringp action))
@@ -374,7 +406,7 @@ Matches the visited file name against the elements of `auto-insert-alist'."
 	      (not (eq this-command 'auto-insert))
 	      (set-buffer-modified-p (eq auto-insert t)))))
   ;; Return nil so that it could be used in
-  ;; `find-file-not-found-hooks', though that's probably inadvisable.
+  ;; `find-file-not-found-functions', though that's probably inadvisable.
   nil)
 
 
@@ -400,9 +432,6 @@ or if CONDITION had no actions, after all other CONDITIONs."
 ;;;###autoload
 (define-minor-mode auto-insert-mode
   "Toggle Auto-insert mode, a global minor mode.
-With a prefix argument ARG, enable Auto-insert mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 When Auto-insert mode is enabled, when new files are created you can
 insert a template for the file depending on the mode of the buffer."

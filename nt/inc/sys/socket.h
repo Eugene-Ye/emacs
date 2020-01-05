@@ -1,11 +1,11 @@
-/* Copyright (C) 1995, 2001-2014 Free Software Foundation, Inc.
+/* Copyright (C) 1995, 2001-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,7 +13,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 /* Workable version of <sys/socket.h> based on winsock.h */
@@ -49,10 +49,16 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #define timeval ws_timeval
 #endif
 
+#if defined __MINGW32_VERSION && __MINGW32_VERSION >= 5000002L
+/* Need winerror.h before winsock2.h with mingw.org's MinGW 5.x,
+   otherwise some error codes are not defined.  */
+# include <winerror.h>
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 /* process.c uses uint16_t (from C99) for IPv6, but
    apparently it is not defined in some versions of mingw and msvc.  */
+#include <stdint.h>
 #ifndef UINT16_C
 typedef unsigned short uint16_t;
 #endif
@@ -86,6 +92,8 @@ typedef unsigned short uint16_t;
 #define connect        sys_connect
 #define htons          sys_htons
 #define ntohs          sys_ntohs
+#define htonl          sys_htonl
+#define ntohl          sys_ntohl
 #define inet_addr      sys_inet_addr
 #define gethostname    sys_gethostname
 #define gethostbyname  sys_gethostbyname
@@ -98,12 +106,16 @@ typedef unsigned short uint16_t;
 #define accept         sys_accept
 #define recvfrom       sys_recvfrom
 #define sendto         sys_sendto
+#define getaddrinfo    sys_getaddrinfo
+#define freeaddrinfo   sys_freeaddrinfo
 
 int sys_socket(int af, int type, int protocol);
 int sys_bind (int s, const struct sockaddr *addr, int namelen);
 int sys_connect (int s, const struct sockaddr *addr, int namelen);
 u_short sys_htons (u_short hostshort);
 u_short sys_ntohs (u_short netshort);
+u_long sys_htonl (u_long hostlong);
+u_long sys_ntohl (u_long netlong);
 unsigned long sys_inet_addr (const char * cp);
 int sys_gethostname (char * name, int namelen);
 struct hostent * sys_gethostbyname (const char * name);
@@ -118,6 +130,9 @@ int sys_recvfrom (int s, char *buf, int len, int flags,
 		  struct sockaddr *from, int * fromlen);
 int sys_sendto (int s, const char * buf, int len, int flags,
 		const struct sockaddr *to, int tolen);
+int sys_getaddrinfo (const char * node, const char * service,
+		     const struct addrinfo * hints, struct addrinfo ** res);
+void sys_freeaddrinfo (struct addrinfo * ai);
 
 /* In addition to wrappers for the winsock functions, we also provide
    an fcntl function, for setting sockets to non-blocking mode.  */

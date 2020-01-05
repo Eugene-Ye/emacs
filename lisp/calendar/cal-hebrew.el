@@ -1,10 +1,10 @@
 ;;; cal-hebrew.el --- calendar functions for the Hebrew calendar
 
-;; Copyright (C) 1995, 1997, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995, 1997, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Nachum Dershowitz <nachum@cs.uiuc.edu>
 ;;         Edward M. Reingold <reingold@cs.uiuc.edu>
-;; Maintainer: Glenn Morris <rgm@gnu.org>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: calendar
 ;; Human-Keywords: Hebrew calendar, calendar, diary
 ;; Package: calendar
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -595,7 +595,7 @@ Hebrew date diary entries must be prefaced by `diary-hebrew-entry-symbol'
 of the Hebrew calendar entries, except that the Hebrew month
 names cannot be abbreviated.  The Hebrew months are numbered
 from 1 to 13 with Nisan being 1, 12 being Adar I and 13 being
-Adar II; you must use `Adar I' if you want Adar of a common
+Adar II; you must use \"Adar I\" if you want Adar of a common
 Hebrew year.  If a Hebrew date diary entry begins with
 `diary-nonmarking-symbol', the entry will appear in the diary
 listing, but will not be marked in the calendar.  This function
@@ -611,7 +611,7 @@ is provided for use with `diary-nongregorian-listing-hook'."
   "Mark dates in calendar window that conform to Hebrew date MONTH/DAY/YEAR.
 A value of 0 in any position is a wildcard.  Optional argument COLOR is
 passed to `calendar-mark-visible-date' as MARK."
-  ;; FIXME not the same as the Bahai and Islamic cases, so can't use
+  ;; FIXME not the same as the Bahá’í and Islamic cases, so can't use
   ;; calendar-mark-1.
   (with-current-buffer calendar-buffer
     (if (and (not (zerop month)) (not (zerop day)))
@@ -748,15 +748,22 @@ from the cursor position."
       ;; or the corresponding day in years without that date.
       (+ (calendar-hebrew-to-absolute (list b-month 1 year)) b-day -1))))
 
-(defvar date)
+;; The function below is designed to be used in sexp diary entries,
+;; and may be present in users' diary files, so suppress the warning
+;; about this prefix-less dynamic variable.  It's called from
+;; `diary-list-sexp-entries', which binds the variable.
+(with-suppressed-warnings ((lexical date))
+  (defvar date))
 
-;; To be called from diary-list-sexp-entries, where DATE is bound.
 ;;;###diary-autoload
 (defun diary-hebrew-date ()
   "Hebrew calendar equivalent of date diary entry."
   (format "Hebrew date (until sunset): %s" (calendar-hebrew-date-string date)))
 
-(defvar entry)
+;; `diary-hebrew-birthday' can be used in users' diary files, and
+;; `entry' has to be dynamically bound when that is used.
+(with-suppressed-warnings ((lexical entry))
+  (defvar entry))
 (declare-function diary-ordinal-suffix "diary-lib" (n))
 
 ;;;###diary-autoload

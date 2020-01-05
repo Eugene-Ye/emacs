@@ -1,6 +1,6 @@
 /* Subtract two struct timespec values.
 
-   Copyright (C) 2011-2014 Free Software Foundation, Inc.
+   Copyright (C) 2011-2020 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,13 +13,13 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Written by Paul Eggert.  */
 
 /* Return the difference between two timespec values A and B.  On
    overflow, return an extremal value.  This assumes 0 <= tv_nsec <
-   TIMESPEC_RESOLUTION.  */
+   TIMESPEC_HZ.  */
 
 #include <config.h>
 #include "timespec.h"
@@ -36,20 +36,19 @@ timespec_sub (struct timespec a, struct timespec b)
 
   if (ns < 0)
     {
-      rns = ns + TIMESPEC_RESOLUTION;
-      if (rs == TYPE_MINIMUM (time_t))
-        {
-          if (bs <= 0)
-            goto low_overflow;
-          bs--;
-        }
-      else
+      rns = ns + TIMESPEC_HZ;
+      time_t bs1;
+      if (!INT_ADD_WRAPV (bs, 1, &bs1))
+        bs = bs1;
+      else if (- TYPE_SIGNED (time_t) < rs)
         rs--;
+      else
+        goto low_overflow;
     }
 
-  if (INT_SUBTRACT_OVERFLOW (rs, bs))
+  if (INT_SUBTRACT_WRAPV (rs, bs, &rs))
     {
-      if (rs < 0)
+      if (0 < bs)
         {
         low_overflow:
           rs = TYPE_MINIMUM (time_t);
@@ -58,11 +57,9 @@ timespec_sub (struct timespec a, struct timespec b)
       else
         {
           rs = TYPE_MAXIMUM (time_t);
-          rns = TIMESPEC_RESOLUTION - 1;
+          rns = TIMESPEC_HZ - 1;
         }
     }
-  else
-    rs -= bs;
 
   return make_timespec (rs, rns);
 }

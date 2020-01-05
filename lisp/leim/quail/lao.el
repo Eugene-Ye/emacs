@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -36,8 +36,9 @@
 	    (buffer-substring (overlay-start quail-overlay)
 			      (overlay-end quail-overlay))
 	    unread-command-events
-	    (string-to-list
-	     (substring quail-current-key control-flag)))
+	    (append
+	     (substring quail-current-key control-flag)
+             unread-command-events))
     (setq quail-current-str
 	  (compose-string (quail-lookup-map-and-concat quail-current-key))))
   control-flag)

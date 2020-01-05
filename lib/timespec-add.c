@@ -1,6 +1,6 @@
 /* Add two struct timespec values.
 
-   Copyright (C) 2011-2014 Free Software Foundation, Inc.
+   Copyright (C) 2011-2020 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,12 +13,12 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Written by Paul Eggert.  */
 
 /* Return the sum of two timespec values A and B.  On overflow, return
-   an extremal value.  This assumes 0 <= tv_nsec < TIMESPEC_RESOLUTION.  */
+   an extremal value.  This assumes 0 <= tv_nsec < TIMESPEC_HZ.  */
 
 #include <config.h>
 #include "timespec.h"
@@ -31,25 +31,24 @@ timespec_add (struct timespec a, struct timespec b)
   time_t rs = a.tv_sec;
   time_t bs = b.tv_sec;
   int ns = a.tv_nsec + b.tv_nsec;
-  int nsd = ns - TIMESPEC_RESOLUTION;
+  int nsd = ns - TIMESPEC_HZ;
   int rns = ns;
 
   if (0 <= nsd)
     {
       rns = nsd;
-      if (rs == TYPE_MAXIMUM (time_t))
-        {
-          if (0 <= bs)
-            goto high_overflow;
-          bs++;
-        }
-      else
+      time_t bs1;
+      if (!INT_ADD_WRAPV (bs, 1, &bs1))
+        bs = bs1;
+      else if (rs < 0)
         rs++;
+      else
+        goto high_overflow;
     }
 
-  if (INT_ADD_OVERFLOW (rs, bs))
+  if (INT_ADD_WRAPV (rs, bs, &rs))
     {
-      if (rs < 0)
+      if (bs < 0)
         {
           rs = TYPE_MINIMUM (time_t);
           rns = 0;
@@ -58,11 +57,9 @@ timespec_add (struct timespec a, struct timespec b)
         {
         high_overflow:
           rs = TYPE_MAXIMUM (time_t);
-          rns = TIMESPEC_RESOLUTION - 1;
+          rns = TIMESPEC_HZ - 1;
         }
     }
-  else
-    rs += bs;
 
   return make_timespec (rs, rns);
 }

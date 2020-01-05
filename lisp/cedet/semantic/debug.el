@@ -1,6 +1,6 @@
 ;;; semantic/debug.el --- Language Debugger framework
 
-;; Copyright (C) 2003-2005, 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2005, 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -36,9 +36,9 @@
 ;; Each parser must implement the interface and override any methods as needed.
 ;;
 
-(eval-when-compile (require 'cl))
 (require 'semantic)
 (require 'eieio)
+(require 'cl-generic)
 (eval-when-compile (require 'semantic/find))
 
 ;;; Code:
@@ -117,13 +117,13 @@ These buffers are brought into view when layout occurs.")
   "Controls action when in `semantic-debug-mode'")
 
 ;; Methods
-(defmethod semantic-debug-set-frame ((iface semantic-debug-interface) frame)
+(cl-defmethod semantic-debug-set-frame ((iface semantic-debug-interface) frame)
   "Set the current frame on IFACE to FRAME."
   (if frame
       (oset iface current-frame frame)
     (slot-makeunbound iface 'current-frame)))
 
-(defmethod semantic-debug-set-parser-location ((iface semantic-debug-interface) point)
+(cl-defmethod semantic-debug-set-parser-location ((iface semantic-debug-interface) point)
   "Set the parser location in IFACE to POINT."
   (with-current-buffer (oref iface parser-buffer)
     (if (not (slot-boundp iface 'parser-location))
@@ -131,7 +131,7 @@ These buffers are brought into view when layout occurs.")
     (move-marker (oref iface parser-location) point))
   )
 
-(defmethod semantic-debug-set-source-location ((iface semantic-debug-interface) point)
+(cl-defmethod semantic-debug-set-source-location ((iface semantic-debug-interface) point)
   "Set the source location in IFACE to POINT."
   (with-current-buffer (oref iface source-buffer)
     (if (not (slot-boundp iface 'source-location))
@@ -139,7 +139,7 @@ These buffers are brought into view when layout occurs.")
     (move-marker (oref iface source-location) point))
   )
 
-(defmethod semantic-debug-interface-layout ((iface semantic-debug-interface))
+(cl-defmethod semantic-debug-interface-layout ((iface semantic-debug-interface))
   "Layout windows in the current frame to facilitate debugging."
   (delete-other-windows)
   ;; Deal with the data buffer
@@ -167,10 +167,10 @@ These buffers are brought into view when layout occurs.")
     (goto-char (oref iface source-location)))
   )
 
-(defmethod semantic-debug-highlight-lexical-token ((iface semantic-debug-interface) token)
+(cl-defmethod semantic-debug-highlight-lexical-token ((iface semantic-debug-interface) token)
   "For IFACE, highlight TOKEN in the source buffer .
 TOKEN is a lexical token."
-  (set-buffer (oref iface :source-buffer))
+  (set-buffer (oref iface source-buffer))
 
   (object-add-to-list iface 'overlays
 		      (semantic-lex-highlight-token token))
@@ -178,12 +178,12 @@ TOKEN is a lexical token."
   (semantic-debug-set-source-location iface (semantic-lex-token-start token))
   )
 
-(defmethod semantic-debug-highlight-rule ((iface semantic-debug-interface) nonterm &optional rule match)
+(cl-defmethod semantic-debug-highlight-rule ((iface semantic-debug-interface) nonterm &optional rule match)
   "For IFACE, highlight NONTERM in the parser buffer.
 NONTERM is the name of the rule currently being processed that shows up
 as a nonterminal (or tag) in the source buffer.
 If RULE and MATCH indices are specified, highlight those also."
-  (set-buffer (oref iface :parser-buffer))
+  (set-buffer (oref iface parser-buffer))
 
   (let* ((rules (semantic-find-tags-by-class 'nonterminal (current-buffer)))
 	 (nt (semantic-find-first-tag-by-name nonterm rules))
@@ -193,12 +193,12 @@ If RULE and MATCH indices are specified, highlight those also."
       ;; I know it is the first symbol appearing in the body of this token.
       (goto-char (semantic-tag-start nt))
 
-      (setq o (semantic-make-overlay (point) (progn (forward-sexp 1) (point))))
-      (semantic-overlay-put o 'face 'highlight)
+      (setq o (make-overlay (point) (progn (forward-sexp 1) (point))))
+      (overlay-put o 'face 'highlight)
 
       (object-add-to-list iface 'overlays o)
 
-      (semantic-debug-set-parser-location iface (semantic-overlay-start o))
+      (semantic-debug-set-parser-location iface (overlay-start o))
 
       (when (and rule match)
 
@@ -215,20 +215,20 @@ If RULE and MATCH indices are specified, highlight those also."
 	  (setq match (1- match)))
 
 	;; Now highlight the thingy we find there.
-	(setq o (semantic-make-overlay (point) (progn (forward-sexp 1) (point))))
-	(semantic-overlay-put o 'face 'highlight)
+	(setq o (make-overlay (point) (progn (forward-sexp 1) (point))))
+	(overlay-put o 'face 'highlight)
 
 	(object-add-to-list iface 'overlays o)
 
 	;; If we have a match for a sub-rule, have the parser position
 	;; move so we can see it in the output window for very long rules.
-	(semantic-debug-set-parser-location iface (semantic-overlay-start o))
+	(semantic-debug-set-parser-location iface (overlay-start o))
 
 	))))
 
-(defmethod semantic-debug-unhighlight ((iface semantic-debug-interface))
+(cl-defmethod semantic-debug-unhighlight ((iface semantic-debug-interface))
   "Remove all debugging overlays."
-  (mapc 'semantic-overlay-delete (oref iface overlays))
+  (mapc #'delete-overlay (oref iface overlays))
   (oset iface overlays nil))
 
 ;; Call from the parser at a breakpoint
@@ -271,12 +271,12 @@ on different types of return values."
    )
   "One frame representation.")
 
-(defmethod semantic-debug-frame-highlight ((frame semantic-debug-frame))
+(cl-defmethod semantic-debug-frame-highlight ((frame semantic-debug-frame))
   "Highlight one parser frame."
 
   )
 
-(defmethod semantic-debug-frame-info ((frame semantic-debug-frame))
+(cl-defmethod semantic-debug-frame-info ((frame semantic-debug-frame))
   "Display info about this one parser frame."
 
   )
@@ -360,7 +360,6 @@ Argument ONOFF is non-nil when we are entering debug mode.
 	(semantic-debug-current-interface
 	 (let ((parserb  (semantic-debug-find-parser-source)))
 	   (semantic-debug-interface
-	    "Debug Interface"
 	    :parser-buffer parserb
 	    :parser-local-map (with-current-buffer parserb
 				(current-local-map))
@@ -521,49 +520,49 @@ by overriding one of the command methods.  Be sure to use
 down to your parser later."
   :abstract t)
 
-(defmethod semantic-debug-parser-next ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-next ((parser semantic-debug-parser))
   "Execute next for this PARSER."
   (setq semantic-debug-user-command 'next)
   )
 
-(defmethod semantic-debug-parser-step ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-step ((parser semantic-debug-parser))
   "Execute a step for this PARSER."
   (setq semantic-debug-user-command 'step)
   )
 
-(defmethod semantic-debug-parser-go ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-go ((parser semantic-debug-parser))
   "Continue execution in this PARSER until the next breakpoint."
   (setq semantic-debug-user-command 'go)
   )
 
-(defmethod semantic-debug-parser-fail ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-fail ((parser semantic-debug-parser))
   "Continue execution in this PARSER until the next breakpoint."
   (setq semantic-debug-user-command 'fail)
   )
 
-(defmethod semantic-debug-parser-quit ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-quit ((parser semantic-debug-parser))
   "Continue execution in this PARSER until the next breakpoint."
   (setq semantic-debug-user-command 'quit)
   )
 
-(defmethod semantic-debug-parser-abort ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-abort ((parser semantic-debug-parser))
   "Continue execution in this PARSER until the next breakpoint."
   (setq semantic-debug-user-command 'abort)
   )
 
-(defmethod semantic-debug-parser-print-state ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-print-state ((parser semantic-debug-parser))
   "Print state for this PARSER at the current breakpoint."
   (with-slots (current-frame) semantic-debug-current-interface
     (when current-frame
       (semantic-debug-frame-info current-frame)
       )))
 
-(defmethod semantic-debug-parser-break ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-break ((parser semantic-debug-parser))
   "Set a breakpoint for this PARSER."
   )
 
 ;; Stack stuff
-(defmethod semantic-debug-parser-frames ((parser semantic-debug-parser))
+(cl-defmethod semantic-debug-parser-frames ((parser semantic-debug-parser))
   "Return a list of frames for the current parser.
 A frame is of the form:
   ( .. .what ? .. )

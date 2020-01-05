@@ -1,8 +1,8 @@
 ;;; ede/config.el --- Configuration Handler baseclass
 
-;; Copyright (C) 2014 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
 
-;; Author: Eric Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -55,6 +55,7 @@
 
 ;;; Code:
 (require 'ede)
+(require 'semantic/db)
 
 ;;; CONFIG
 ;;
@@ -113,7 +114,7 @@ initialize the :file slot of the persistent baseclass.")
 
 ;;; Rescanning
 
-(defmethod project-rescan ((this ede-project-with-config))
+(cl-defmethod project-rescan ((this ede-project-with-config))
   "Rescan this generic project from the sources."
   ;; Force the config to be rescanned.
   (oset this config nil)
@@ -123,7 +124,7 @@ initialize the :file slot of the persistent baseclass.")
 
 ;;; Project Methods for configuration
 
-(defmethod ede-config-get-configuration ((proj ede-project-with-config) &optional loadask)
+(cl-defmethod ede-config-get-configuration ((proj ede-project-with-config) &optional loadask)
   "Return the configuration for the project PROJ.
 If optional LOADASK is non-nil, then if a project file exists, and if
 the directory isn't on the `safe' list, ask to add it to the safe list."
@@ -138,7 +139,7 @@ the directory isn't on the `safe' list, ask to add it to the safe list."
       (setq config nil))
 
     (when (not config)
-      (let* ((top (oref proj :directory))
+      (let* ((top (oref proj directory))
 	     (fname (expand-file-name (oref proj config-file-basename) top))
 	     (class (oref proj config-class))
 	     (ignore-type nil))
@@ -170,28 +171,28 @@ the directory isn't on the `safe' list, ask to add it to the safe list."
 	(oset config project proj)))
     config))
 
-(defmethod ede-config-setup-configuration ((proj ede-project-with-config) config)
+(cl-defmethod ede-config-setup-configuration ((proj ede-project-with-config) config)
   "Default configuration setup method."
   nil)
 
-(defmethod ede-commit-project ((proj ede-project-with-config))
+(cl-defmethod ede-commit-project ((proj ede-project-with-config))
   "Commit any change to PROJ to its file."
   (let ((config (ede-config-get-configuration proj)))
     (ede-commit config)))
 
 ;;; Customization
 ;;
-(defmethod ede-customize ((proj ede-project-with-config))
+(cl-defmethod ede-customize ((proj ede-project-with-config))
   "Customize the EDE project PROJ by actually configuring the config object."
   (let ((config (ede-config-get-configuration proj t)))
     (eieio-customize-object config)))
 
-(defmethod ede-customize ((target ede-target-with-config))
+(cl-defmethod ede-customize ((target ede-target-with-config))
   "Customize the EDE TARGET by actually configuring the config object."
   ;; Nothing unique for the targets, use the project.
   (ede-customize-project))
 
-(defmethod eieio-done-customizing ((config ede-extra-config))
+(cl-defmethod eieio-done-customizing ((config ede-extra-config))
   "Called when EIEIO is done customizing the configuration object.
 We need to go back through the old buffers, and update them with
 the new configuration."
@@ -206,7 +207,7 @@ the new configuration."
 	(with-current-buffer b
 	  (ede-apply-target-options)))))))
 
-(defmethod ede-commit ((config ede-extra-config))
+(cl-defmethod ede-commit ((config ede-extra-config))
   "Commit all changes to the configuration to disk."
   ;; So long as the user is trying to safe this config, make sure they can
   ;; get at it again later.
@@ -253,11 +254,11 @@ the new configuration."
 This class brings in method overloads for running and debugging
 programs from a project.")
 
-(defmethod project-debug-target ((target ede-target-with-config-program))
+(cl-defmethod project-debug-target ((target ede-target-with-config-program))
   "Run the current project derived from TARGET in a debugger."
   (let* ((proj (ede-target-parent target))
 	 (config (ede-config-get-configuration proj t))
-	 (debug (oref config :debug-command))
+	 (debug (oref config debug-command))
 	 (cmd (read-from-minibuffer
 	       "Debug Command: "
 	       debug))
@@ -268,11 +269,13 @@ programs from a project.")
 	 (cmdsym (intern-soft (car cmdsplit))))
     (call-interactively cmdsym t)))
 
-(defmethod project-run-target ((target ede-target-with-config-program))
+(declare-function ede-shell-run-something "ede/shell")
+
+(cl-defmethod project-run-target ((target ede-target-with-config-program))
   "Run the current project derived from TARGET."
   (let* ((proj (ede-target-parent target))
 	 (config (ede-config-get-configuration proj t))
-	 (run (concat "./" (oref config :run-command)))
+	 (run (concat "./" (oref config run-command)))
 	 (cmd (read-from-minibuffer "Run (like this): " run)))
     (ede-shell-run-something target cmd)))
 
@@ -297,16 +300,16 @@ This class brings in method overloads for building.")
 (defclass ede-target-with-config-build ()
   ()
   "Class to mix into a project with configuration for builds.
-This class brings in method overloads for for building.")
+This class brings in method overloads for building.")
 
-(defmethod project-compile-project ((proj ede-project-with-config-build) &optional command)
+(cl-defmethod project-compile-project ((proj ede-project-with-config-build) &optional command)
   "Compile the entire current project PROJ.
 Argument COMMAND is the command to use when compiling."
   (let* ((config (ede-config-get-configuration proj t))
-	 (comp (oref config :build-command)))
+	 (comp (oref config build-command)))
     (compile comp)))
 
-(defmethod project-compile-target ((obj ede-target-with-config-build) &optional command)
+(cl-defmethod project-compile-target ((obj ede-target-with-config-build) &optional command)
   "Compile the current target OBJ.
 Argument COMMAND is the command to use for compiling the target."
   (project-compile-project (ede-current-project) command))
@@ -358,15 +361,16 @@ parsed again."))
 This target brings in methods used by Semantic to query
 the preprocessor map, and include paths.")
 
-(defmethod ede-preprocessor-map ((this ede-target-with-config-c))
+(cl-defmethod ede-preprocessor-map ((this ede-target-with-config-c))
   "Get the pre-processor map for some generic C code."
+  (require 'semantic/sb)
   (let* ((proj (ede-target-parent this))
 	 (root (ede-project-root proj))
 	 (config (ede-config-get-configuration proj))
 	 filemap
 	 )
     ;; Preprocessor files
-    (dolist (G (oref config :c-preprocessor-files))
+    (dolist (G (oref config c-preprocessor-files))
       (let ((table (semanticdb-file-table-object
 		    (ede-expand-filename root G))))
 	(when table
@@ -375,12 +379,12 @@ the preprocessor map, and include paths.")
 	  (setq filemap (append filemap (oref table lexical-table)))
 	  )))
     ;; The core table
-    (setq filemap (append filemap (oref config :c-preprocessor-table)))
+    (setq filemap (append filemap (oref config c-preprocessor-table)))
 
     filemap
     ))
 
-(defmethod ede-system-include-path ((this ede-target-with-config-c))
+(cl-defmethod ede-system-include-path ((this ede-target-with-config-c))
   "Get the system include path used by project THIS."
   (let* ((proj (ede-target-parent this))
 	(config (ede-config-get-configuration proj)))
@@ -402,9 +406,14 @@ java class path.")
   ()
   "Class to mix into a project to support java.")
 
-(defmethod ede-java-classpath ((proj ede-project-with-config-java))
+(eieio-declare-slots classpath)
+
+(cl-defmethod ede-java-classpath ((proj ede-project-with-config-java))
   "Return the classpath for this project."
-  (oref (ede-config-get-configuration proj) :classpath))
+  ;; The `classpath' slot only exists in the Java parts of cedet, and
+  ;; those have not been merged into Emacs.  Suppress the warning
+  ;; about the unknown slot by using `intern'.
+  (oref (ede-config-get-configuration proj) classpath))
 
 ;; Local variables:
 ;; generated-autoload-file: "loaddefs.el"

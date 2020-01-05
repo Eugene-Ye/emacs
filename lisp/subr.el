@@ -1,6 +1,6 @@
-;;; subr.el --- basic lisp subroutines for Emacs  -*- coding: utf-8; lexical-binding:t -*-
+;;; subr.el --- basic lisp subroutines for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1992, 1994-1995, 1999-2014 Free Software
+;; Copyright (C) 1985-1986, 1992, 1994-1995, 1999-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,22 +20,18 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
-
-;;; Commentary:
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 
-;; Beware: while this file has tag `utf-8', before it's compiled, it gets
-;; loaded as "raw-text", so non-ASCII chars won't work right during bootstrap.
+;; declare-function's args use &rest, not &optional, for compatibility
+;; with byte-compile-macroexpand-declare-function.
 
-(defmacro declare-function (_fn _file &optional _arglist _fileonly)
+(defmacro declare-function (_fn _file &rest _args)
   "Tell the byte-compiler that function FN is defined, in FILE.
-Optional ARGLIST is the argument list used by the function.
 The FILE argument is not used by the byte-compiler, but by the
 `check-declare' package, which checks that FILE contains a
-definition for FN.  ARGLIST is used by both the byte-compiler
-and `check-declare' to check for consistency.
+definition for FN.
 
 FILE can be either a Lisp file (in which case the \".el\"
 extension is optional), or a C file.  C files are expanded
@@ -46,19 +42,22 @@ declaration.  A FILE with an \"ext:\" prefix is an external file.
 `check-declare' will check such files if they are found, and skip
 them without error if they are not.
 
-FILEONLY non-nil means that `check-declare' will only check that
-FILE exists, not that it defines FN.  This is intended for
-function-definitions that `check-declare' does not recognize, e.g.
-`defstruct'.
+Optional ARGLIST specifies FN's arguments, or is t to not specify
+FN's arguments.  An omitted ARGLIST defaults to t, not nil: a nil
+ARGLIST specifies an empty argument list, and an explicit t
+ARGLIST is a placeholder that allows supplying a later arg.
 
-To specify a value for FILEONLY without passing an argument list,
-set ARGLIST to t.  This is necessary because nil means an
-empty argument list, rather than an unspecified one.
+Optional FILEONLY non-nil means that `check-declare' will check
+only that FILE exists, not that it defines FN.  This is intended
+for function definitions that `check-declare' does not recognize,
+e.g., `defstruct'.
 
 Note that for the purposes of `check-declare', this statement
 must be the first non-whitespace on a line.
 
 For more information, see Info node `(elisp)Declaring Functions'."
+  (declare (advertised-calling-convention
+	    (fn file &optional arglist fileonly) nil))
   ;; Does nothing - byte-compile-declare-function does the work.
   nil)
 
@@ -66,6 +65,7 @@ For more information, see Info node `(elisp)Declaring Functions'."
 ;;;; Basic Lisp macros.
 
 (defalias 'not 'null)
+(defalias 'sxhash 'sxhash-equal)
 
 (defmacro noreturn (form)
   "Evaluate FORM, expecting it not to return.
@@ -76,8 +76,8 @@ If FORM does return, signal an error."
 
 (defmacro 1value (form)
   "Evaluate FORM, expecting a constant return value.
-This is the global do-nothing version.  There is also `testcover-1value'
-that complains if FORM ever does return differing values."
+If FORM returns differing values when running under Testcover,
+Testcover will raise an error."
   (declare (debug t))
   form)
 
@@ -91,12 +91,13 @@ Info node `(elisp)Specification List' for details."
   `(put (quote ,symbol) 'edebug-form-spec (quote ,spec)))
 
 (defmacro lambda (&rest cdr)
-  "Return a lambda expression.
-A call of the form (lambda ARGS DOCSTRING INTERACTIVE BODY) is
-self-quoting; the result of evaluating the lambda expression is the
-expression itself.  The lambda expression may then be treated as a
-function, i.e., stored as the function value of a symbol, passed to
-`funcall' or `mapcar', etc.
+  "Return an anonymous function.
+Under dynamic binding, a call of the form (lambda ARGS DOCSTRING
+INTERACTIVE BODY) is self-quoting; the result of evaluating the
+lambda expression is the expression itself.  Under lexical
+binding, the result is a closure.  Regardless, the result is a
+function, i.e., it may be stored as the function value of a
+symbol, passed to `funcall' or `mapcar', etc.
 
 ARGS should take the same form as an argument list for a `defun'.
 DOCSTRING is an optional documentation string.
@@ -108,18 +109,69 @@ BODY should be a list of Lisp expressions.
 
 \(fn ARGS [DOCSTRING] [INTERACTIVE] BODY)"
   (declare (doc-string 2) (indent defun)
-           (debug (&define lambda-list
-                           [&optional stringp]
+           (debug (&define lambda-list lambda-doc
                            [&optional ("interactive" interactive)]
                            def-body)))
   ;; Note that this definition should not use backquotes; subr.el should not
   ;; depend on backquote.el.
   (list 'function (cons 'lambda cdr)))
 
-(defmacro setq-local (var val)
-  "Set variable VAR to value VAL in current buffer."
-  ;; Can't use backquote here, it's too early in the bootstrap.
-  (list 'set (list 'make-local-variable (list 'quote var)) val))
+(defmacro prog2 (form1 form2 &rest body)
+  "Eval FORM1, FORM2 and BODY sequentially; return value from FORM2.
+The value of FORM2 is saved during the evaluation of the
+remaining args, whose values are discarded."
+  (declare (indent 2) (debug t))
+  `(progn ,form1 (prog1 ,form2 ,@body)))
+
+(defmacro setq-default (&rest args)
+  "Set the default value of variable VAR to VALUE.
+VAR, the variable name, is literal (not evaluated);
+VALUE is an expression: it is evaluated and its value returned.
+The default value of a variable is seen in buffers
+that do not have their own values for the variable.
+
+More generally, you can use multiple variables and values, as in
+  (setq-default VAR VALUE VAR VALUE...)
+This sets each VAR's default value to the corresponding VALUE.
+The VALUE for the Nth VAR can refer to the new default values
+of previous VARs.
+
+\(fn [VAR VALUE]...)"
+  (declare (debug setq))
+  (let ((exps nil))
+    (while args
+      (push `(set-default ',(pop args) ,(pop args)) exps))
+    `(progn . ,(nreverse exps))))
+
+(defmacro setq-local (&rest pairs)
+  "Make variables in PAIRS buffer-local and assign them the corresponding values.
+
+PAIRS is a list of variable/value pairs.  For each variable, make
+it buffer-local and assign it the corresponding value.  The
+variables are literal symbols and should not be quoted.
+
+The second VALUE is not computed until after the first VARIABLE
+is set, and so on; each VALUE can use the new value of variables
+set earlier in the ‘setq-local’.  The return value of the
+‘setq-local’ form is the value of the last VALUE.
+
+\(fn [VARIABLE VALUE]...)"
+  (declare (debug setq))
+  (unless (zerop (mod (length pairs) 2))
+    (error "PAIRS must have an even number of variable/value members"))
+  (let ((expr nil))
+    (while pairs
+      (unless (symbolp (car pairs))
+        (error "Attempting to set a non-symbol: %s" (car pairs)))
+      ;; Can't use backquote here, it's too early in the bootstrap.
+      (setq expr
+            (cons
+             (list 'set
+                   (list 'make-local-variable (list 'quote (car pairs)))
+                   (car (cdr pairs)))
+             expr))
+      (setq pairs (cdr (cdr pairs))))
+    (macroexp-progn (nreverse expr))))
 
 (defmacro defvar-local (var val &optional docstring)
   "Define VAR as a buffer-local variable with default value VAL.
@@ -130,19 +182,10 @@ buffer-local wherever it is set."
   (list 'progn (list 'defvar var val docstring)
         (list 'make-variable-buffer-local (list 'quote var))))
 
-(defun apply-partially (fun &rest args)
-  "Return a function that is a partial application of FUN to ARGS.
-ARGS is a list of the first N arguments to pass to FUN.
-The result is a new function which does the same as FUN, except that
-the first N arguments are fixed at the values with which this function
-was called."
-  `(closure (t) (&rest args)
-            (apply ',fun ,@(mapcar (lambda (arg) `',arg) args) args)))
-
 (defmacro push (newelt place)
   "Add NEWELT to the list stored in the generalized variable PLACE.
 This is morally equivalent to (setf PLACE (cons NEWELT PLACE)),
-except that PLACE is only evaluated once (after NEWELT)."
+except that PLACE is evaluated only once (after NEWELT)."
   (declare (debug (form gv-place)))
   (if (symbolp place)
       ;; Important special case, to avoid triggering GV too early in
@@ -190,6 +233,14 @@ value of last one, or nil if there are none.
   (declare (indent 1) (debug t))
   (cons 'if (cons cond (cons nil body))))
 
+(defsubst xor (cond1 cond2)
+  "Return the boolean exclusive-or of COND1 and COND2.
+If only one of the arguments is non-nil, return it; otherwise
+return nil."
+  (declare (pure t) (side-effect-free error-free))
+  (cond ((not cond1) cond2)
+        ((not cond2) cond1)))
+
 (defmacro dolist (spec &rest body)
   "Loop over a list.
 Evaluate BODY with VAR bound to each car from LIST, in turn.
@@ -197,6 +248,10 @@ Then evaluate RESULT to get return value, default nil.
 
 \(fn (VAR LIST [RESULT]) BODY...)"
   (declare (indent 1) (debug ((symbolp form &optional form) body)))
+  (unless (consp spec)
+    (signal 'wrong-type-argument (list 'consp spec)))
+  (unless (<= 2 (length spec) 3)
+    (signal 'wrong-number-of-arguments (list '(2 . 3) (length spec))))
   ;; It would be cleaner to create an uninterned symbol,
   ;; but that uses a lot more space when many functions in many files
   ;; use dolist.
@@ -226,7 +281,7 @@ Then evaluate RESULT to get return value, default nil.
   "Loop a certain number of times.
 Evaluate BODY with VAR bound to successive integers running from 0,
 inclusive, to COUNT, exclusive.  Then evaluate RESULT to get
-the return value (nil if RESULT is omitted).
+the return value (nil if RESULT is omitted).  Its use is deprecated.
 
 \(fn (VAR COUNT [RESULT]) BODY...)"
   (declare (indent 1) (debug dolist))
@@ -279,33 +334,62 @@ See also `with-demoted-errors' that does something similar
 without silencing all errors."
   (declare (debug t) (indent 0))
   `(condition-case nil (progn ,@body) (error nil)))
+
+(defmacro ignore-error (condition &rest body)
+  "Execute BODY; if the error CONDITION occurs, return nil.
+Otherwise, return result of last form in BODY.
+
+CONDITION can also be a list of error conditions."
+  (declare (debug t) (indent 1))
+  `(condition-case nil (progn ,@body) (,condition nil)))
 
 ;;;; Basic Lisp functions.
 
-(defun ignore (&rest _ignore)
+(defvar gensym-counter 0
+  "Number used to construct the name of the next symbol created by `gensym'.")
+
+(defun gensym (&optional prefix)
+  "Return a new uninterned symbol.
+The name is made by appending `gensym-counter' to PREFIX.
+PREFIX is a string, and defaults to \"g\"."
+  (let ((num (prog1 gensym-counter
+               (setq gensym-counter (1+ gensym-counter)))))
+    (make-symbol (format "%s%d" (or prefix "g") num))))
+
+(defun ignore (&rest _arguments)
   "Do nothing and return nil.
-This function accepts any number of arguments, but ignores them."
+This function accepts any number of ARGUMENTS, but ignores them."
   (interactive)
   nil)
 
 ;; Signal a compile-error if the first arg is missing.
 (defun error (&rest args)
-  "Signal an error, making error message by passing all args to `format'.
+  "Signal an error, making a message by passing ARGS to `format-message'.
+Errors cause entry to the debugger when `debug-on-error' is non-nil.
+This can be overridden by `debug-ignored-errors'.
+
+To signal with MESSAGE without interpreting format characters
+like `%', `\\=`' and `\\='', use (error \"%s\" MESSAGE).
 In Emacs, the convention is that error messages start with a capital
 letter but *do not* end with a period.  Please follow this convention
 for the sake of consistency."
   (declare (advertised-calling-convention (string &rest args) "23.1"))
-  (signal 'error (list (apply 'format args))))
+  (signal 'error (list (apply #'format-message args))))
 
 (defun user-error (format &rest args)
-  "Signal a pilot error, making error message by passing all args to `format'.
+  "Signal a user error, making a message by passing ARGS to `format-message'.
+This is like `error' except that a user error (or \"pilot error\") comes
+from an incorrect manipulation by the user, not from an actual problem.
+In contrast with other errors, user errors normally do not cause
+entry to the debugger, even when `debug-on-error' is non-nil.
+This can be overridden by `debug-ignored-errors'.
+
+To signal with MESSAGE without interpreting format characters
+like `%', `\\=`' and `\\='', use (error \"%s\" MESSAGE).
 In Emacs, the convention is that error messages start with a capital
 letter but *do not* end with a period.  Please follow this convention
-for the sake of consistency.
-This is just like `error' except that `user-error's are expected to be the
-result of an incorrect manipulation on the part of the user, rather than the
-result of an actual problem."
-  (signal 'user-error (list (apply #'format format args))))
+for the sake of consistency."
+  (signal 'user-error (list (apply #'format-message format args))))
 
 (defun define-error (name message &optional parent)
   "Define NAME as a new error signal.
@@ -316,7 +400,7 @@ Defaults to `error'."
   (unless parent (setq parent 'error))
   (let ((conditions
          (if (consp parent)
-             (apply #'nconc
+             (apply #'append
                     (mapcar (lambda (parent)
                               (cons parent
                                     (or (get parent 'error-conditions)
@@ -336,30 +420,209 @@ configuration."
   (and (consp object)
        (eq (car object) 'frame-configuration)))
 
+(defun apply-partially (fun &rest args)
+  "Return a function that is a partial application of FUN to ARGS.
+ARGS is a list of the first N arguments to pass to FUN.
+The result is a new function which does the same as FUN, except that
+the first N arguments are fixed at the values with which this function
+was called."
+  (lambda (&rest args2)
+    (apply fun (append args args2))))
+
+(defun zerop (number)
+  "Return t if NUMBER is zero."
+  ;; Used to be in C, but it's pointless since (= 0 n) is faster anyway because
+  ;; = has a byte-code.
+  (declare (compiler-macro (lambda (_) `(= 0 ,number))))
+  (= 0 number))
+
+(defun fixnump (object)
+  "Return t if OBJECT is a fixnum."
+  (and (integerp object)
+       (<= most-negative-fixnum object most-positive-fixnum)))
+
+(defun bignump (object)
+  "Return t if OBJECT is a bignum."
+  (and (integerp object) (not (fixnump object))))
+
+(defun lsh (value count)
+  "Return VALUE with its bits shifted left by COUNT.
+If COUNT is negative, shifting is actually to the right.
+In this case, if VALUE is a negative fixnum treat it as unsigned,
+i.e., subtract 2 * most-negative-fixnum from VALUE before shifting it."
+  (when (and (< value 0) (< count 0))
+    (when (< value most-negative-fixnum)
+      (signal 'args-out-of-range (list value count)))
+    (setq value (logand (ash value -1) most-positive-fixnum))
+    (setq count (1+ count)))
+  (ash value count))
+
 
 ;;;; List functions.
 
-(defsubst caar (x)
+;; Note: `internal--compiler-macro-cXXr' was copied from
+;; `cl--compiler-macro-cXXr' in cl-macs.el.  If you amend either one,
+;; you may want to amend the other, too.
+(defun internal--compiler-macro-cXXr (form x)
+  (let* ((head (car form))
+         (n (symbol-name (car form)))
+         (i (- (length n) 2)))
+    (if (not (string-match "c[ad]+r\\'" n))
+        (if (and (fboundp head) (symbolp (symbol-function head)))
+            (internal--compiler-macro-cXXr (cons (symbol-function head) (cdr form))
+                                     x)
+          (error "Compiler macro for cXXr applied to non-cXXr form"))
+      (while (> i (match-beginning 0))
+        (setq x (list (if (eq (aref n i) ?a) 'car 'cdr) x))
+        (setq i (1- i)))
+      x)))
+
+(defun caar (x)
   "Return the car of the car of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
   (car (car x)))
 
-(defsubst cadr (x)
+(defun cadr (x)
   "Return the car of the cdr of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
   (car (cdr x)))
 
-(defsubst cdar (x)
+(defun cdar (x)
   "Return the cdr of the car of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
   (cdr (car x)))
 
-(defsubst cddr (x)
+(defun cddr (x)
   "Return the cdr of the cdr of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
   (cdr (cdr x)))
+
+(defun caaar (x)
+  "Return the `car' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (car x))))
+
+(defun caadr (x)
+  "Return the `car' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (cdr x))))
+
+(defun cadar (x)
+  "Return the `car' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (car x))))
+
+(defun caddr (x)
+  "Return the `car' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (cdr x))))
+
+(defun cdaar (x)
+  "Return the `cdr' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (car x))))
+
+(defun cdadr (x)
+  "Return the `cdr' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (cdr x))))
+
+(defun cddar (x)
+  "Return the `cdr' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (car x))))
+
+(defun cdddr (x)
+  "Return the `cdr' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (cdr x))))
+
+(defun caaaar (x)
+  "Return the `car' of the `car' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (car (car x)))))
+
+(defun caaadr (x)
+  "Return the `car' of the `car' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (car (cdr x)))))
+
+(defun caadar (x)
+  "Return the `car' of the `car' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (cdr (car x)))))
+
+(defun caaddr (x)
+  "Return the `car' of the `car' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (cdr (cdr x)))))
+
+(defun cadaar (x)
+  "Return the `car' of the `cdr' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (car (car x)))))
+
+(defun cadadr (x)
+  "Return the `car' of the `cdr' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (car (cdr x)))))
+
+(defun caddar (x)
+  "Return the `car' of the `cdr' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (cdr (car x)))))
+
+(defun cadddr (x)
+  "Return the `car' of the `cdr' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (cdr (cdr x)))))
+
+(defun cdaaar (x)
+  "Return the `cdr' of the `car' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (car (car x)))))
+
+(defun cdaadr (x)
+  "Return the `cdr' of the `car' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (car (cdr x)))))
+
+(defun cdadar (x)
+  "Return the `cdr' of the `car' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (cdr (car x)))))
+
+(defun cdaddr (x)
+  "Return the `cdr' of the `car' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (cdr (cdr x)))))
+
+(defun cddaar (x)
+  "Return the `cdr' of the `cdr' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (car (car x)))))
+
+(defun cddadr (x)
+  "Return the `cdr' of the `cdr' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (car (cdr x)))))
+
+(defun cdddar (x)
+  "Return the `cdr' of the `cdr' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (cdr (car x)))))
+
+(defun cddddr (x)
+  "Return the `cdr' of the `cdr' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (cdr (cdr x)))))
 
 (defun last (list &optional n)
   "Return the last link of LIST.  Its car is the last element.
 If LIST is nil, return nil.
 If N is non-nil, return the Nth-to-last link of LIST.
 If N is bigger than the length of LIST, return LIST."
+  (declare (side-effect-free t))
   (if n
       (and (>= n 0)
            (let ((m (safe-length list)))
@@ -371,11 +634,12 @@ If N is bigger than the length of LIST, return LIST."
   "Return a copy of LIST with the last N elements removed.
 If N is omitted or nil, the last element is removed from the
 copy."
+  (declare (side-effect-free t))
   (if (and n (<= n 0)) list
     (nbutlast (copy-sequence list) n)))
 
 (defun nbutlast (list &optional n)
-  "Modifies LIST to remove the last N elements.
+  "Modify LIST to remove the last N elements.
 If N is omitted or nil, remove the last element."
   (let ((m (length list)))
     (or n (setq n 1))
@@ -384,46 +648,55 @@ If N is omitted or nil, remove the last element."
 	   (if (> n 0) (setcdr (nthcdr (- (1- m) n) list) nil))
 	   list))))
 
-(defun zerop (number)
-  "Return t if NUMBER is zero."
-  ;; Used to be in C, but it's pointless since (= 0 n) is faster anyway because
-  ;; = has a byte-code.
-  (declare (compiler-macro (lambda (_) `(= 0 ,number))))
-  (= 0 number))
+;; The function's definition was moved to fns.c,
+;; but it's easier to set properties here.
+(put 'proper-list-p 'pure t)
+(put 'proper-list-p 'side-effect-free 'error-free)
 
 (defun delete-dups (list)
   "Destructively remove `equal' duplicates from LIST.
 Store the result in LIST and return it.  LIST must be a proper list.
 Of several `equal' occurrences of an element in LIST, the first
 one is kept."
-  (let ((tail list))
-    (while tail
-      (setcdr tail (delete (car tail) (cdr tail)))
-      (setq tail (cdr tail))))
+  (let ((l (length list)))
+    (if (> l 100)
+        (let ((hash (make-hash-table :test #'equal :size l))
+              (tail list) retail)
+          (puthash (car list) t hash)
+          (while (setq retail (cdr tail))
+            (let ((elt (car retail)))
+              (if (gethash elt hash)
+                  (setcdr tail (cdr retail))
+                (puthash elt t hash)
+                (setq tail retail)))))
+      (let ((tail list))
+        (while tail
+          (setcdr tail (delete (car tail) (cdr tail)))
+          (setq tail (cdr tail))))))
   list)
 
-;; See http://lists.gnu.org/archive/html/emacs-devel/2013-05/msg00204.html
+;; See https://lists.gnu.org/r/emacs-devel/2013-05/msg00204.html
 (defun delete-consecutive-dups (list &optional circular)
   "Destructively remove `equal' consecutive duplicates from LIST.
 First and last elements are considered consecutive if CIRCULAR is
 non-nil."
   (let ((tail list) last)
-    (while (consp tail)
+    (while (cdr tail)
       (if (equal (car tail) (cadr tail))
 	  (setcdr tail (cddr tail))
-	(setq last (car tail)
+	(setq last tail
 	      tail (cdr tail))))
     (if (and circular
-	     (cdr list)
-	     (equal last (car list)))
-	(nbutlast list)
-      list)))
+	     last
+	     (equal (car tail) (car list)))
+	(setcdr last nil)))
+  list)
 
 (defun number-sequence (from &optional to inc)
   "Return a sequence of numbers from FROM to TO (both inclusive) as a list.
 INC is the increment used between numbers in the sequence and defaults to 1.
 So, the Nth element of the list is (+ FROM (* N INC)) where N counts from
-zero.  TO is only included if there is an N for which TO = FROM + N * INC.
+zero.  TO is included only if there is an N for which TO = FROM + N * INC.
 If TO is nil or numerically equal to FROM, return (FROM).
 If INC is positive and TO is less than FROM, or INC is negative
 and TO is larger than FROM, return nil.
@@ -471,7 +744,8 @@ argument VECP, this copies vectors as well as conses."
 		(setq newcar (copy-tree (car tree) vecp)))
 	    (push newcar result))
 	  (setq tree (cdr tree)))
-	(nconc (nreverse result) tree))
+	(nconc (nreverse result)
+               (if (and vecp (vectorp tree)) (copy-tree tree vecp) tree)))
     (if (and vecp (vectorp tree))
 	(let ((i (length (setq tree (copy-sequence tree)))))
 	  (while (>= (setq i (1- i)) 0)
@@ -493,6 +767,7 @@ If that is non-nil, the element matches; then `assoc-default'
 
 If no element matches, the value is nil.
 If TEST is omitted or nil, `equal' is used."
+  (declare (side-effect-free t))
   (let (found (tail alist) value)
     (while (and tail (not found))
       (let ((elt (car tail)))
@@ -501,45 +776,40 @@ If TEST is omitted or nil, `equal' is used."
       (setq tail (cdr tail)))
     value))
 
-(defun assoc-ignore-case (key alist)
-  "Like `assoc', but ignores differences in case and text representation.
-KEY must be a string.  Upper-case and lower-case letters are treated as equal.
-Unibyte strings are converted to multibyte for comparison."
-  (declare (obsolete assoc-string "22.1"))
-  (assoc-string key alist t))
-
-(defun assoc-ignore-representation (key alist)
-  "Like `assoc', but ignores differences in text representation.
-KEY must be a string.
-Unibyte strings are converted to multibyte for comparison."
-  (declare (obsolete assoc-string "22.1"))
-  (assoc-string key alist nil))
-
 (defun member-ignore-case (elt list)
   "Like `member', but ignore differences in case and text representation.
 ELT must be a string.  Upper-case and lower-case letters are treated as equal.
 Unibyte strings are converted to multibyte for comparison.
 Non-strings in LIST are ignored."
+  (declare (side-effect-free t))
   (while (and list
 	      (not (and (stringp (car list))
 			(eq t (compare-strings elt 0 nil (car list) 0 nil t)))))
     (setq list (cdr list)))
   list)
 
-(defun assq-delete-all (key alist)
-  "Delete from ALIST all elements whose car is `eq' to KEY.
+(defun assoc-delete-all (key alist &optional test)
+  "Delete from ALIST all elements whose car is KEY.
+Compare keys with TEST.  Defaults to `equal'.
 Return the modified alist.
 Elements of ALIST that are not conses are ignored."
+  (unless test (setq test #'equal))
   (while (and (consp (car alist))
-	      (eq (car (car alist)) key))
+	      (funcall test (caar alist) key))
     (setq alist (cdr alist)))
   (let ((tail alist) tail-cdr)
     (while (setq tail-cdr (cdr tail))
       (if (and (consp (car tail-cdr))
-	       (eq (car (car tail-cdr)) key))
+	       (funcall test (caar tail-cdr) key))
 	  (setcdr tail (cdr tail-cdr))
 	(setq tail tail-cdr))))
   alist)
+
+(defun assq-delete-all (key alist)
+  "Delete from ALIST all elements whose car is `eq' to KEY.
+Return the modified alist.
+Elements of ALIST that are not conses are ignored."
+  (assoc-delete-all key alist #'eq))
 
 (defun rassq-delete-all (value alist)
   "Delete from ALIST all elements whose cdr is `eq' to VALUE.
@@ -556,18 +826,46 @@ Elements of ALIST that are not conses are ignored."
 	(setq tail tail-cdr))))
   alist)
 
-(defun alist-get (key alist &optional default remove)
-  "Get the value associated to KEY in ALIST.
-DEFAULT is the value to return if KEY is not found in ALIST.
-REMOVE, if non-nil, means that when setting this element, we should
-remove the entry if the new value is `eql' to DEFAULT."
+(defun alist-get (key alist &optional default remove testfn)
+  "Find the first element of ALIST whose `car' equals KEY and return its `cdr'.
+If KEY is not found in ALIST, return DEFAULT.
+Equality with KEY is tested by TESTFN, defaulting to `eq'.
+
+You can use `alist-get' in PLACE expressions.  This will modify
+an existing association (more precisely, the first one if
+multiple exist), or add a new element to the beginning of ALIST,
+destructively modifying the list stored in ALIST.
+
+Example:
+
+   (setq foo \\='((a . 0)))
+   (setf (alist-get \\='a foo) 1
+         (alist-get \\='b foo) 2)
+
+   foo => ((b . 2) (a . 1))
+
+
+When using it to set a value, optional argument REMOVE non-nil
+means to remove KEY from ALIST if the new value is `eql' to
+DEFAULT (more precisely the first found association will be
+deleted from the alist).
+
+Example:
+
+  (setq foo \\='((a . 1) (b . 2)))
+  (setf (alist-get \\='b foo nil \\='remove) nil)
+
+  foo => ((a . 1))"
   (ignore remove) ;;Silence byte-compiler.
-  (let ((x (assq key alist)))
+  (let ((x (if (not testfn)
+               (assq key alist)
+             (assoc key alist testfn))))
     (if x (cdr x) default)))
 
 (defun remove (elt seq)
   "Return a copy of SEQ with all occurrences of ELT removed.
 SEQ must be a list, vector, or string.  The comparison is done with `equal'."
+  (declare (side-effect-free t))
   (if (nlistp seq)
       ;; If SEQ isn't a list, there's no need to copy SEQ because
       ;; `delete' will return a new object.
@@ -578,6 +876,7 @@ SEQ must be a list, vector, or string.  The comparison is done with `equal'."
   "Return LIST with all occurrences of ELT removed.
 The comparison is done with `eq'.  Contrary to `delq', this does not use
 side-effects, and the argument LIST is not modified."
+  (declare (side-effect-free t))
   (while (and (eq elt (car list)) (setq list (cdr list))))
   (if (memq elt list)
       (delq elt (copy-sequence list))
@@ -587,9 +886,13 @@ side-effects, and the argument LIST is not modified."
 
 (defun kbd (keys)
   "Convert KEYS to the internal Emacs key representation.
-KEYS should be a string constant in the format used for
-saving keyboard macros (see `edmacro-mode')."
-  ;; Don't use a defalias, since the `pure' property is only true for
+KEYS should be a string in the format returned by commands such
+as `C-h k' (`describe-key').
+This is the same format used for saving keyboard macros (see
+`edmacro-mode').
+
+For an approximate inverse of this, see `key-description'."
+  ;; Don't use a defalias, since the `pure' property is true only for
   ;; the calling convention of `kbd'.
   (read-kbd-macro keys))
 (put 'kbd 'pure t)
@@ -598,8 +901,9 @@ saving keyboard macros (see `edmacro-mode')."
   "Beep to tell the user this binding is undefined."
   (interactive)
   (ding)
-  (message "%s is undefined" (key-description (this-single-command-keys)))
-  (setq defining-kbd-macro nil)
+  (if defining-kbd-macro
+      (error "%s is undefined" (key-description (this-single-command-keys)))
+    (message "%s is undefined" (key-description (this-single-command-keys))))
   (force-mode-line-update)
   ;; If this is a down-mouse event, don't reset prefix-arg;
   ;; pass it to the command run by the up event.
@@ -651,7 +955,7 @@ AFTER should be a single event type--a symbol or a character, not a sequence.
 
 Bindings are always added before any inherited map.
 
-The order of bindings in a keymap only matters when it is used as
+The order of bindings in a keymap matters only when it is used as
 a menu, so this function is not useful for non-menu keymaps."
   (unless after (setq after t))
   (or (keymapp keymap)
@@ -814,7 +1118,12 @@ above 127 (such as ISO Latin-1) can be included if you use a vector.
 Note that if KEY has a local binding in the current buffer,
 that local binding will continue to shadow any global binding
 that you make with this function."
-  (interactive "KSet key globally: \nCSet key %s to command: ")
+  (interactive
+   (let* ((menu-prompting nil)
+          (key (read-key-sequence "Set key globally: " nil t)))
+     (list key
+           (read-command (format "Set key %s to command: "
+                                 (key-description key))))))
   (or (vectorp key) (stringp key)
       (signal 'wrong-type-argument (list 'arrayp key)))
   (define-key (current-global-map) key command))
@@ -858,9 +1167,9 @@ KEY is a string or vector representing a sequence of keystrokes."
 
 (defun substitute-key-definition (olddef newdef keymap &optional oldmap prefix)
   "Replace OLDDEF with NEWDEF for any keys in KEYMAP now defined as OLDDEF.
-In other words, OLDDEF is replaced with NEWDEF where ever it appears.
+In other words, OLDDEF is replaced with NEWDEF wherever it appears.
 Alternatively, if optional fourth argument OLDMAP is specified, we redefine
-in KEYMAP as NEWDEF those keys which are defined as OLDDEF in OLDMAP.
+in KEYMAP as NEWDEF those keys that are defined as OLDDEF in OLDMAP.
 
 If you don't specify OLDMAP, you can usually get the same results
 in a cleaner way with command remapping, like this:
@@ -910,7 +1219,7 @@ in a cleaner way with command remapping, like this:
 	    (nconc (nreverse skipped) newdef)))
       ;; Look past a symbol that names a keymap.
       (setq inner-def
-	    (or (indirect-function defn t) defn))
+	    (or (indirect-function defn) defn))
       ;; For nested keymaps, we use `inner-def' rather than `defn' so as to
       ;; avoid autoloading a keymap.  This is mostly done to preserve the
       ;; original non-autoloading behavior of pre-map-keymap times.
@@ -932,7 +1241,7 @@ in a cleaner way with command remapping, like this:
 
 (defvar global-map nil
   "Default global keymap mapping Emacs keyboard input into commands.
-The value is a keymap which is usually (but not necessarily) Emacs's
+The value is a keymap that is usually (but not necessarily) Emacs's
 global map.")
 
 (defvar esc-map nil
@@ -953,6 +1262,10 @@ The normal global definition of the character C-x indirects to this keymap.")
 (defalias 'ctl-x-5-prefix ctl-x-5-map)
 (define-key ctl-x-map "5" 'ctl-x-5-prefix)
 
+(defvar tab-prefix-map (make-sparse-keymap)
+  "Keymap for tab-bar related commands.")
+(define-key ctl-x-map "t" tab-prefix-map)
+
 
 ;;;; Event manipulation functions.
 
@@ -968,12 +1281,14 @@ The normal global definition of the character C-x indirects to this keymap.")
 			  c)))
 	    key)))
 
-(defun eventp (obj)
-  "True if the argument is an event object."
-  (when obj
-    (or (integerp obj)
-        (and (symbolp obj) obj (not (keywordp obj)))
-        (and (consp obj) (symbolp (car obj))))))
+(defun eventp (object)
+  "Return non-nil if OBJECT is an input event or event object."
+  (or (integerp object)
+      (and (if (consp object)
+               (setq object (car object))
+             object)
+           (symbolp object)
+           (not (keywordp object)))))
 
 (defun event-modifiers (event)
   "Return a list of symbols representing the modifier keys in event EVENT.
@@ -1078,11 +1393,22 @@ See `event-start' for a description of the value returned."
   "Return the multi-click count of EVENT, a click or drag event.
 The return value is a positive integer."
   (if (and (consp event) (integerp (nth 2 event))) (nth 2 event) 1))
+
+(defsubst event-line-count (event)
+  "Return the line count of EVENT, a mousewheel event.
+The return value is a positive integer."
+  (if (and (consp event) (integerp (nth 3 event))) (nth 3 event) 1))
 
 ;;;; Extracting fields of the positions in an event.
 
 (defun posnp (obj)
-  "Return non-nil if OBJ appears to be a valid `posn' object."
+  "Return non-nil if OBJ appears to be a valid `posn' object specifying a window.
+A `posn' object is returned from functions such as `event-start'.
+If OBJ is a valid `posn' object, but specifies a frame rather
+than a window, return nil."
+  ;; FIXME: Correct the behavior of this function so that all valid
+  ;; `posn' objects are recognized, after updating other code that
+  ;; depends on its present behavior.
   (and (windowp (car-safe obj))
        (atom (car-safe (setq obj (cdr obj))))                ;AREA-OR-POS.
        (integerp (car-safe (car-safe (setq obj (cdr obj))))) ;XOFFSET.
@@ -1142,24 +1468,28 @@ For a scroll-bar event, the result column is 0, and the row
 corresponds to the vertical position of the click in the scroll bar.
 POSITION should be a list of the form returned by the `event-start'
 and `event-end' functions."
-  (let* ((pair   (posn-x-y position))
-	 (window (posn-window position))
-	 (area   (posn-area position)))
+  (let* ((pair            (posn-x-y position))
+         (frame-or-window (posn-window position))
+         (frame           (if (framep frame-or-window)
+                              frame-or-window
+                            (window-frame frame-or-window)))
+         (window          (when (windowp frame-or-window) frame-or-window))
+         (area            (posn-area position)))
     (cond
-     ((null window)
+     ((null frame-or-window)
       '(0 . 0))
      ((eq area 'vertical-scroll-bar)
       (cons 0 (scroll-bar-scale pair (1- (window-height window)))))
      ((eq area 'horizontal-scroll-bar)
       (cons (scroll-bar-scale pair (window-width window)) 0))
      (t
-      (let* ((frame (if (framep window) window (window-frame window)))
-	     ;; FIXME: This should take line-spacing properties on
-	     ;; newlines into account.
-	     (spacing (when (display-graphic-p frame)
-			(or (with-current-buffer (window-buffer window)
-			      line-spacing)
-			    (frame-parameter frame 'line-spacing)))))
+      ;; FIXME: This should take line-spacing properties on
+      ;; newlines into account.
+      (let* ((spacing (when (display-graphic-p frame)
+                        (or (with-current-buffer
+                                (window-buffer (frame-selected-window frame))
+                              line-spacing)
+                            (frame-parameter frame 'line-spacing)))))
 	(cond ((floatp spacing)
 	       (setq spacing (truncate (* spacing
 					  (frame-char-height frame)))))
@@ -1172,14 +1502,14 @@ and `event-end' functions."
   "Return the window row number in POSITION and character number in that row.
 
 Return nil if POSITION does not contain the actual position; in that case
-\`posn-col-row' can be used to get approximate values.
+`posn-col-row' can be used to get approximate values.
 POSITION should be a list of the form returned by the `event-start'
 and `event-end' functions.
 
 This function does not account for the width on display, like the
 number of visual columns taken by a TAB or image.  If you need
 the coordinates of POSITION in character units, you should use
-\`posn-col-row', not this function."
+`posn-col-row', not this function."
   (nth 6 position))
 
 (defsubst posn-timestamp (position)
@@ -1228,112 +1558,69 @@ be a list of the form returned by `event-start' and `event-end'."
 
 ;;;; Obsolescent names for functions.
 
-(define-obsolete-function-alias 'window-dot 'window-point "22.1")
-(define-obsolete-function-alias 'set-window-dot 'set-window-point "22.1")
-(define-obsolete-function-alias 'read-input 'read-string "22.1")
-(define-obsolete-function-alias 'show-buffer 'set-window-buffer "22.1")
-(define-obsolete-function-alias 'eval-current-buffer 'eval-buffer "22.1")
-(define-obsolete-function-alias 'string-to-int 'string-to-number "22.1")
-
 (make-obsolete 'forward-point "use (+ (point) N) instead." "23.1")
 (make-obsolete 'buffer-has-markers-at nil "24.3")
 
-(defun insert-string (&rest args)
-  "Mocklisp-compatibility insert function.
-Like the function `insert' except that any argument that is a number
-is converted into a string by expressing it in decimal."
-  (declare (obsolete insert "22.1"))
-  (dolist (el args)
-    (insert (if (integerp el) (number-to-string el) el))))
+(make-obsolete 'invocation-directory "use the variable of the same name."
+               "27.1")
+(make-obsolete 'invocation-name "use the variable of the same name." "27.1")
 
-(defun makehash (&optional test)
-  (declare (obsolete make-hash-table "22.1"))
-  (make-hash-table :test (or test 'eql)))
+;; We used to declare string-to-unibyte obsolete, but it is a valid
+;; way of getting a unibyte string that can be indexed by bytes, when
+;; the original string has raw bytes in their internal multibyte
+;; representation.  This can be useful when one needs to examine
+;; individual bytes at known offsets from the string beginning.
+;; (make-obsolete 'string-to-unibyte   "use `encode-coding-string'." "26.1")
+;; string-to-multibyte is also sometimes useful (and there's no good
+;; general replacement for it), so it's also been revived in Emacs 27.1.
+;; (make-obsolete 'string-to-multibyte "use `decode-coding-string'." "26.1")
+;; bug#23850
+(make-obsolete 'string-as-unibyte   "use `encode-coding-string'." "26.1")
+(make-obsolete 'string-make-unibyte   "use `encode-coding-string'." "26.1")
+(make-obsolete 'string-as-multibyte "use `decode-coding-string'." "26.1")
+(make-obsolete 'string-make-multibyte "use `decode-coding-string'." "26.1")
 
 (defun log10 (x)
   "Return (log X 10), the log base 10 of X."
   (declare (obsolete log "24.4"))
   (log x 10))
 
-;; These are used by VM and some old programs
-(defalias 'focus-frame 'ignore "")
-(make-obsolete 'focus-frame "it does nothing." "22.1")
-(defalias 'unfocus-frame 'ignore "")
-(make-obsolete 'unfocus-frame "it does nothing." "22.1")
-(make-obsolete 'make-variable-frame-local
-	       "explicitly check for a frame-parameter instead." "22.2")
 (set-advertised-calling-convention
  'all-completions '(string collection &optional predicate) "23.1")
 (set-advertised-calling-convention 'unintern '(name obarray) "23.3")
+(set-advertised-calling-convention 'indirect-function '(object) "25.1")
 (set-advertised-calling-convention 'redirect-frame-focus '(frame focus-frame) "24.3")
-(set-advertised-calling-convention 'decode-char '(ch charset) "21.4")
-(set-advertised-calling-convention 'encode-char '(ch charset) "21.4")
+(set-advertised-calling-convention 'libxml-parse-xml-region '(start end &optional base-url) "27.1")
+(set-advertised-calling-convention 'libxml-parse-html-region '(start end &optional base-url) "27.1")
 
 ;;;; Obsolescence declarations for variables, and aliases.
-
-;; Special "default-FOO" variables which contain the default value of
-;; the "FOO" variable are nasty.  Their implementation is brittle, and
-;; slows down several unrelated variable operations; furthermore, they
-;; can lead to really odd behavior if you decide to make them
-;; buffer-local.
-
-;; Not used at all in Emacs, last time I checked:
-(make-obsolete-variable 'default-mode-line-format 'mode-line-format "23.2")
-(make-obsolete-variable 'default-header-line-format 'header-line-format "23.2")
-(make-obsolete-variable 'default-line-spacing 'line-spacing "23.2")
-(make-obsolete-variable 'default-abbrev-mode 'abbrev-mode "23.2")
-(make-obsolete-variable 'default-ctl-arrow 'ctl-arrow "23.2")
-(make-obsolete-variable 'default-truncate-lines 'truncate-lines "23.2")
-(make-obsolete-variable 'default-left-margin 'left-margin "23.2")
-(make-obsolete-variable 'default-tab-width 'tab-width "23.2")
-(make-obsolete-variable 'default-case-fold-search 'case-fold-search "23.2")
-(make-obsolete-variable 'default-left-margin-width 'left-margin-width "23.2")
-(make-obsolete-variable 'default-right-margin-width 'right-margin-width "23.2")
-(make-obsolete-variable 'default-left-fringe-width 'left-fringe-width "23.2")
-(make-obsolete-variable 'default-right-fringe-width 'right-fringe-width "23.2")
-(make-obsolete-variable 'default-fringes-outside-margins 'fringes-outside-margins "23.2")
-(make-obsolete-variable 'default-scroll-bar-width 'scroll-bar-width "23.2")
-(make-obsolete-variable 'default-vertical-scroll-bar 'vertical-scroll-bar "23.2")
-(make-obsolete-variable 'default-indicate-empty-lines 'indicate-empty-lines "23.2")
-(make-obsolete-variable 'default-indicate-buffer-boundaries 'indicate-buffer-boundaries "23.2")
-(make-obsolete-variable 'default-fringe-indicator-alist 'fringe-indicator-alist "23.2")
-(make-obsolete-variable 'default-fringe-cursor-alist 'fringe-cursor-alist "23.2")
-(make-obsolete-variable 'default-scroll-up-aggressively 'scroll-up-aggressively "23.2")
-(make-obsolete-variable 'default-scroll-down-aggressively 'scroll-down-aggressively "23.2")
-(make-obsolete-variable 'default-fill-column 'fill-column "23.2")
-(make-obsolete-variable 'default-cursor-type 'cursor-type "23.2")
-(make-obsolete-variable 'default-cursor-in-non-selected-windows 'cursor-in-non-selected-windows "23.2")
-(make-obsolete-variable 'default-buffer-file-coding-system 'buffer-file-coding-system "23.2")
-(make-obsolete-variable 'default-major-mode 'major-mode "23.2")
-(make-obsolete-variable 'default-enable-multibyte-characters
-      "use enable-multibyte-characters or set-buffer-multibyte instead" "23.2")
 
 (make-obsolete-variable 'define-key-rebound-commands nil "23.2")
 (make-obsolete-variable 'redisplay-end-trigger-functions 'jit-lock-register "23.1")
 (make-obsolete-variable 'deferred-action-list 'post-command-hook "24.1")
 (make-obsolete-variable 'deferred-action-function 'post-command-hook "24.1")
+(make-obsolete-variable 'redisplay-dont-pause nil "24.5")
 (make-obsolete 'window-redisplay-end-trigger nil "23.1")
 (make-obsolete 'set-window-redisplay-end-trigger nil "23.1")
 
+(make-obsolete 'run-window-configuration-change-hook nil "27.1")
 (make-obsolete 'process-filter-multibyte-p nil "23.1")
 (make-obsolete 'set-process-filter-multibyte nil "23.1")
 
-;; Lisp manual only updated in 22.1.
-(define-obsolete-variable-alias 'executing-macro 'executing-kbd-macro
-  "before 19.34")
-
-(define-obsolete-variable-alias 'x-lost-selection-hooks
-  'x-lost-selection-functions "22.1")
-(define-obsolete-variable-alias 'x-sent-selection-hooks
-  'x-sent-selection-functions "22.1")
+(make-obsolete-variable 'command-debug-status
+                        "expect it to be removed in a future version." "25.2")
 
 ;; This was introduced in 21.4 for pre-unicode unification.  That
-;; usage was rendered obsolete in 23.1 which uses Unicode internally.
+;; usage was rendered obsolete in 23.1, which uses Unicode internally.
 ;; Other uses are possible, so this variable is not _really_ obsolete,
 ;; but Stefan insists to mark it so.
 (make-obsolete-variable 'translation-table-for-input nil "23.1")
 
+(make-obsolete-variable 'x-gtk-use-window-move nil "26.1")
+
 (defvaralias 'messages-buffer-max-lines 'message-log-max)
+(define-obsolete-variable-alias 'inhibit-null-byte-detection
+  'inhibit-nul-byte-detection "27.1")
 
 ;;;; Alternate names for functions - these are not being phased out.
 
@@ -1341,6 +1628,7 @@ is converted into a string by expressing it in decimal."
 (defalias 'send-region 'process-send-region)
 (defalias 'string= 'string-equal)
 (defalias 'string< 'string-lessp)
+(defalias 'string> 'string-greaterp)
 (defalias 'move-marker 'set-marker)
 (defalias 'rplaca 'setcar)
 (defalias 'rplacd 'setcdr)
@@ -1362,12 +1650,23 @@ is converted into a string by expressing it in decimal."
 
 ;;;; Hook manipulation functions.
 
-(defun add-hook (hook function &optional append local)
+(defun add-hook (hook function &optional depth local)
+  ;; Note: the -100..100 depth range is arbitrary and was chosen to match the
+  ;; range used in add-function.
   "Add to the value of HOOK the function FUNCTION.
 FUNCTION is not added if already present.
-FUNCTION is added (if necessary) at the beginning of the hook list
-unless the optional argument APPEND is non-nil, in which case
-FUNCTION is added at the end.
+
+The place where the function is added depends on the DEPTH
+parameter.  DEPTH defaults to 0.  By convention, it should be
+a number between -100 and 100 where 100 means that the function
+should be at the very end of the list, whereas -100 means that
+the function should always come first.
+Since nothing is \"always\" true, don't use 100 nor -100.
+When two functions have the same depth, the new one gets added after the
+old one if depth is strictly positive and before otherwise.
+
+For backward compatibility reasons, a symbol other than nil is
+interpreted as a DEPTH of 90.
 
 The optional fourth argument, LOCAL, if non-nil, says to modify
 the hook's buffer-local value rather than its global value.
@@ -1380,6 +1679,7 @@ HOOK is void, it is first set to nil.  If HOOK's value is a single
 function, it is changed to a list of functions."
   (or (boundp hook) (set hook nil))
   (or (default-boundp hook) (set-default hook nil))
+  (unless (numberp depth) (setq depth (if depth 90 0)))
   (if local (unless (local-variable-if-set-p hook)
 	      (set (make-local-variable hook) (list t)))
     ;; Detect the case where make-local-variable was used on a hook
@@ -1392,12 +1692,25 @@ function, it is changed to a list of functions."
       (setq hook-value (list hook-value)))
     ;; Do the actual addition if necessary
     (unless (member function hook-value)
-      (when (stringp function)
+      (when (stringp function)          ;FIXME: Why?
 	(setq function (purecopy function)))
+      (when (or (get hook 'hook--depth-alist) (not (zerop depth)))
+        ;; Note: The main purpose of the above `when' test is to avoid running
+        ;; this `setf' before `gv' is loaded during bootstrap.
+        (setf (alist-get function (get hook 'hook--depth-alist)
+                         0 'remove #'equal)
+              depth))
       (setq hook-value
-	    (if append
+	    (if (< 0 depth)
 		(append hook-value (list function))
-	      (cons function hook-value))))
+	      (cons function hook-value)))
+      (let ((depth-alist (get hook 'hook--depth-alist)))
+        (when depth-alist
+          (setq hook-value
+                (sort (if (< 0 depth) hook-value (copy-sequence hook-value))
+                      (lambda (f1 f2)
+                        (< (alist-get f1 depth-alist 0 nil #'equal)
+                           (alist-get f2 depth-alist 0 nil #'equal))))))))
     ;; Set the actual variable
     (if local
 	(progn
@@ -1448,10 +1761,12 @@ the hook's buffer-local value rather than its default value."
 (defmacro letrec (binders &rest body)
   "Bind variables according to BINDERS then eval BODY.
 The value of the last form in BODY is returned.
-Each element of BINDERS is a list (SYMBOL VALUEFORM) which binds
+Each element of BINDERS is a list (SYMBOL VALUEFORM) that binds
 SYMBOL to the value of VALUEFORM.
-All symbols are bound before the VALUEFORMs are evalled."
-  ;; Only useful in lexical-binding mode.
+
+The main difference between this macro and `let'/`let*' is that
+all symbols are bound before any of the VALUEFORMs are evalled."
+  ;; Useful only in lexical-binding mode.
   ;; As a special-form, we could implement it more efficiently (and cleanly,
   ;; making the vars actually unbound during evaluation of the binders).
   (declare (debug let) (indent 1))
@@ -1485,6 +1800,10 @@ FUN is then called once."
   (declare (indent 2) (debug (form sexp body))
            (obsolete "use a <foo>-function variable modified by `add-function'."
                      "24.4"))
+  `(subr--with-wrapper-hook-no-warnings ,hook ,args ,@body))
+
+(defmacro subr--with-wrapper-hook-no-warnings (hook args &rest body)
+  "Like (with-wrapper-hook HOOK ARGS BODY), but without warnings."
   ;; We need those two gensyms because CL's lexical scoping is not available
   ;; for function arguments :-(
   (let ((funs (make-symbol "funs"))
@@ -1549,9 +1868,10 @@ can do the job."
           exp
         (let* ((sym (cadr list-var))
                (append (eval append))
-               (msg (format "`add-to-list' can't use lexical var `%s'; use `push' or `cl-pushnew'"
-                            sym))
-               ;; Big ugly hack so we only output a warning during
+               (msg (format-message
+                     "`add-to-list' can't use lexical var `%s'; use `push' or `cl-pushnew'"
+                     sym))
+               ;; Big ugly hack, so we output a warning only during
                ;; byte-compilation, and so we can use
                ;; byte-compile-not-lexical-var-p to silence the warning
                ;; when a defvar has been seen but not yet executed.
@@ -1559,7 +1879,7 @@ can do the job."
                           ;; FIXME: We should also emit a warning for let-bound
                           ;; variables with dynamic binding.
                           (when (assq sym byte-compile--lexical-environment)
-                            (byte-compile-log-warning msg t :error))))
+                            (byte-compile-report-error msg :fill))))
                (code
                 (macroexp-let2 macroexp-copyable-p x element
                   `(if ,(if compare-fn
@@ -1638,10 +1958,11 @@ Return the new history list.
 If MAXELT is non-nil, it specifies the maximum length of the history.
 Otherwise, the maximum history length is the value of the `history-length'
 property on symbol HISTORY-VAR, if set, or the value of the `history-length'
-variable.
+variable.  The possible values of maximum length have the same meaning as
+the values of `history-length'.
 Remove duplicates of NEWELT if `history-delete-duplicates' is non-nil.
 If optional fourth arg KEEP-ALL is non-nil, add NEWELT to history even
-if it is empty or a duplicate."
+if it is empty or duplicates the most recent entry in the history."
   (unless maxelt
     (setq maxelt (or (get history-var 'history-length)
 		     history-length)))
@@ -1657,22 +1978,25 @@ if it is empty or a duplicate."
 	  (setq history (delete newelt history)))
       (setq history (cons newelt history))
       (when (integerp maxelt)
-	(if (= 0 maxelt)
+        (if (>= 0 maxelt)
 	    (setq history nil)
 	  (setq tail (nthcdr (1- maxelt) history))
 	  (when (consp tail)
-	    (setcdr tail nil)))))
-    (set history-var history)))
+            (setcdr tail nil))))
+      (set history-var history))))
 
 
 ;;;; Mode hooks.
 
 (defvar delay-mode-hooks nil
   "If non-nil, `run-mode-hooks' should delay running the hooks.")
-(defvar delayed-mode-hooks nil
+(defvar-local delayed-mode-hooks nil
   "List of delayed mode hooks waiting to be run.")
-(make-variable-buffer-local 'delayed-mode-hooks)
 (put 'delay-mode-hooks 'permanent-local t)
+
+(defvar-local delayed-after-hook-functions nil
+  "List of delayed :after-hook forms waiting to be run.
+These forms come from `define-derived-mode'.")
 
 (defvar change-major-mode-after-body-hook nil
   "Normal hook run in major mode functions, before the mode hooks.")
@@ -1682,27 +2006,47 @@ if it is empty or a duplicate."
 
 (defun run-mode-hooks (&rest hooks)
   "Run mode hooks `delayed-mode-hooks' and HOOKS, or delay HOOKS.
-If the variable `delay-mode-hooks' is non-nil, does not run any hooks,
+Call `hack-local-variables' to set up file local and directory local
+variables.
+
+If the variable `delay-mode-hooks' is non-nil, does not do anything,
 just adds the HOOKS to the list `delayed-mode-hooks'.
 Otherwise, runs hooks in the sequence: `change-major-mode-after-body-hook',
-`delayed-mode-hooks' (in reverse order), HOOKS, and finally
-`after-change-major-mode-hook'.  Major mode functions should use
-this instead of `run-hooks' when running their FOO-mode-hook."
+`delayed-mode-hooks' (in reverse order), HOOKS, then runs
+`hack-local-variables', runs the hook `after-change-major-mode-hook', and
+finally evaluates the functions in `delayed-after-hook-functions' (see
+`define-derived-mode').
+
+Major mode functions should use this instead of `run-hooks' when
+running their FOO-mode-hook."
   (if delay-mode-hooks
       ;; Delaying case.
       (dolist (hook hooks)
 	(push hook delayed-mode-hooks))
     ;; Normal case, just run the hook as before plus any delayed hooks.
     (setq hooks (nconc (nreverse delayed-mode-hooks) hooks))
+    (and (bound-and-true-p syntax-propertize-function)
+         (not (local-variable-p 'parse-sexp-lookup-properties))
+         ;; `syntax-propertize' sets `parse-sexp-lookup-properties' for us, but
+         ;; in order for the sexp primitives to automatically call
+         ;; `syntax-propertize' we need `parse-sexp-lookup-properties' to be
+         ;; set first.
+         (setq-local parse-sexp-lookup-properties t))
     (setq delayed-mode-hooks nil)
-    (apply 'run-hooks (cons 'change-major-mode-after-body-hook hooks))
-    (run-hooks 'after-change-major-mode-hook)))
+    (apply #'run-hooks (cons 'change-major-mode-after-body-hook hooks))
+    (if (buffer-file-name)
+        (with-demoted-errors "File local-variables error: %s"
+          (hack-local-variables 'no-mode)))
+    (run-hooks 'after-change-major-mode-hook)
+    (dolist (fun (prog1 (nreverse delayed-after-hook-functions)
+                    (setq delayed-after-hook-functions nil)))
+      (funcall fun))))
 
 (defmacro delay-mode-hooks (&rest body)
   "Execute BODY, but delay any `run-mode-hooks'.
 These hooks will be executed by the first following call to
-`run-mode-hooks' that occurs outside any `delayed-mode-hooks' form.
-Only affects hooks run in the current buffer."
+`run-mode-hooks' that occurs outside any `delay-mode-hooks' form.
+Affects only hooks run in the current buffer."
   (declare (debug t) (indent 0))
   `(progn
      (make-local-variable 'delay-mode-hooks)
@@ -1711,13 +2055,52 @@ Only affects hooks run in the current buffer."
 
 ;; PUBLIC: find if the current mode derives from another.
 
+(defun provided-mode-derived-p (mode &rest modes)
+  "Non-nil if MODE is derived from one of MODES or their aliases.
+Uses the `derived-mode-parent' property of the symbol to trace backwards.
+If you just want to check `major-mode', use `derived-mode-p'."
+  (while
+      (and
+       (not (memq mode modes))
+       (let* ((parent (get mode 'derived-mode-parent))
+              (parentfn (symbol-function parent)))
+         (setq mode (if (and parentfn (symbolp parentfn)) parentfn parent)))))
+  mode)
+
 (defun derived-mode-p (&rest modes)
   "Non-nil if the current major mode is derived from one of MODES.
 Uses the `derived-mode-parent' property of the symbol to trace backwards."
-  (let ((parent major-mode))
-    (while (and (not (memq parent modes))
-		(setq parent (get parent 'derived-mode-parent))))
-    parent))
+  (apply #'provided-mode-derived-p major-mode modes))
+
+(defvar-local major-mode--suspended nil)
+(put 'major-mode--suspended 'permanent-local t)
+
+(defun major-mode-suspend ()
+  "Exit current major mode, remembering it."
+  (let* ((prev-major-mode (or major-mode--suspended
+			      (unless (eq major-mode 'fundamental-mode)
+			        major-mode))))
+    (kill-all-local-variables)
+    (setq-local major-mode--suspended prev-major-mode)))
+
+(defun major-mode-restore (&optional avoided-modes)
+  "Restore major mode earlier suspended with `major-mode-suspend'.
+If there was no earlier suspended major mode, then fallback to `normal-mode',
+tho trying to avoid AVOIDED-MODES."
+  (if major-mode--suspended
+      (funcall (prog1 major-mode--suspended
+                 (kill-local-variable 'major-mode--suspended)))
+    (let ((auto-mode-alist
+           (let ((alist (copy-sequence auto-mode-alist)))
+             (dolist (mode avoided-modes)
+               (setq alist (rassq-delete-all mode alist)))
+             alist))
+          (magic-fallback-mode-alist
+           (let ((alist (copy-sequence magic-fallback-mode-alist)))
+             (dolist (mode avoided-modes)
+               (setq alist (rassq-delete-all mode alist)))
+             alist)))
+      (normal-mode))))
 
 ;;;; Minor modes.
 
@@ -1735,7 +2118,7 @@ Uses the `derived-mode-parent' property of the symbol to trace backwards."
 
 This is an XEmacs-compatibility function.  Use `define-minor-mode' instead.
 
-TOGGLE is a symbol which is the name of a buffer-local variable that
+TOGGLE is a symbol that is the name of a buffer-local variable that
 is toggled on or off to say whether the minor mode is active or not.
 
 NAME specifies what will appear in the mode line when the minor mode
@@ -1824,6 +2207,25 @@ If TOGGLE has a `:menu-tag', that is used for the menu item's label."
 ;;   "Return the name of the file from which AUTOLOAD will be loaded.
 ;; \n\(fn AUTOLOAD)")
 
+(defun define-symbol-prop (symbol prop val)
+  "Define the property PROP of SYMBOL to be VAL.
+This is to `put' what `defalias' is to `fset'."
+  ;; Can't use `cl-pushnew' here (nor `push' on (cdr foo)).
+  ;; (cl-pushnew symbol (alist-get prop
+  ;;                               (alist-get 'define-symbol-props
+  ;;                                          current-load-list)))
+  (let ((sps (assq 'define-symbol-props current-load-list)))
+    (unless sps
+      (setq sps (list 'define-symbol-props))
+      (push sps current-load-list))
+    (let ((ps (assq prop sps)))
+      (unless ps
+        (setq ps (list prop))
+        (setcdr sps (cons ps (cdr sps))))
+      (unless (member symbol (cdr ps))
+        (setcdr ps (cons symbol (cdr ps))))))
+  (put symbol prop val))
+
 (defun symbol-file (symbol &optional type)
   "Return the name of the file that defined SYMBOL.
 The value is normally an absolute file name.  It can also be nil,
@@ -1833,27 +2235,30 @@ file name without extension.
 
 If TYPE is nil, then any kind of definition is acceptable.  If
 TYPE is `defun', `defvar', or `defface', that specifies function
-definition, variable definition, or face definition only."
+definition, variable definition, or face definition only.
+Otherwise TYPE is assumed to be a symbol property."
   (if (and (or (null type) (eq type 'defun))
 	   (symbolp symbol)
 	   (autoloadp (symbol-function symbol)))
       (nth 1 (symbol-function symbol))
-    (let ((files load-history)
-	  file)
-      (while files
-	(if (if type
-		(if (eq type 'defvar)
-		    ;; Variables are present just as their names.
-		    (member symbol (cdr (car files)))
-		  ;; Other types are represented as (TYPE . NAME).
-		  (member (cons type symbol) (cdr (car files))))
-	      ;; We accept all types, so look for variable def
-	      ;; and then for any other kind.
-	      (or (member symbol (cdr (car files)))
-		  (rassq symbol (cdr (car files)))))
-	    (setq file (car (car files)) files nil))
-	(setq files (cdr files)))
-      file)))
+    (catch 'found
+      (pcase-dolist (`(,file . ,elems) load-history)
+	(when (if type
+		  (if (eq type 'defvar)
+		      ;; Variables are present just as their names.
+		      (member symbol elems)
+		    ;; Many other types are represented as (TYPE . NAME).
+		    (or (member (cons type symbol) elems)
+                        (memq symbol (alist-get type
+                                                (alist-get 'define-symbol-props
+                                                           elems)))))
+	        ;; We accept all types, so look for variable def
+	        ;; and then for any other kind.
+	        (or (member symbol elems)
+                    (let ((match (rassq symbol elems)))
+		      (and match
+		           (not (eq 'require (car match)))))))
+          (throw 'found file))))))
 
 (defun locate-library (library &optional nosuffix path interactive-call)
   "Show the precise file name of Emacs library LIBRARY.
@@ -1890,6 +2295,35 @@ and the file name is displayed in the echo area."
 
 ;;;; Process stuff.
 
+(defun start-process (name buffer program &rest program-args)
+  "Start a program in a subprocess.  Return the process object for it.
+NAME is name for process.  It is modified if necessary to make it unique.
+BUFFER is the buffer (or buffer name) to associate with the process.
+
+Process output (both standard output and standard error streams)
+goes at end of BUFFER, unless you specify a filter function to
+handle the output.  BUFFER may also be nil, meaning that this
+process is not associated with any buffer.
+
+PROGRAM is the program file name.  It is searched for in `exec-path'
+\(which see).  If nil, just associate a pty with the buffer.  Remaining
+arguments PROGRAM-ARGS are strings to give program as arguments.
+
+If you want to separate standard output from standard error, use
+`make-process' or invoke the command through a shell and redirect
+one of them using the shell syntax.
+
+The process runs in `default-directory' if that is local (as
+determined by `unhandled-file-name-directory'), or \"~\"
+otherwise.  If you want to run a process in a remote directory
+use `start-file-process'."
+  (unless (fboundp 'make-process)
+    (error "Emacs was compiled without subprocess support"))
+  (apply #'make-process
+	 (append (list :name name :buffer buffer)
+		 (if program
+		     (list :command (cons program program-args))))))
+
 (defun process-lines (program &rest args)
   "Execute PROGRAM with ARGS, returning its output as a list of lines.
 Signal an error if the program returns with a non-zero exit status."
@@ -1908,27 +2342,13 @@ Signal an error if the program returns with a non-zero exit status."
 	(nreverse lines)))))
 
 (defun process-live-p (process)
-  "Returns non-nil if PROCESS is alive.
+  "Return non-nil if PROCESS is alive.
 A process is considered alive if its status is `run', `open',
 `listen', `connect' or `stop'.  Value is nil if PROCESS is not a
 process."
   (and (processp process)
        (memq (process-status process)
 	     '(run open listen connect stop))))
-
-;; compatibility
-
-(make-obsolete
- 'process-kill-without-query
- "use `process-query-on-exit-flag' or `set-process-query-on-exit-flag'."
- "22.1")
-(defun process-kill-without-query (process &optional _flag)
-  "Say no query needed if PROCESS is running when Emacs is exited.
-Optional second argument if non-nil says to require a query.
-Value is t if a query was formerly required."
-  (let ((old (process-query-on-exit-flag process)))
-    (set-process-query-on-exit-flag process nil)
-    old))
 
 (defun process-kill-buffer-query-function ()
   "Ask before killing a buffer that has a running process."
@@ -1954,6 +2374,10 @@ This is the last value stored with `(process-put PROCESS PROPNAME VALUE)'."
 It can be retrieved with `(process-get PROCESS PROPNAME)'."
   (set-process-plist process
 		     (plist-put (process-plist process) propname value)))
+
+(defun memory-limit ()
+  "Return an estimate of Emacs virtual memory usage, divided by 1024."
+  (or (cdr (assq 'vsize (process-attributes (emacs-pid)))) 0))
 
 
 ;;;; Input and display facilities.
@@ -1981,9 +2405,9 @@ some sort of escape sequence, the ambiguity is resolved via `read-key-delay'."
                 ;; Wait long enough that Emacs has the time to receive and
                 ;; process all the raw events associated with the single-key.
                 ;; But don't wait too long, or the user may find the delay
-                ;; annoying (or keep hitting more keys which may then get
+                ;; annoying (or keep hitting more keys, which may then get
                 ;; lost or misinterpreted).
-                ;; This is only relevant for keys which Emacs perceives as
+                ;; This is relevant only for keys that Emacs perceives as
                 ;; "prefixes", such as C-x (because of the C-x 8 map in
                 ;; key-translate-table and the C-x @ map in function-key-map)
                 ;; or ESC (because of terminal escape sequences in
@@ -2002,8 +2426,12 @@ some sort of escape sequence, the ambiguity is resolved via `read-key-delay'."
         (progn
 	  (use-global-map
            (let ((map (make-sparse-keymap)))
-             ;; Don't hide the menu-bar and tool-bar entries.
+             ;; Don't hide the menu-bar, tab-bar and tool-bar entries.
              (define-key map [menu-bar] (lookup-key global-map [menu-bar]))
+             (define-key map [tab-bar]
+	       ;; This hack avoids evaluating the :filter (Bug#9922).
+	       (or (cdr (assq 'tab-bar global-map))
+		   (lookup-key global-map [tab-bar])))
              (define-key map [tool-bar]
 	       ;; This hack avoids evaluating the :filter (Bug#9922).
 	       (or (cdr (assq 'tool-bar global-map))
@@ -2018,6 +2446,10 @@ some sort of escape sequence, the ambiguity is resolved via `read-key-delay'."
                 (aref keys 1)
               key)))
       (cancel-timer timer)
+      ;; For some reason, `read-key(-sequence)' leaves the prompt in the echo
+      ;; area, whereas `read-event' seems to empty it just before returning
+      ;; (bug#22714).  So, let's mimic the behavior of `read-event'.
+      (message nil)
       (use-global-map old-global-map))))
 
 (defvar read-passwd-map
@@ -2029,12 +2461,18 @@ some sort of escape sequence, the ambiguity is resolved via `read-key-delay'."
     map)
   "Keymap used while reading passwords.")
 
+(defun read-password--hide-password ()
+  (let ((beg (minibuffer-prompt-end)))
+    (dotimes (i (1+ (- (buffer-size) beg)))
+      (put-text-property (+ i beg) (+ 1 i beg)
+                         'display (string (or read-hide-char ?*))))))
+
 (defun read-passwd (prompt &optional confirm default)
   "Read a password, prompting with PROMPT, and return it.
 If optional CONFIRM is non-nil, read the password twice to make sure.
 Optional DEFAULT is a default password to use instead of empty input.
 
-This function echoes `.' for each character that the user types.
+This function echoes `*' for each character that the user types.
 You could let-bind `read-hide-char' to another hiding character, though.
 
 Once the caller uses the password, it can erase the password
@@ -2046,22 +2484,14 @@ by doing (clear-string STRING)."
                 (second (read-passwd "Confirm password: " nil default)))
             (if (equal first second)
                 (progn
-                  (and (arrayp second) (clear-string second))
+                  (and (arrayp second) (not (eq first second)) (clear-string second))
                   (setq success first))
               (and (arrayp first) (clear-string first))
               (and (arrayp second) (clear-string second))
               (message "Password not repeated accurately; please start over")
               (sit-for 1))))
         success)
-    (let ((hide-chars-fun
-           (lambda (beg end _len)
-             (clear-this-command-keys)
-             (setq beg (min end (max (minibuffer-prompt-end)
-                                     beg)))
-             (dotimes (i (- end beg))
-               (put-text-property (+ i beg) (+ 1 i beg)
-                                  'display (string (or read-hide-char ?.))))))
-          minibuf)
+    (let (minibuf)
       (minibuffer-with-setup-hook
           (lambda ()
             (setq minibuf (current-buffer))
@@ -2072,25 +2502,31 @@ by doing (clear-string STRING)."
             (use-local-map read-passwd-map)
             (setq-local inhibit-modification-hooks nil) ;bug#15501.
 	    (setq-local show-paren-mode nil)		;bug#16091.
-            (add-hook 'after-change-functions hide-chars-fun nil 'local))
+            (add-hook 'post-command-hook 'read-password--hide-password nil t))
         (unwind-protect
             (let ((enable-recursive-minibuffers t)
-		  (read-hide-char (or read-hide-char ?.)))
+		  (read-hide-char (or read-hide-char ?*)))
               (read-string prompt nil t default)) ; t = "no history"
           (when (buffer-live-p minibuf)
             (with-current-buffer minibuf
               ;; Not sure why but it seems that there might be cases where the
               ;; minibuffer is not always properly reset later on, so undo
               ;; whatever we've done here (bug#11392).
-              (remove-hook 'after-change-functions hide-chars-fun 'local)
+              (remove-hook 'after-change-functions 'read-password--hide-password
+                           'local)
               (kill-local-variable 'post-self-insert-hook)
               ;; And of course, don't keep the sensitive data around.
               (erase-buffer))))))))
 
-(defun read-number (prompt &optional default)
+(defvar read-number-history nil
+  "The default history for the `read-number' function.")
+
+(defun read-number (prompt &optional default hist)
   "Read a numeric value in the minibuffer, prompting with PROMPT.
 DEFAULT specifies a default value to return if the user just types RET.
 The value of DEFAULT is inserted into PROMPT.
+HIST specifies a history list variable.  See `read-from-minibuffer'
+for details of the HIST argument.
 This function is used by the `interactive' code letter `n'."
   (let ((n nil)
 	(default1 (if (consp default) (car default) default)))
@@ -2104,7 +2540,7 @@ This function is used by the `interactive' code letter `n'."
     (while
 	(progn
 	  (let ((str (read-from-minibuffer
-		      prompt nil nil nil nil
+		      prompt nil nil nil (or hist 'read-number-history)
 		      (when default
 			(if (consp default)
 			    (mapcar 'number-to-string (delq nil default))
@@ -2166,7 +2602,7 @@ keyboard-quit events while waiting for a valid input."
     char))
 
 (defun sit-for (seconds &optional nodisp obsolete)
-  "Perform redisplay, then wait for SECONDS seconds or until input is available.
+  "Redisplay, then wait for SECONDS seconds.  Stop when input is available.
 SECONDS may be a floating-point value.
 \(On operating systems that do not support waiting for fractions of a
 second, floating-point values are rounded down to the nearest integer.)
@@ -2183,8 +2619,8 @@ in milliseconds; this was useful when Emacs was built without
 floating point support."
   (declare (advertised-calling-convention (seconds &optional nodisp) "22.1"))
   ;; This used to be implemented in C until the following discussion:
-  ;; http://lists.gnu.org/archive/html/emacs-devel/2006-07/msg00401.html
-  ;; Then it was moved to C using an implementation based on an idle timer,
+  ;; https://lists.gnu.org/r/emacs-devel/2006-07/msg00401.html
+  ;; Then it was moved here using an implementation based on an idle timer,
   ;; which was then replaced by the use of read-event.
   (if (numberp nodisp)
       (setq seconds (+ seconds (* 1e-3 nodisp))
@@ -2196,7 +2632,18 @@ floating point support."
     t)
    ((input-pending-p t)
     nil)
-   ((<= seconds 0)
+   ((or (<= seconds 0)
+        ;; We are going to call read-event below, which will record
+        ;; the next key as part of the macro, even if that key
+        ;; invokes kmacro-end-macro, so if we are recording a macro,
+        ;; the macro will recursively call itself.  In addition, when
+        ;; that key is removed from unread-command-events, it will be
+        ;; recorded the second time, so the macro will have each key
+        ;; doubled.  This used to happen if a macro was defined with
+        ;; Flyspell mode active (because Flyspell calls sit-for in its
+        ;; post-command-hook, see bug #21329.)  To avoid all that, we
+        ;; simply disable the wait when we are recording a macro.
+        defining-kbd-macro)
     (or nodisp (redisplay)))
    (t
     (or nodisp (redisplay))
@@ -2211,7 +2658,7 @@ floating point support."
                   (read-event nil t seconds))))
       (or (null read)
 	  (progn
-            ;; https://lists.gnu.org/archive/html/emacs-devel/2006-10/msg00394.html
+            ;; https://lists.gnu.org/r/emacs-devel/2006-10/msg00394.html
             ;; We want `read' appear in the next command's this-command-event
             ;; but not in the current one.
             ;; By pushing (cons t read), we indicate that `read' has not
@@ -2223,11 +2670,152 @@ floating point support."
 	    (push (cons t read) unread-command-events)
 	    nil))))))
 
+
+(defvar read-char-history nil
+  "The default history for the `read-char-from-minibuffer' function.")
+
+(defvar read-char-from-minibuffer-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map minibuffer-local-map)
+
+    (define-key map [remap self-insert-command] 'read-char-from-minibuffer-insert-char)
+
+    (define-key map [remap recenter-top-bottom] 'minibuffer-recenter-top-bottom)
+    (define-key map [remap scroll-up-command] 'minibuffer-scroll-up-command)
+    (define-key map [remap scroll-down-command] 'minibuffer-scroll-down-command)
+    (define-key map [remap scroll-other-window] 'minibuffer-scroll-other-window)
+    (define-key map [remap scroll-other-window-down] 'minibuffer-scroll-other-window-down)
+
+    map)
+  "Keymap for the `read-char-from-minibuffer' function.")
+
+(defconst read-char-from-minibuffer-map-hash
+  (make-hash-table :weakness 'key :test 'equal))
+
+(defun read-char-from-minibuffer-insert-char ()
+  "Insert the character you type in the minibuffer and exit.
+Discard all previous input before inserting and exiting the minibuffer."
+  (interactive)
+  (delete-minibuffer-contents)
+  (insert last-command-event)
+  (exit-minibuffer))
+
+(defun read-char-from-minibuffer-insert-other ()
+  "Handle inserting of a character other than allowed.
+Display an error on trying to insert a disallowed character.
+Also discard all previous input in the minibuffer."
+  (interactive)
+  (delete-minibuffer-contents)
+  (ding)
+  (discard-input)
+  (minibuffer-message "Wrong answer")
+  (sit-for 2))
+
+(defvar empty-history)
+
+(defun read-char-from-minibuffer (prompt &optional chars history)
+  "Read a character from the minibuffer, prompting for PROMPT.
+Like `read-char', but uses the minibuffer to read and return a character.
+When CHARS is non-nil, any input that is not one of CHARS is ignored.
+When HISTORY is a symbol, then allows navigating in a history.
+The navigation commands are `M-p' and `M-n', with `RET' to select
+a character from history."
+  (let* ((empty-history '())
+         (map (if (consp chars)
+                  (or (gethash chars read-char-from-minibuffer-map-hash)
+                      (puthash chars
+                               (let ((map (make-sparse-keymap)))
+                                 (set-keymap-parent map read-char-from-minibuffer-map)
+                                 (dolist (char chars)
+                                   (define-key map (vector char)
+                                     'read-char-from-minibuffer-insert-char))
+                                 (define-key map [remap self-insert-command]
+                                   'read-char-from-minibuffer-insert-other)
+                                 map)
+                               read-char-from-minibuffer-map-hash))
+                read-char-from-minibuffer-map))
+         (result
+          (read-from-minibuffer prompt nil map nil
+                                (or history 'empty-history)))
+         (char
+          (if (> (length result) 0)
+              ;; We have a string (with one character), so return the first one.
+              (elt result 0)
+            ;; The default value is RET.
+            (when history (push "\r" (symbol-value history)))
+            ?\r)))
+    ;; Display the question with the answer.
+    (message "%s%s" prompt (char-to-string char))
+    char))
+
+
 ;; Behind display-popup-menus-p test.
 (declare-function x-popup-dialog "menu.c" (position contents &optional header))
 
+(defvar y-or-n-p-history-variable nil
+  "History list symbol to add `y-or-n-p' answers to.")
+
+(defvar y-or-n-p-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map minibuffer-local-map)
+
+    (dolist (symbol '(act act-and-show act-and-exit automatic))
+      (define-key map (vector 'remap symbol) 'y-or-n-p-insert-y))
+
+    (define-key map [remap skip] 'y-or-n-p-insert-n)
+
+    (dolist (symbol '(help backup undo undo-all edit edit-replacement
+                      delete-and-edit ignore self-insert-command))
+      (define-key map (vector 'remap symbol) 'y-or-n-p-insert-other))
+
+    (define-key map [remap recenter] 'minibuffer-recenter-top-bottom)
+    (define-key map [remap scroll-up] 'minibuffer-scroll-up-command)
+    (define-key map [remap scroll-down] 'minibuffer-scroll-down-command)
+    (define-key map [remap scroll-other-window] 'minibuffer-scroll-other-window)
+    (define-key map [remap scroll-other-window-down] 'minibuffer-scroll-other-window-down)
+
+    (define-key map [escape] 'abort-recursive-edit)
+    (dolist (symbol '(quit exit exit-prefix))
+      (define-key map (vector 'remap symbol) 'abort-recursive-edit))
+
+    ;; FIXME: try catch-all instead of explicit bindings:
+    ;; (define-key map [remap t] 'y-or-n-p-insert-other)
+
+    map)
+  "Keymap that defines additional bindings for `y-or-n-p' answers.")
+
+(defun y-or-n-p-insert-y ()
+  "Insert the answer \"y\" and exit the minibuffer of `y-or-n-p'.
+Discard all previous input before inserting and exiting the minibuffer."
+  (interactive)
+  (delete-minibuffer-contents)
+  (insert "y")
+  (exit-minibuffer))
+
+(defun y-or-n-p-insert-n ()
+  "Insert the answer \"n\" and exit the minibuffer of `y-or-n-p'.
+Discard all previous input before inserting and exiting the minibuffer."
+  (interactive)
+  (delete-minibuffer-contents)
+  (insert "n")
+  (exit-minibuffer))
+
+(defun y-or-n-p-insert-other ()
+  "Handle inserting of other answers in the minibuffer of `y-or-n-p'.
+Display an error on trying to insert a disallowed character.
+Also discard all previous input in the minibuffer."
+  (interactive)
+  (delete-minibuffer-contents)
+  (ding)
+  (discard-input)
+  (minibuffer-message "Please answer y or n")
+  (sit-for 2))
+
+(defvar empty-history)
+
 (defun y-or-n-p (prompt)
-  "Ask user a \"y or n\" question.  Return t if answer is \"y\".
+  "Ask user a \"y or n\" question.
+Return t if answer is \"y\" and nil if it is \"n\".
 PROMPT is the string to display to ask the question.  It should
 end in a space; `y-or-n-p' adds \"(y or n) \" to it.
 
@@ -2240,16 +2828,13 @@ documentation of that variable for more information.  In this
 case, the useful bindings are `act', `skip', `recenter',
 `scroll-up', `scroll-down', and `quit'.
 An `act' response means yes, and a `skip' response means no.
-A `quit' response means to invoke `keyboard-quit'.
+A `quit' response means to invoke `abort-recursive-edit'.
 If the user enters `recenter', `scroll-up', or `scroll-down'
 responses, perform the requested window recentering or scrolling
 and ask again.
 
 Under a windowing system a dialog box will be used if `last-nonmenu-event'
 is nil and `use-dialog-box' is non-nil."
-  ;; ¡Beware! when I tried to edebug this code, Emacs got into a weird state
-  ;; where all the keys were unbound (i.e. it somehow got triggered
-  ;; within read-key, apparently).  I had to kill it.
   (let ((answer 'recenter)
 	(padded (lambda (prompt &optional dialog)
 		  (let ((l (length prompt)))
@@ -2268,42 +2853,21 @@ is nil and `use-dialog-box' is non-nil."
 		  (t (setq temp-prompt (concat "Please answer y or n.  "
 					       prompt))))))))
      ((and (display-popup-menus-p)
+           last-input-event             ; not during startup
 	   (listp last-nonmenu-event)
 	   use-dialog-box)
       (setq prompt (funcall padded prompt t)
 	    answer (x-popup-dialog t `(,prompt ("Yes" . act) ("No" . skip)))))
      (t
       (setq prompt (funcall padded prompt))
-      (while
-          (let* ((scroll-actions '(recenter scroll-up scroll-down
-				   scroll-other-window scroll-other-window-down))
-		 (key
-                  (let ((cursor-in-echo-area t))
-                    (when minibuffer-auto-raise
-                      (raise-frame (window-frame (minibuffer-window))))
-                    (read-key (propertize (if (memq answer scroll-actions)
-                                              prompt
-                                            (concat "Please answer y or n.  "
-                                                    prompt))
-                                          'face 'minibuffer-prompt)))))
-            (setq answer (lookup-key query-replace-map (vector key) t))
-            (cond
-	     ((memq answer '(skip act)) nil)
-	     ((eq answer 'recenter)
-	      (recenter) t)
-	     ((eq answer 'scroll-up)
-	      (ignore-errors (scroll-up-command)) t)
-	     ((eq answer 'scroll-down)
-	      (ignore-errors (scroll-down-command)) t)
-	     ((eq answer 'scroll-other-window)
-	      (ignore-errors (scroll-other-window)) t)
-	     ((eq answer 'scroll-other-window-down)
-	      (ignore-errors (scroll-other-window-down)) t)
-	     ((or (memq answer '(exit-prefix quit)) (eq key ?\e))
-	      (signal 'quit nil) t)
-	     (t t)))
-        (ding)
-        (discard-input))))
+      (let* ((empty-history '())
+             (enable-recursive-minibuffers t)
+             (str (read-from-minibuffer
+                   prompt nil
+                   (make-composed-keymap y-or-n-p-map query-replace-map)
+                   nil
+                   (or y-or-n-p-history-variable 'empty-history))))
+        (setq answer (if (member str '("y" "Y")) 'act 'skip)))))
     (let ((ret (eq answer 'act)))
       (unless noninteractive
         (message "%s%c" prompt (if ret ?y ?n)))
@@ -2313,7 +2877,7 @@ is nil and `use-dialog-box' is non-nil."
 ;;; Atomic change groups.
 
 (defmacro atomic-change-group (&rest body)
-  "Perform BODY as an atomic change group.
+  "Like `progn' but perform BODY as an atomic change group.
 This means that if BODY exits abnormally,
 all of its changes to the current buffer are undone.
 This works regardless of whether undo is enabled in the buffer.
@@ -2336,8 +2900,8 @@ user can undo the change normally."
 	     ;; it enables undo if that was disabled; we need
 	     ;; to make sure that it gets disabled again.
 	     (activate-change-group ,handle)
-	     ,@body
-	     (setq ,success t))
+	     (prog1 ,(macroexp-progn body)
+	       (setq ,success t)))
 	 ;; Either of these functions will disable undo
 	 ;; if it was disabled before.
 	 (if ,success
@@ -2401,26 +2965,27 @@ This finishes the change group by reverting all of its changes."
 	;; Widen buffer temporarily so if the buffer was narrowed within
 	;; the body of `atomic-change-group' all changes can be undone.
 	(widen)
-	(let ((old-car
-	       (if (consp elt) (car elt)))
-	      (old-cdr
-	       (if (consp elt) (cdr elt))))
-	  ;; Temporarily truncate the undo log at ELT.
-	  (when (consp elt)
-	    (setcar elt nil) (setcdr elt nil))
-	  (unless (eq last-command 'undo) (undo-start))
-	  ;; Make sure there's no confusion.
-	  (when (and (consp elt) (not (eq elt (last pending-undo-list))))
-	    (error "Undoing to some unrelated state"))
-	  ;; Undo it all.
-	  (save-excursion
-	    (while (listp pending-undo-list) (undo-more 1)))
-	  ;; Reset the modified cons cell ELT to its original content.
-	  (when (consp elt)
-	    (setcar elt old-car)
-	    (setcdr elt old-cdr))
-	  ;; Revert the undo info to what it was when we grabbed the state.
-	  (setq buffer-undo-list elt))))))
+	(let ((old-car (car-safe elt))
+	      (old-cdr (cdr-safe elt)))
+          (unwind-protect
+              (progn
+                ;; Temporarily truncate the undo log at ELT.
+                (when (consp elt)
+                  (setcar elt nil) (setcdr elt nil))
+                (unless (eq last-command 'undo) (undo-start))
+                ;; Make sure there's no confusion.
+                (when (and (consp elt) (not (eq elt (last pending-undo-list))))
+                  (error "Undoing to some unrelated state"))
+                ;; Undo it all.
+                (save-excursion
+                  (while (listp pending-undo-list) (undo-more 1)))
+                ;; Revert the undo info to what it was when we grabbed
+                ;; the state.
+                (setq buffer-undo-list elt))
+            ;; Reset the modified cons cell ELT to its original content.
+            (when (consp elt)
+              (setcar elt old-car)
+              (setcdr elt old-cdr))))))))
 
 ;;;; Display-related functions.
 
@@ -2458,7 +3023,8 @@ If MESSAGE is nil, instructions to type EXIT-CHAR are displayed there."
 	    (or (eq event exit-char)
 		(eq event (event-convert-list exit-char))
 		(setq unread-command-events
-                      (append (this-single-command-raw-keys))))))
+                      (append (this-single-command-raw-keys)
+                              unread-command-events)))))
       (delete-overlay ol))))
 
 
@@ -2525,11 +3091,9 @@ When the hook runs, the temporary buffer is current.
 This hook is normally set up with a function to put the buffer in Help
 mode.")
 
-(defconst user-emacs-directory
-  (if (eq system-type 'ms-dos)
-      ;; MS-DOS cannot have initial dot.
-      "~/_emacs.d/"
-    "~/.emacs.d/")
+(defvar user-emacs-directory
+  ;; The value does not matter since Emacs sets this at startup.
+  nil
   "Directory beneath which additional per-user Emacs-specific files are placed.
 Various programs in Emacs store information in this directory.
 Note that this should end with a directory separator.
@@ -2545,29 +3109,7 @@ See also `locate-user-emacs-file'.")
   "Determine the boundaries of the default tag, based on text at point.
 Return a cons cell with the beginning and end of the found tag.
 If there is no plausible default, return nil."
-  (let (from to bound)
-    (when (or (progn
-		;; Look at text around `point'.
-		(save-excursion
-		  (skip-syntax-backward "w_") (setq from (point)))
-		(save-excursion
-		  (skip-syntax-forward "w_") (setq to (point)))
-		(> to from))
-	      ;; Look between `line-beginning-position' and `point'.
-	      (save-excursion
-		(and (setq bound (line-beginning-position))
-		     (skip-syntax-backward "^w_" bound)
-		     (> (setq to (point)) bound)
-		     (skip-syntax-backward "w_")
-		     (setq from (point))))
-	      ;; Look between `point' and `line-end-position'.
-	      (save-excursion
-		(and (setq bound (line-end-position))
-		     (skip-syntax-forward "^w_" bound)
-		     (< (setq from (point)) bound)
-		     (skip-syntax-forward "w_")
-		     (setq to (point)))))
-      (cons from to))))
+  (bounds-of-thing-at-point 'symbol))
 
 (defun find-tag-default ()
   "Determine default tag to search for, based on text at point.
@@ -2630,7 +3172,11 @@ Note: :data and :device are currently not supported on Windows."
 (declare-function w32-shell-dos-semantics "w32-fns" nil)
 
 (defun shell-quote-argument (argument)
-  "Quote ARGUMENT for passing as argument to an inferior shell."
+  "Quote ARGUMENT for passing as argument to an inferior shell.
+
+This function is designed to work with the syntax of your system's
+standard shell, and might produce incorrect results with unusual shells.
+See Info node `(elisp)Security Considerations'."
   (cond
    ((eq system-type 'ms-dos)
     ;; Quote using double quotes, but escape any existing quotes in
@@ -2689,6 +3235,14 @@ Note: :data and :device are currently not supported on Windows."
        (replace-regexp-in-string "[^-0-9a-zA-Z_./\n]" "\\\\\\&" argument))))
    ))
 
+(defsubst string-to-list (string)
+  "Return a list of characters in STRING."
+  (append string nil))
+
+(defsubst string-to-vector (string)
+  "Return a vector of characters in STRING."
+  (vconcat string))
+
 (defun string-or-null-p (object)
   "Return t if OBJECT is a string or nil.
 Otherwise, return nil."
@@ -2702,12 +3256,12 @@ Otherwise, return nil."
 (defun special-form-p (object)
   "Non-nil if and only if OBJECT is a special form."
   (if (and (symbolp object) (fboundp object))
-      (setq object (indirect-function object t)))
+      (setq object (indirect-function object)))
   (and (subrp object) (eq (cdr (subr-arity object)) 'unevalled)))
 
 (defun macrop (object)
   "Non-nil if and only if OBJECT is a macro."
-  (let ((def (indirect-function object t)))
+  (let ((def (indirect-function object)))
     (when (consp def)
       (or (eq 'macro (car def))
           (and (autoloadp def) (memq (nth 4 def) '(macro t)))))))
@@ -2720,17 +3274,21 @@ Otherwise, return nil."
       raw-field)))
 
 (defun sha1 (object &optional start end binary)
-  "Return the SHA1 (Secure Hash Algorithm) of an OBJECT.
+  "Return the SHA-1 (Secure Hash Algorithm) of an OBJECT.
 OBJECT is either a string or a buffer.  Optional arguments START and
 END are character positions specifying which portion of OBJECT for
 computing the hash.  If BINARY is non-nil, return a string in binary
-form."
+form.
+
+Note that SHA-1 is not collision resistant and should not be used
+for anything security-related.  See `secure-hash' for
+alternatives."
   (secure-hash 'sha1 object start end binary))
 
 (defun function-get (f prop &optional autoload)
   "Return the value of property PROP of function F.
 If AUTOLOAD is non-nil and F is autoloaded, try to autoload it
-in the hope that it will set PROP.  If AUTOLOAD is `macro', only do it
+in the hope that it will set PROP.  If AUTOLOAD is `macro', do it only
 if it's an autoloaded macro."
   (let ((val nil))
     (while (and (symbolp f)
@@ -2759,24 +3317,26 @@ remove properties specified by `yank-excluded-properties'."
   (let ((inhibit-read-only t))
     (dolist (handler yank-handled-properties)
       (let ((prop (car handler))
-	    (fun  (cdr handler))
-	    (run-start start))
-	(while (< run-start end)
-	  (let ((value (get-text-property run-start prop))
-		(run-end (next-single-property-change
-			  run-start prop nil end)))
-	    (funcall fun value run-start run-end)
-	    (setq run-start run-end)))))
+            (fun  (cdr handler))
+            (run-start start))
+        (while (< run-start end)
+          (let ((value (get-text-property run-start prop))
+                (run-end (next-single-property-change
+                          run-start prop nil end)))
+            (funcall fun value run-start run-end)
+            (setq run-start run-end)))))
     (if (eq yank-excluded-properties t)
-	(set-text-properties start end nil)
+        (set-text-properties start end nil)
       (remove-list-of-text-properties start end yank-excluded-properties))))
 
 (defvar yank-undo-function)
 
 (defun insert-for-yank (string)
-  "Call `insert-for-yank-1' repetitively for each `yank-handler' segment.
+  "Insert STRING at point for the `yank' command.
 
-See `insert-for-yank-1' for more details."
+This function is like `insert', except it honors the variables
+`yank-handled-properties' and `yank-excluded-properties', and the
+`yank-handler' text property, in the way that `yank' does."
   (let (to)
     (while (setq to (next-single-property-change 0 'yank-handler string))
       (insert-for-yank-1 (substring string 0 to))
@@ -2784,31 +3344,7 @@ See `insert-for-yank-1' for more details."
   (insert-for-yank-1 string))
 
 (defun insert-for-yank-1 (string)
-  "Insert STRING at point for the `yank' command.
-This function is like `insert', except it honors the variables
-`yank-handled-properties' and `yank-excluded-properties', and the
-`yank-handler' text property.
-
-Properties listed in `yank-handled-properties' are processed,
-then those listed in `yank-excluded-properties' are discarded.
-
-If STRING has a non-nil `yank-handler' property on its first
-character, the normal insert behavior is altered.  The value of
-the `yank-handler' property must be a list of one to four
-elements, of the form (FUNCTION PARAM NOEXCLUDE UNDO).
-FUNCTION, if non-nil, should be a function of one argument, an
- object to insert; it is called instead of `insert'.
-PARAM, if present and non-nil, replaces STRING as the argument to
- FUNCTION or `insert'; e.g. if FUNCTION is `yank-rectangle', PARAM
- may be a list of strings to insert as a rectangle.
-If NOEXCLUDE is present and non-nil, the normal removal of
- `yank-excluded-properties' is not performed; instead FUNCTION is
- responsible for the removal.  This may be necessary if FUNCTION
- adjusts point before or after inserting the object.
-UNDO, if present and non-nil, should be a function to be called
- by `yank-pop' to undo the insertion of the current object.  It is
- given two arguments, the start and end of the region.  FUNCTION
- may set `yank-undo-function' to override UNDO."
+  "Helper for `insert-for-yank', which see."
   (let* ((handler (and (stringp string)
 		       (get-text-property 0 'yank-handler string)))
 	 (param (or (nth 1 handler) string))
@@ -2816,6 +3352,8 @@ UNDO, if present and non-nil, should be a function to be called
 	 (inhibit-read-only inhibit-read-only)
 	 end)
 
+    ;; FIXME: This throws away any yank-undo-function set by previous calls
+    ;; to insert-for-yank-1 within the loop of insert-for-yank!
     (setq yank-undo-function t)
     (if (nth 0 handler) ; FUNCTION
 	(funcall (car handler) param)
@@ -2871,7 +3409,7 @@ Do nothing if FACE is nil."
        (put-text-property start end 'face face)))
 
 ;; This removes `mouse-face' properties in *Help* buffer buttons:
-;; http://lists.gnu.org/archive/html/emacs-devel/2002-04/msg00648.html
+;; https://lists.gnu.org/r/emacs-devel/2002-04/msg00648.html
 (defun yank-handle-category-property (category start end)
   "Apply property category CATEGORY's properties between START and END."
   (when category
@@ -2909,11 +3447,12 @@ discouraged."
   "Start a program in a subprocess.  Return the process object for it.
 Similar to `start-process-shell-command', but calls `start-file-process'."
   (declare (advertised-calling-convention (name buffer command) "23.1"))
-  (start-file-process
-   name buffer
-   (if (file-remote-p default-directory) "/bin/sh" shell-file-name)
-   (if (file-remote-p default-directory) "-c" shell-command-switch)
-   (mapconcat 'identity args " ")))
+  ;; On remote hosts, the local `shell-file-name' might be useless.
+  (with-connection-local-variables
+   (start-file-process
+    name buffer
+    shell-file-name shell-command-switch
+    (mapconcat 'identity args " "))))
 
 (defun call-process-shell-command (command &optional infile buffer display
 					   &rest args)
@@ -2954,11 +3493,33 @@ discouraged."
 Similar to `call-process-shell-command', but calls `process-file'."
   (declare (advertised-calling-convention
             (command &optional infile buffer display) "24.5"))
-  (process-file
-   (if (file-remote-p default-directory) "/bin/sh" shell-file-name)
-   infile buffer display
-   (if (file-remote-p default-directory) "-c" shell-command-switch)
-   (mapconcat 'identity (cons command args) " ")))
+  ;; On remote hosts, the local `shell-file-name' might be useless.
+  (with-connection-local-variables
+   (process-file
+    shell-file-name infile buffer display shell-command-switch
+    (mapconcat 'identity (cons command args) " "))))
+
+(defun call-shell-region (start end command &optional delete buffer)
+  "Send text from START to END as input to an inferior shell running COMMAND.
+Delete the text if fourth arg DELETE is non-nil.
+
+Insert output in BUFFER before point; t means current buffer; nil for
+ BUFFER means discard it; 0 means discard and don't wait; and `(:file
+ FILE)', where FILE is a file name string, means that it should be
+ written to that file (if the file already exists it is overwritten).
+BUFFER can also have the form (REAL-BUFFER STDERR-FILE); in that case,
+REAL-BUFFER says what to do with standard output, as above,
+while STDERR-FILE says what to do with standard error in the child.
+STDERR-FILE may be nil (discard standard error output),
+t (mix it with ordinary output), or a file name string.
+
+If BUFFER is 0, `call-shell-region' returns immediately with value nil.
+Otherwise it waits for COMMAND to terminate
+and returns a numeric exit status or a signal description string.
+If you quit, the process is killed with SIGINT, or SIGKILL if you quit again."
+  (call-process-region start end
+                       shell-file-name delete buffer nil
+                       shell-command-switch command))
 
 ;;;; Lisp macros to do various things temporarily.
 
@@ -3003,6 +3564,11 @@ also `with-temp-buffer'."
   ;; Then reset the actual selected-window.
   (when (window-live-p (nth 1 state))
     (select-window (nth 1 state) 'norecord)))
+
+(defun generate-new-buffer (name)
+  "Create and return a buffer with a name based on NAME.
+Choose the buffer's name using `generate-new-buffer-name'."
+  (get-buffer-create (generate-new-buffer-name name)))
 
 (defmacro with-selected-window (window &rest body)
   "Execute the forms in BODY with WINDOW as the selected window.
@@ -3169,8 +3735,7 @@ See also `with-temp-buffer'."
   (let ((temp-file (make-symbol "temp-file"))
 	(temp-buffer (make-symbol "temp-buffer")))
     `(let ((,temp-file ,file)
-	   (,temp-buffer
-	    (get-buffer-create (generate-new-buffer-name " *temp file*"))))
+	   (,temp-buffer (generate-new-buffer " *temp file*")))
        (unwind-protect
 	   (prog1
 	       (with-current-buffer ,temp-buffer
@@ -3209,7 +3774,7 @@ See also `with-temp-file' and `with-output-to-string'."
   (declare (indent 0) (debug t))
   (let ((temp-buffer (make-symbol "temp-buffer")))
     `(let ((,temp-buffer (generate-new-buffer " *temp*")))
-       ;; FIXME: kill-buffer can change current-buffer in some odd cases.
+       ;; `kill-buffer' can change current-buffer in some odd cases.
        (with-current-buffer ,temp-buffer
          (unwind-protect
 	     (progn ,@body)
@@ -3218,6 +3783,8 @@ See also `with-temp-file' and `with-output-to-string'."
 
 (defmacro with-silent-modifications (&rest body)
   "Execute BODY, pretending it does not modify the buffer.
+This macro is typically used around modifications of
+text properties that do not really affect the buffer's content.
 If BODY performs real modifications to the buffer's text, other
 than cosmetic ones, undo data may become corrupted.
 
@@ -3225,10 +3792,7 @@ This macro will run BODY normally, but doesn't count its buffer
 modifications as being buffer modifications.  This affects things
 like `buffer-modified-p', checking whether the file is locked by
 someone else, running buffer modification hooks, and other things
-of that nature.
-
-Typically used around modifications of text-properties which do
-not really affect the buffer's content."
+of that nature."
   (declare (debug t) (indent 0))
   (let ((modified (make-symbol "modified")))
     `(let* ((,modified (buffer-modified-p))
@@ -3244,8 +3808,7 @@ not really affect the buffer's content."
 (defmacro with-output-to-string (&rest body)
   "Execute BODY, return the text it sent to `standard-output', as a string."
   (declare (indent 0) (debug t))
-  `(let ((standard-output
-	  (get-buffer-create (generate-new-buffer-name " *string-output*"))))
+  `(let ((standard-output (generate-new-buffer " *string-output*")))
      (unwind-protect
 	 (progn
 	   (let ((standard-output standard-output))
@@ -3271,6 +3834,11 @@ is allowed once again.  (Immediately, if `inhibit-quit' is nil.)"
 	   ;; that intends to handle the quit signal next time.
 	   (eval '(ignore nil)))))
 
+;; Don't throw `throw-on-input' on those events by default.
+(setq while-no-input-ignore-events
+      '(focus-in focus-out help-echo iconify-frame
+        make-frame-visible selection-request buffer-switch))
+
 (defmacro while-no-input (&rest body)
   "Execute BODY only as long as there's no pending input.
 If input arrives, that ends the execution of BODY,
@@ -3280,9 +3848,31 @@ If BODY finishes, `while-no-input' returns whatever value BODY produced."
   (let ((catch-sym (make-symbol "input")))
     `(with-local-quit
        (catch ',catch-sym
-	 (let ((throw-on-input ',catch-sym))
-	   (or (input-pending-p)
-	       (progn ,@body)))))))
+	 (let ((throw-on-input ',catch-sym)
+               val)
+           (setq val (or (input-pending-p)
+	                 (progn ,@body)))
+           (cond
+            ;; When input arrives while throw-on-input is non-nil,
+            ;; kbd_buffer_store_buffered_event sets quit-flag to the
+            ;; value of throw-on-input.  If, when BODY finishes,
+            ;; quit-flag still has the same value as throw-on-input, it
+            ;; means BODY never tested quit-flag, and therefore ran to
+            ;; completion even though input did arrive before it
+            ;; finished.  In that case, we must manually simulate what
+            ;; 'throw' in process_quit_flag would do, and we must
+            ;; reset quit-flag, because leaving it set will cause us
+            ;; quit to top-level, which has undesirable consequences,
+            ;; such as discarding input etc.  We return t in that case
+            ;; because input did arrive during execution of BODY.
+            ((eq quit-flag throw-on-input)
+             (setq quit-flag nil)
+             t)
+            ;; This is for when the user actually QUITs during
+            ;; execution of BODY.
+            (quit-flag
+             nil)
+            (t val)))))))
 
 (defmacro condition-case-unless-debug (var bodyform &rest handlers)
   "Like `condition-case' except that it does not prevent debugging.
@@ -3306,8 +3896,8 @@ FORMAT is a string passed to `message' to format any error message.
 It should contain a single %-sequence; e.g., \"Error: %S\".
 
 If `debug-on-error' is non-nil, run BODY without catching its errors.
-This is to be used around code which is not expected to signal an error
-but which should be robust in the unexpected case that an error is signaled.
+This is to be used around code that is not expected to signal an error
+but that should be robust in the unexpected case that an error is signaled.
 
 For backward compatibility, if FORMAT is not a constant string, it
 is assumed to be part of BODY, in which case the message format
@@ -3338,6 +3928,126 @@ in BODY."
        (let ((combine-after-change-calls t))
 	 . ,body)
      (combine-after-change-execute)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defvar undo--combining-change-calls nil
+  "Non-nil when `combine-change-calls-1' is running.")
+
+(defun combine-change-calls-1 (beg end body)
+  "Evaluate BODY, running the change hooks just once, for region \(BEG END).
+
+Firstly, `before-change-functions' is invoked for the region
+\(BEG END), then BODY (a function) is evaluated with
+`before-change-functions' and `after-change-functions' bound to
+nil, then finally `after-change-functions' is invoked on the
+updated region (BEG NEW-END) with a calculated OLD-LEN argument.
+If `inhibit-modification-hooks' is initially non-nil, the change
+hooks are not run.
+
+The result of `combine-change-calls-1' is the value returned by
+BODY.  BODY must not make a different buffer current, except
+temporarily.  It must not make any changes to the buffer outside
+the specified region.  It must not change
+`before-change-functions' or `after-change-functions'.
+
+Additionally, the buffer modifications of BODY are recorded on
+the buffer's undo list as a single (apply ...) entry containing
+the function `undo--wrap-and-run-primitive-undo'."
+  (let ((old-bul buffer-undo-list)
+	(end-marker (copy-marker end t))
+	result)
+    (if undo--combining-change-calls
+	(setq result (funcall body))
+      (let ((undo--combining-change-calls t))
+	(if (not inhibit-modification-hooks)
+	    (run-hook-with-args 'before-change-functions beg end))
+	(if (eq buffer-undo-list t)
+	    (setq result (funcall body))
+	  (let (;; (inhibit-modification-hooks t)
+                (before-change-functions
+                 ;; Ugly Hack: if the body uses syntax-ppss/syntax-propertize
+                 ;; (e.g. via a regexp-search or sexp-movement trigerring
+                 ;; on-the-fly syntax-propertize), make sure that this gets
+                 ;; properly refreshed after subsequent changes.
+                 (if (memq #'syntax-ppss-flush-cache before-change-functions)
+                     '(syntax-ppss-flush-cache)))
+                after-change-functions)
+	    (setq result (funcall body)))
+	  (let ((ap-elt
+		 (list 'apply
+		       (- end end-marker)
+		       beg
+		       (marker-position end-marker)
+		       #'undo--wrap-and-run-primitive-undo
+		       beg (marker-position end-marker) buffer-undo-list))
+		(ptr buffer-undo-list))
+	    (if (not (eq buffer-undo-list old-bul))
+		(progn
+		  (while (and (not (eq (cdr ptr) old-bul))
+			      ;; In case garbage collection has removed OLD-BUL.
+			      (cdr ptr)
+			      ;; Don't include a timestamp entry.
+			      (not (and (consp (cdr ptr))
+					(consp (cadr ptr))
+					(eq (caadr ptr) t)
+					(setq old-bul (cdr ptr)))))
+		    (setq ptr (cdr ptr)))
+		  (unless (cdr ptr)
+		    (message "combine-change-calls: buffer-undo-list broken"))
+		  (setcdr ptr nil)
+		  (push ap-elt buffer-undo-list)
+		  (setcdr buffer-undo-list old-bul)))))
+	(if (not inhibit-modification-hooks)
+	    (run-hook-with-args 'after-change-functions
+				beg (marker-position end-marker)
+				(- end beg)))))
+    (set-marker end-marker nil)
+    result))
+
+(defmacro combine-change-calls (beg end &rest body)
+  "Evaluate BODY, running the change hooks just once.
+
+BODY is a sequence of lisp forms to evaluate.  BEG and END bound
+the region the change hooks will be run for.
+
+Firstly, `before-change-functions' is invoked for the region
+\(BEG END), then the BODY forms are evaluated with
+`before-change-functions' and `after-change-functions' bound to
+nil, and finally `after-change-functions' is invoked on the
+updated region.  The change hooks are not run if
+`inhibit-modification-hooks' is initially non-nil.
+
+The result of `combine-change-calls' is the value returned by the
+last of the BODY forms to be evaluated.  BODY may not make a
+different buffer current, except temporarily.  BODY may not
+change the buffer outside the specified region.  It must not
+change `before-change-functions' or `after-change-functions'.
+
+Additionally, the buffer modifications of BODY are recorded on
+the buffer's undo list as a single \(apply ...) entry containing
+the function `undo--wrap-and-run-primitive-undo'. "
+  `(combine-change-calls-1 ,beg ,end (lambda () ,@body)))
+
+(defun undo--wrap-and-run-primitive-undo (beg end list)
+  "Call `primitive-undo' on the undo elements in LIST.
+
+This function is intended to be called purely by `undo' as the
+function in an \(apply DELTA BEG END FUNNAME . ARGS) undo
+element.  It invokes `before-change-functions' and
+`after-change-functions' once each for the entire region \(BEG
+END) rather than once for each individual change.
+
+Additionally the fresh \"redo\" elements which are generated on
+`buffer-undo-list' will themselves be \"enclosed\" in
+`undo--wrap-and-run-primitive-undo'.
+
+Undo elements of this form are generated by the macro
+`combine-change-calls'."
+  (combine-change-calls beg end
+			(while list
+			  (setq list (primitive-undo 1 list)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro with-case-table (table &rest body)
   "Execute the forms in BODY with TABLE as the current case table.
@@ -3397,6 +4107,7 @@ Zero means the entire text matched by the whole regexp or whole string.
 STRING should be given if the last search was by `string-match' on STRING.
 If STRING is nil, the current buffer should be the same buffer
 the search/match was performed in."
+  (declare (side-effect-free t))
   (if (match-beginning num)
       (if string
 	  (substring string (match-beginning num) (match-end num))
@@ -3410,6 +4121,7 @@ Zero means the entire text matched by the whole regexp or whole string.
 STRING should be given if the last search was by `string-match' on STRING.
 If STRING is nil, the current buffer should be the same buffer
 the search/match was performed in."
+  (declare (side-effect-free t))
   (if (match-beginning num)
       (if string
 	  (substring-no-properties string (match-beginning num)
@@ -3450,6 +4162,8 @@ LIMIT.
 
 As a general recommendation, try to avoid using `looking-back'
 wherever possible, since it is slow."
+  (declare
+   (advertised-calling-convention (regexp limit &optional greedy) "25.1"))
   (let ((start (point))
 	(pos
 	 (save-excursion
@@ -3545,7 +4259,7 @@ the substrings between the splitting points are collected as a list,
 which is returned.
 
 If SEPARATORS is non-nil, it should be a regular expression matching text
-which separates, but is not part of, the substrings.  If nil it defaults to
+that separates, but is not part of, the substrings.  If nil it defaults to
 `split-string-default-separators', normally \"[ \\f\\t\\n\\r\\v]+\", and
 OMIT-NULLS is forced to t.
 
@@ -3620,7 +4334,10 @@ Modifies the match data; use `save-match-data' if necessary."
   "Concatenate the STRINGS, adding the SEPARATOR (default \" \").
 This tries to quote the strings to avoid ambiguity such that
   (split-string-and-unquote (combine-and-quote-strings strs)) == strs
-Only some SEPARATORs will work properly."
+Only some SEPARATORs will work properly.
+
+Note that this is not intended to protect STRINGS from
+interpretation by shells, use `shell-quote-argument' for that."
   (let* ((sep (or separator " "))
          (re (concat "[\\\"]" "\\|" (regexp-quote sep))))
     (mapconcat
@@ -3667,23 +4384,25 @@ Return a new string containing the replacements.
 
 Optional arguments FIXEDCASE, LITERAL and SUBEXP are like the
 arguments with the same names of function `replace-match'.  If START
-is non-nil, start replacements at that index in STRING.
+is non-nil, start replacements at that index in STRING, and omit
+the first START characters of STRING from the return value.
 
 REP is either a string used as the NEWTEXT arg of `replace-match' or a
 function.  If it is a function, it is called with the actual text of each
 match, and its value is used as the replacement text.  When REP is called,
 the match data are the result of matching REGEXP against a substring
-of STRING.
+of STRING, the same substring that is the actual text of the match which
+is passed to REP as its argument.
 
-To replace only the first match (if any), make REGEXP match up to \\'
+To replace only the first match (if any), make REGEXP match up to \\\\='
 and replace a sub-expression, e.g.
-  (replace-regexp-in-string \"\\\\(foo\\\\).*\\\\'\" \"bar\" \" foo foo\" nil nil 1)
+  (replace-regexp-in-string \"\\\\(foo\\\\).*\\\\\\='\" \"bar\" \" foo foo\" nil nil 1)
     => \" bar foo\""
 
   ;; To avoid excessive consing from multiple matches in long strings,
   ;; don't just call `replace-match' continually.  Walk down the
   ;; string looking for matches of REGEXP and building up a (reversed)
-  ;; list MATCHES.  This comprises segments of STRING which weren't
+  ;; list MATCHES.  This comprises segments of STRING that weren't
   ;; matched interspersed with replacements for segments that were.
   ;; [For a `large' number of replacements it's more efficient to
   ;; operate in a temporary buffer; we can't tell from the function's
@@ -3699,7 +4418,7 @@ and replace a sub-expression, e.g.
 	;; If we matched the empty string, make sure we advance by one char
 	(when (= me mb) (setq me (min l (1+ mb))))
 	;; Generate a replacement for the matched substring.
-	;; Operate only on the substring to minimize string consing.
+	;; Operate on only the substring to minimize string consing.
 	;; Set up match data for the substring for replacement;
 	;; presumably this is likely to be faster than munging the
 	;; match data directly in Lisp.
@@ -3740,7 +4459,7 @@ attention to case differences."
 Normally, inserting a string with right-to-left (RTL) script into
 a buffer may cause some subsequent text to be displayed as part
 of the RTL segment (usually this affects punctuation characters).
-This function returns a string which displays as STR but forces
+This function returns a string that displays as STR but forces
 subsequent text to be displayed as left-to-right.
 
 If STR contains any RTL character, this function returns a string
@@ -3751,6 +4470,13 @@ consisting of STR followed by an invisible left-to-right mark
   (if (string-match "\\cR" str)
       (concat str (propertize (string ?\x200e) 'invisible t))
     str))
+
+(defun string-greaterp (string1 string2)
+  "Return non-nil if STRING1 is greater than STRING2 in lexicographic order.
+Case is significant.
+Symbols are also allowed; their print names are used instead."
+  (string-lessp string2 string1))
+
 
 ;;;; Specifying things to do later.
 
@@ -3812,7 +4538,7 @@ If the feature is provided when evaluating code not associated with a
 file, FORM is evaluated immediately after the provide statement.
 
 Usually FILE is just a library name like \"font-lock\" or a feature name
-like 'font-lock.
+like `font-lock'.
 
 This function makes or adds to an entry on `after-load-alist'."
   (declare (compiler-macro
@@ -3867,7 +4593,8 @@ This function makes or adds to an entry on `after-load-alist'."
 (defmacro with-eval-after-load (file &rest body)
   "Execute BODY after FILE is loaded.
 FILE is normally a feature name, but it can also be a file name,
-in case that file does not provide any feature."
+in case that file does not provide any feature.  See `eval-after-load'
+for more details about the different forms of FILE and their semantics."
   (declare (indent 1) (debug t))
   `(eval-after-load ,file (lambda () ,@body)))
 
@@ -3887,16 +4614,19 @@ This function is called directly from the C code."
       ;; discard the file name regexp
       (mapc #'funcall (cdr a-l-element))))
   ;; Complain when the user uses obsolete files.
-  (when (save-match-data
-          (and (string-match "/obsolete/\\([^/]*\\)\\'" abs-file)
-               (not (equal "loaddefs.el" (match-string 1 abs-file)))))
+  (when (string-match-p "/obsolete/[^/]*\\'" abs-file)
     ;; Maybe we should just use display-warning?  This seems yucky...
     (let* ((file (file-name-nondirectory abs-file))
-	   (msg (format "Package %s is obsolete!"
-			(substring file 0
-				   (string-match "\\.elc?\\>" file)))))
+           (package (intern (substring file 0
+			               (string-match "\\.elc?\\>" file))
+                            obarray))
+	   (msg (format "Package %s is deprecated" package))
+	   (fun (lambda (msg) (message "%s" msg))))
       ;; Cribbed from cl--compiling-file.
-      (if (and (boundp 'byte-compile--outbuffer)
+      (when (or (not (fboundp 'byte-compile-warning-enabled-p))
+                (byte-compile-warning-enabled-p 'obsolete package))
+        (cond
+	 ((and (boundp 'byte-compile--outbuffer)
 	       (bufferp (symbol-value 'byte-compile--outbuffer))
 	       (equal (buffer-name (symbol-value 'byte-compile--outbuffer))
 		      " *Compiler Output*"))
@@ -3906,11 +4636,9 @@ This function is called directly from the C code."
 				       (expand-file-name
 					byte-compile-current-file
 					byte-compile-root-dir)))
-	    (byte-compile-log-warning msg))
-	(run-with-timer 0 nil
-			(lambda (msg)
-			  (message "%s" msg))
-                        msg))))
+	    (byte-compile-warn "%s" msg)))
+         (noninteractive (funcall fun msg)) ;; No timer will be run!
+	 (t (run-with-idle-timer 0 nil fun msg))))))
 
   ;; Finally, run any other hook.
   (run-hook-with-args 'after-load-functions abs-file))
@@ -3947,8 +4675,8 @@ Used from `delayed-warnings-hook' (which see)."
         (push warning collapsed)))
     (setq delayed-warnings-list (nreverse collapsed))))
 
-;; At present this is only used for Emacs internals.
-;; Ref http://lists.gnu.org/archive/html/emacs-devel/2012-02/msg00085.html
+;; At present this is used only for Emacs internals.
+;; Ref https://lists.gnu.org/r/emacs-devel/2012-02/msg00085.html
 (defvar delayed-warnings-hook '(collapse-delayed-warnings
                                 display-delayed-warnings)
   "Normal hook run to process and display delayed warnings.
@@ -3968,17 +4696,28 @@ to `display-warning'."
 (defun add-to-invisibility-spec (element)
   "Add ELEMENT to `buffer-invisibility-spec'.
 See documentation for `buffer-invisibility-spec' for the kind of elements
-that can be added."
+that can be added.
+
+If `buffer-invisibility-spec' isn't a list before calling this
+function, `buffer-invisibility-spec' will afterwards be a list
+with the value `(t ELEMENT)'.  This means that if text exists
+that invisibility values that aren't either `t' or ELEMENT, that
+text will become visible."
   (if (eq buffer-invisibility-spec t)
       (setq buffer-invisibility-spec (list t)))
   (setq buffer-invisibility-spec
 	(cons element buffer-invisibility-spec)))
 
 (defun remove-from-invisibility-spec (element)
-  "Remove ELEMENT from `buffer-invisibility-spec'."
-  (if (consp buffer-invisibility-spec)
-      (setq buffer-invisibility-spec
-	    (delete element buffer-invisibility-spec))))
+  "Remove ELEMENT from `buffer-invisibility-spec'.
+If `buffer-invisibility-spec' isn't a list before calling this
+function, it will be made into a list containing just `t' as the
+only list member.  This means that if text exists with non-`t'
+invisibility values, that text will become visible."
+  (setq buffer-invisibility-spec
+        (if (consp buffer-invisibility-spec)
+	    (delete element buffer-invisibility-spec)
+          (list t))))
 
 ;;;; Syntax tables.
 
@@ -4002,7 +4741,7 @@ Value is what BODY returns."
 
 (defun make-syntax-table (&optional oldtable)
   "Return a new syntax table.
-Create a syntax table which inherits from OLDTABLE (if non-nil) or
+Create a syntax table that inherits from OLDTABLE (if non-nil) or
 from `standard-syntax-table' otherwise."
   (let ((table (make-char-table 'syntax-table nil)))
     (set-char-table-parent table (or oldtable (standard-syntax-table)))
@@ -4021,13 +4760,46 @@ If POS is outside the buffer's accessible portion, return nil."
   "Return the code for the syntax class described by SYNTAX.
 
 SYNTAX should be a raw syntax descriptor; the return value is a
-integer which encodes the corresponding syntax class.  See Info
+integer that encodes the corresponding syntax class.  See Info
 node `(elisp)Syntax Table Internals' for a list of codes.
 
 If SYNTAX is nil, return nil."
   (and syntax (logand (car syntax) 65535)))
 
 ;; Utility motion commands
+
+(defvar word-move-empty-char-table nil
+  "Used in `forward-word-strictly' and `backward-word-strictly'
+to countermand the effect of `find-word-boundary-function-table'.")
+
+(defun forward-word-strictly (&optional arg)
+  "Move point forward ARG words (backward if ARG is negative).
+If ARG is omitted or nil, move point forward one word.
+Normally returns t.
+If an edge of the buffer or a field boundary is reached, point is left there
+and the function returns nil.  Field boundaries are not noticed if
+`inhibit-field-text-motion' is non-nil.
+
+This function is like `forward-word', but it is not affected
+by `find-word-boundary-function-table'.  It is also not interactive."
+  (let ((find-word-boundary-function-table
+         (if (char-table-p word-move-empty-char-table)
+             word-move-empty-char-table
+           (setq word-move-empty-char-table (make-char-table nil)))))
+    (forward-word (or arg 1))))
+
+(defun backward-word-strictly (&optional arg)
+  "Move backward until encountering the beginning of a word.
+With argument ARG, do this that many times.
+If ARG is omitted or nil, move point backward one word.
+
+This function is like `forward-word', but it is not affected
+by `find-word-boundary-function-table'.  It is also not interactive."
+  (let ((find-word-boundary-function-table
+         (if (char-table-p word-move-empty-char-table)
+             word-move-empty-char-table
+           (setq word-move-empty-char-table (make-char-table nil)))))
+    (forward-word (- (or arg 1)))))
 
 ;;  Whitespace
 
@@ -4218,6 +4990,33 @@ The properties used on SYMBOL are `composefunc', `sendfunc',
   (put symbol 'sendfunc sendfunc)
   (put symbol 'abortfunc (or abortfunc 'kill-buffer))
   (put symbol 'hookvar (or hookvar 'mail-send-hook)))
+
+
+(defun backtrace-frames (&optional base)
+  "Collect all frames of current backtrace into a list.
+If non-nil, BASE should be a function, and frames before its
+nearest activation frames are discarded."
+  (let ((frames nil))
+    (mapbacktrace (lambda (&rest frame) (push frame frames))
+                  (or base 'backtrace-frames))
+    (nreverse frames)))
+
+(defun backtrace-frame (nframes &optional base)
+  "Return the function and arguments NFRAMES up from current execution point.
+If non-nil, BASE should be a function, and NFRAMES counts from its
+nearest activation frame.
+If the frame has not evaluated the arguments yet (or is a special form),
+the value is (nil FUNCTION ARG-FORMS...).
+If the frame has evaluated its arguments and called its function already,
+the value is (t FUNCTION ARG-VALUES...).
+A &rest arg is represented as the tail of the list ARG-VALUES.
+FUNCTION is whatever was supplied as car of evaluated list,
+or a lambda expression for macro calls.
+If NFRAMES is more than the number of frames, the value is nil."
+  (backtrace-frame--internal
+   (lambda (evald func args _) `(,evald ,func ,@args))
+   nframes (or base 'backtrace-frame)))
+
 
 (defvar called-interactively-p-functions nil
   "Special hook called to skip special frames in `called-interactively-p'.
@@ -4232,7 +5031,7 @@ the number of frames to skip (minus 1).")
 
 (defun called-interactively-p (&optional kind)
   "Return t if the containing function was called by `call-interactively'.
-If KIND is `interactive', then only return t if the call was made
+If KIND is `interactive', then return t only if the call was made
 interactively by the user, i.e. not in `noninteractive' mode nor
 when `executing-kbd-macro'.
 If KIND is `any', on the other hand, it will return t for any kind of
@@ -4295,8 +5094,8 @@ command is called from a keyboard macro?"
                           'called-interactively-p-functions
                           i frame nextframe)))
                (pcase skip
-                 (`nil nil)
-                 (`0 t)
+                 ('nil nil)
+                 (0 t)
                  (_ (setq i (+ i skip -1)) (funcall get-next-frame)))))))
       ;; Now `frame' should be "the function from which we were called".
       (pcase (cons frame nextframe)
@@ -4326,7 +5125,10 @@ called from a keyboard macro or in batch mode?
 To test whether your function was called with `call-interactively',
 either (i) add an extra optional argument and give it an `interactive'
 spec that specifies non-nil unconditionally (such as \"p\"); or (ii)
-use `called-interactively-p'."
+use `called-interactively-p'.
+
+To test whether a function can be called interactively, use
+`commandp'."
   (declare (obsolete called-interactively-p "23.2"))
   (called-interactively-p 'interactive))
 
@@ -4362,9 +5164,9 @@ if it returns non-nil, then MAP stays active.
 Optional arg ON-EXIT, if non-nil, specifies a function that is
 called, with no arguments, after MAP is deactivated.
 
-This uses `overriding-terminal-local-map' which takes precedence over all other
-keymaps.  As usual, if no match for a key is found in MAP, the normal key
-lookup sequence then continues.
+This uses `overriding-terminal-local-map', which takes precedence over all
+other keymaps.  As usual, if no match for a key is found in MAP, the normal
+key lookup sequence then continues.
 
 This returns an \"exit function\", which can be called with no argument
 to deactivate this transient map, regardless of KEEP-PRED."
@@ -4381,7 +5183,8 @@ to deactivate this transient map, regardless of KEEP-PRED."
             (with-demoted-errors "set-transient-map PCH: %S"
               (unless (cond
                        ((null keep-pred) nil)
-                       ((not (eq map (cadr overriding-terminal-local-map)))
+                       ((and (not (eq map (cadr overriding-terminal-local-map)))
+                             (memq map (cddr overriding-terminal-local-map)))
                         ;; There's presumably some other transient-map in
                         ;; effect.  Wait for that one to terminate before we
                         ;; remove ourselves.
@@ -4394,8 +5197,10 @@ to deactivate this transient map, regardless of KEEP-PRED."
                         ;; exit C-u.
                         t)
                        ((eq t keep-pred)
-                        (eq this-command
-                            (lookup-key map (this-command-keys-vector))))
+                        (let ((mc (lookup-key map (this-command-keys-vector))))
+                          ;; If the key is unbound `this-command` is
+                          ;; nil and so is `mc`.
+                          (and mc (eq this-command mc))))
                        (t (funcall keep-pred)))
                 (funcall exitfun)))))
     (add-hook 'pre-command-hook clearfun)
@@ -4411,7 +5216,8 @@ to deactivate this transient map, regardless of KEEP-PRED."
 ;;			      MAX-VALUE
 ;;			      MESSAGE
 ;;			      MIN-CHANGE
-;;			      MIN-TIME])
+;;                            MIN-TIME
+;;                            MESSAGE-SUFFIX])
 ;;
 ;; This weirdness is for optimization reasons: we want
 ;; `progress-reporter-update' to be as fast as possible, so
@@ -4421,7 +5227,7 @@ to deactivate this transient map, regardless of KEEP-PRED."
 ;; digits of precision, it doesn't really matter here.  On the other
 ;; hand, it greatly simplifies the code.
 
-(defsubst progress-reporter-update (reporter &optional value)
+(defsubst progress-reporter-update (reporter &optional value suffix)
   "Report progress of an operation in the echo area.
 REPORTER should be the result of a call to `make-progress-reporter'.
 
@@ -4430,14 +5236,17 @@ If REPORTER is a numerical progress reporter---i.e. if it was
  `make-progress-reporter'---then VALUE should be a number between
  MIN-VALUE and MAX-VALUE.
 
-If REPORTER is a non-numerical reporter, VALUE should be nil.
+Optional argument SUFFIX is a string to be displayed after
+REPORTER's main message and progress text.  If REPORTER is a
+non-numerical reporter, then VALUE should be nil, or a string to
+use instead of SUFFIX.
 
 This function is relatively inexpensive.  If the change since
 last update is too small or insufficient time has passed, it does
 nothing."
   (when (or (not (numberp value))      ; For pulsing reporter
 	    (>= value (car reporter))) ; For numerical reporter
-    (progress-reporter-do-update reporter value)))
+    (progress-reporter-do-update reporter value suffix)))
 
 (defun make-progress-reporter (message &optional min-value max-value
 				       current-value min-change min-time)
@@ -4465,10 +5274,9 @@ CURRENT-VALUE and MIN-CHANGE do not have any effect if MIN-VALUE
 and/or MAX-VALUE are nil.
 
 Optional MIN-TIME specifies the minimum interval time between
-echo area updates (default is 0.2 seconds.)  If the function
-`float-time' is not present, time is not tracked at all.  If the
-OS is not capable of measuring fractions of seconds, this
-parameter is effectively rounded up."
+echo area updates (default is 0.2 seconds.)  If the OS is not
+capable of measuring fractions of seconds, this parameter is
+effectively rounded up."
   (when (string-match "[[:alnum:]]\\'" message)
     (setq message (concat message "...")))
   (unless min-time
@@ -4476,33 +5284,34 @@ parameter is effectively rounded up."
   (let ((reporter
 	 ;; Force a call to `message' now
 	 (cons (or min-value 0)
-	       (vector (if (and (fboundp 'float-time)
-				(>= min-time 0.02))
+	       (vector (if (>= min-time 0.02)
 			   (float-time) nil)
 		       min-value
 		       max-value
 		       message
 		       (if min-change (max (min min-change 50) 1) 1)
-		       min-time))))
+                       min-time
+                       ;; SUFFIX
+                       nil))))
     (progress-reporter-update reporter (or current-value min-value))
     reporter))
 
-(defun progress-reporter-force-update (reporter &optional value new-message)
+(defun progress-reporter-force-update (reporter &optional value new-message suffix)
   "Report progress of an operation in the echo area unconditionally.
 
-The first two arguments are the same as in `progress-reporter-update'.
+REPORTER, VALUE, and SUFFIX are the same as in `progress-reporter-update'.
 NEW-MESSAGE, if non-nil, sets a new message for the reporter."
   (let ((parameters (cdr reporter)))
     (when new-message
       (aset parameters 3 new-message))
     (when (aref parameters 0)
       (aset parameters 0 (float-time)))
-    (progress-reporter-do-update reporter value)))
+    (progress-reporter-do-update reporter value suffix)))
 
 (defvar progress-reporter--pulse-characters ["-" "\\" "|" "/"]
   "Characters to use for pulsing progress reporters.")
 
-(defun progress-reporter-do-update (reporter value)
+(defun progress-reporter-do-update (reporter value &optional suffix)
   (let* ((parameters   (cdr reporter))
 	 (update-time  (aref parameters 0))
 	 (min-value    (aref parameters 1))
@@ -4511,7 +5320,7 @@ NEW-MESSAGE, if non-nil, sets a new message for the reporter."
 	 (enough-time-passed
 	  ;; See if enough time has passed since the last update.
 	  (or (not update-time)
-	      (when (>= (float-time) update-time)
+	      (when (time-less-p update-time nil)
 		;; Calculate time for the next update
 		(aset parameters 0 (+ update-time (aref parameters 5)))))))
     (cond ((and min-value max-value)
@@ -4535,51 +5344,88 @@ NEW-MESSAGE, if non-nil, sets a new message for the reporter."
 			  max-value))
 	     (when (integerp value)
 	       (setcar reporter (ceiling (car reporter))))
-	     ;; Only print message if enough time has passed
+	     ;; Print message only if enough time has passed
 	     (when enough-time-passed
-	       (if (> percentage 0)
-		   (message "%s%d%%" text percentage)
-		 (message "%s" text)))))
+               (if suffix
+                   (aset parameters 6 suffix)
+                 (setq suffix (or (aref parameters 6) "")))
+               (if (> percentage 0)
+                   (message "%s%d%% %s" text percentage suffix)
+                 (message "%s %s" text suffix)))))
 	  ;; Pulsing indicator
 	  (enough-time-passed
-	   (let ((index (mod (1+ (car reporter)) 4))
-		 (message-log-max nil))
+           (when (and value (not suffix))
+             (setq suffix value))
+           (if suffix
+               (aset parameters 6 suffix)
+             (setq suffix (or (aref parameters 6) "")))
+           (let* ((index (mod (1+ (car reporter)) 4))
+                  (message-log-max nil)
+                  (pulse-char (aref progress-reporter--pulse-characters
+                                    index)))
 	     (setcar reporter index)
-	     (message "%s %s"
-		      text
-		      (aref progress-reporter--pulse-characters
-			    index)))))))
+             (message "%s %s %s" text pulse-char suffix))))))
 
 (defun progress-reporter-done (reporter)
   "Print reporter's message followed by word \"done\" in echo area."
   (message "%sdone" (aref (cdr reporter) 3)))
 
-(defmacro dotimes-with-progress-reporter (spec message &rest body)
+(defmacro dotimes-with-progress-reporter (spec reporter-or-message &rest body)
   "Loop a certain number of times and report progress in the echo area.
 Evaluate BODY with VAR bound to successive integers running from
 0, inclusive, to COUNT, exclusive.  Then evaluate RESULT to get
 the return value (nil if RESULT is omitted).
 
-At each iteration MESSAGE followed by progress percentage is
-printed in the echo area.  After the loop is finished, MESSAGE
-followed by word \"done\" is printed.  This macro is a
-convenience wrapper around `make-progress-reporter' and friends.
+REPORTER-OR-MESSAGE is a progress reporter object or a string.  In the latter
+case, use this string to create a progress reporter.
 
-\(fn (VAR COUNT [RESULT]) MESSAGE BODY...)"
+At each iteration, print the reporter message followed by progress
+percentage in the echo area.  After the loop is finished,
+print the reporter message followed by the word \"done\".
+
+This macro is a convenience wrapper around `make-progress-reporter' and friends.
+
+\(fn (VAR COUNT [RESULT]) REPORTER-OR-MESSAGE BODY...)"
   (declare (indent 2) (debug ((symbolp form &optional form) form body)))
-  (let ((temp (make-symbol "--dotimes-temp--"))
-	(temp2 (make-symbol "--dotimes-temp2--"))
-	(start 0)
-	(end (nth 1 spec)))
-    `(let ((,temp ,end)
-	   (,(car spec) ,start)
-	   (,temp2 (make-progress-reporter ,message ,start ,end)))
-       (while (< ,(car spec) ,temp)
-	 ,@body
-	 (progress-reporter-update ,temp2
-				   (setq ,(car spec) (1+ ,(car spec)))))
-       (progress-reporter-done ,temp2)
-       nil ,@(cdr (cdr spec)))))
+  (let ((prep (make-symbol "--dotimes-prep--"))
+        (end (make-symbol "--dotimes-end--")))
+    `(let ((,prep ,reporter-or-message)
+           (,end ,(cadr spec)))
+       (when (stringp ,prep)
+         (setq ,prep (make-progress-reporter ,prep 0 ,end)))
+       (dotimes (,(car spec) ,end)
+         ,@body
+         (progress-reporter-update ,prep (1+ ,(car spec))))
+       (progress-reporter-done ,prep)
+       (or ,@(cdr (cdr spec)) nil))))
+
+(defmacro dolist-with-progress-reporter (spec reporter-or-message &rest body)
+  "Loop over a list and report progress in the echo area.
+Evaluate BODY with VAR bound to each car from LIST, in turn.
+Then evaluate RESULT to get return value, default nil.
+
+REPORTER-OR-MESSAGE is a progress reporter object or a string.  In the latter
+case, use this string to create a progress reporter.
+
+At each iteration, print the reporter message followed by progress
+percentage in the echo area.  After the loop is finished,
+print the reporter message followed by the word \"done\".
+
+\(fn (VAR LIST [RESULT]) REPORTER-OR-MESSAGE BODY...)"
+  (declare (indent 2) (debug ((symbolp form &optional form) form body)))
+  (let ((prep (make-symbol "--dolist-progress-reporter--"))
+        (count (make-symbol "--dolist-count--"))
+        (list (make-symbol "--dolist-list--")))
+    `(let ((,prep ,reporter-or-message)
+           (,count 0)
+           (,list ,(cadr spec)))
+       (when (stringp ,prep)
+         (setq ,prep (make-progress-reporter ,prep 0 (1- (length ,list)))))
+       (dolist (,(car spec) ,list)
+         ,@body
+         (progress-reporter-update ,prep (setq ,count (1+ ,count))))
+       (progress-reporter-done ,prep)
+       (or ,@(cdr (cdr spec)) nil))))
 
 
 ;;;; Comparing version strings.
@@ -4591,14 +5437,16 @@ Usually the separator is \".\", but it can be any other string.")
 
 
 (defconst version-regexp-alist
-  '(("^[-_+ ]?snapshot$"                                 . -4)
+  '(("^[-._+ ]?snapshot$"                                 . -4)
     ;; treat "1.2.3-20050920" and "1.2-3" as snapshot releases
-    ("^[-_+]$"                                           . -4)
+    ("^[-._+]$"                                           . -4)
     ;; treat "1.2.3-CVS" as snapshot release
-    ("^[-_+ ]?\\(cvs\\|git\\|bzr\\|svn\\|hg\\|darcs\\)$" . -4)
-    ("^[-_+ ]?alpha$"                                    . -3)
-    ("^[-_+ ]?beta$"                                     . -2)
-    ("^[-_+ ]?\\(pre\\|rc\\)$"                           . -1))
+    ("^[-._+ ]?\\(cvs\\|git\\|bzr\\|svn\\|hg\\|darcs\\)$" . -4)
+    ;; treat "-unknown" the same as snapshots.
+    ("^[-._+ ]?unknown$"                                  . -4)
+    ("^[-._+ ]?alpha$"                                    . -3)
+    ("^[-._+ ]?beta$"                                     . -2)
+    ("^[-._+ ]?\\(pre\\|rc\\)$"                           . -1))
   "Specify association between non-numeric version and its priority.
 
 This association is used to handle version string like \"1.0pre2\",
@@ -4608,6 +5456,7 @@ non-numeric part of a version string to an integer.  For example:
    String Version    Integer List Version
    \"0.9snapshot\"     (0  9 -4)
    \"1.0-git\"         (1  0 -4)
+   \"1.0.cvs\"         (1  0 -4)
    \"1.0pre2\"         (1  0 -1 2)
    \"1.0PRE2\"         (1  0 -1 2)
    \"22.8beta3\"       (22 8 -2 3)
@@ -4647,41 +5496,47 @@ in `version-regexp-alist'.
 
 Examples of valid version syntax:
 
-   1.0pre2   1.0.7.5   22.8beta3   0.9alpha1   6.9.30Beta
+   1.0pre2   1.0.7.5   22.8beta3   0.9alpha1   6.9.30Beta   2.4.snapshot   .5
 
 Examples of invalid version syntax:
 
-   1.0prepre2   1.0..7.5   22.8X3   alpha3.2   .5
+   1.0prepre2   1.0..7.5   22.8X3   alpha3.2
 
 Examples of version conversion:
 
    Version String    Version as a List of Integers
-   \"1.0.7.5\"         (1  0  7 5)
-   \"1.0pre2\"         (1  0 -1 2)
-   \"1.0PRE2\"         (1  0 -1 2)
-   \"22.8beta3\"       (22 8 -2 3)
-   \"22.8Beta3\"       (22 8 -2 3)
-   \"0.9alpha1\"       (0  9 -3 1)
+   \".5\"              (0 5)
+   \"0.9 alpha\"       (0  9 -3)
    \"0.9AlphA1\"       (0  9 -3 1)
-   \"0.9alpha\"        (0  9 -3)
    \"0.9snapshot\"     (0  9 -4)
    \"1.0-git\"         (1  0 -4)
+   \"1.0.7.5\"         (1  0  7 5)
+   \"1.0.cvs\"         (1  0 -4)
+   \"1.0PRE2\"         (1  0 -1 2)
+   \"1.0pre2\"         (1  0 -1 2)
+   \"22.8 Beta3\"      (22 8 -2 3)
+   \"22.8beta3\"       (22 8 -2 3)
 
 See documentation for `version-separator' and `version-regexp-alist'."
-  (or (and (stringp ver) (> (length ver) 0))
-      (error "Invalid version string: '%s'" ver))
+  (unless (stringp ver)
+    (error "Version must be a string"))
   ;; Change .x.y to 0.x.y
   (if (and (>= (length ver) (length version-separator))
 	   (string-equal (substring ver 0 (length version-separator))
 			 version-separator))
       (setq ver (concat "0" ver)))
+  (unless (string-match-p "^[0-9]" ver)
+    (error "Invalid version syntax: `%s' (must start with a number)" ver))
+
   (save-match-data
     (let ((i 0)
 	  (case-fold-search t)		; ignore case in matching
 	  lst s al)
+      ;; Parse the version-string up to a separator until there are none left
       (while (and (setq s (string-match "[0-9]+" ver i))
 		  (= s i))
-	;; handle numeric part
+        ;; Add the numeric part to the beginning of the version list;
+        ;; lst gets reversed at the end
 	(setq lst (cons (string-to-number (substring ver i (match-end 0)))
 			lst)
 	      i   (match-end 0))
@@ -4697,15 +5552,15 @@ See documentation for `version-separator' and `version-regexp-alist'."
 	      (setq al (cdr al)))
 	    (cond (al
 		   (push (cdar al) lst))
-		  ;; Convert 22.3a to 22.3.1, 22.3b to 22.3.2, etc.
-		  ((string-match "^[-_+ ]?\\([a-zA-Z]\\)$" s)
+        ;; Convert 22.3a to 22.3.1, 22.3b to 22.3.2, etc., but only if
+        ;; the letter is the end of the version-string, to avoid
+        ;; 22.8X3 being valid
+        ((and (string-match "^[-._+ ]?\\([a-zA-Z]\\)$" s)
+           (= i (length ver)))
 		   (push (- (aref (downcase (match-string 1 s)) 0) ?a -1)
 			 lst))
-		  (t (error "Invalid version syntax: '%s'" ver))))))
-      (if (null lst)
-	  (error "Invalid version syntax: '%s'" ver)
-	(nreverse lst)))))
-
+		  (t (error "Invalid version syntax: `%s'" ver))))))
+    (nreverse lst))))
 
 (defun version-list-< (l1 l2)
   "Return t if L1, a list specification of a version, is lower than L2.
@@ -4820,6 +5675,7 @@ NAME is the package name as a symbol, and VERSION is its version
 as a list.")
 
 (defun package--description-file (dir)
+  "Return package description file name for package DIR."
   (concat (let ((subdir (file-name-nondirectory
                          (directory-file-name dir))))
             (if (string-match "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)" subdir)
@@ -4827,13 +5683,47 @@ as a list.")
           "-pkg.el"))
 
 
+;;; Thread support.
+
+(defmacro with-mutex (mutex &rest body)
+  "Invoke BODY with MUTEX held, releasing MUTEX when done.
+This is the simplest safe way to acquire and release a mutex."
+  (declare (indent 1) (debug t))
+  (let ((sym (make-symbol "mutex")))
+    `(let ((,sym ,mutex))
+       (mutex-lock ,sym)
+       (unwind-protect
+	   (progn ,@body)
+	 (mutex-unlock ,sym)))))
+
+
 ;;; Misc.
+
+(defvar definition-prefixes (make-hash-table :test 'equal)
+  "Hash table mapping prefixes to the files in which they're used.
+This can be used to automatically fetch not-yet-loaded definitions.
+More specifically, if there is a value of the form (FILES...) for
+a string PREFIX it means that the FILES define variables or functions
+with names that start with PREFIX.
+
+Note that it does not imply that all definitions starting with PREFIX can
+be found in those files.  E.g. if prefix is \"gnus-article-\" there might
+still be definitions of the form \"gnus-article-toto-titi\" in other files,
+which would presumably appear in this table under another prefix such as
+\"gnus-\" or \"gnus-article-toto-\".")
+
+(defun register-definition-prefixes (file prefixes)
+  "Register that FILE uses PREFIXES."
+  (dolist (prefix prefixes)
+    (puthash prefix (cons file (gethash prefix definition-prefixes))
+             definition-prefixes)))
+
 (defconst menu-bar-separator '("--")
   "Separator for menus.")
 
 ;; The following statement ought to be in print.c, but `provide' can't
 ;; be used there.
-;; http://lists.gnu.org/archive/html/emacs-devel/2009-08/msg00236.html
+;; https://lists.gnu.org/r/emacs-devel/2009-08/msg00236.html
 (when (hash-table-p (car (read-from-string
 			  (prin1-to-string (make-hash-table)))))
   (provide 'hashtable-print-readable))
@@ -4853,5 +5743,30 @@ This function is called from lisp/Makefile and leim/Makefile."
     (setq file (concat (substring file 1 2) ":" (substring file 2))))
   file)
 
+(defun flatten-tree (tree)
+  "Return a \"flattened\" copy of TREE.
+In other words, return a list of the non-nil terminal nodes, or
+leaves, of the tree of cons cells rooted at TREE.  Leaves in the
+returned list are in the same order as in TREE.
+
+\(flatten-tree \\='(1 (2 . 3) nil (4 5 (6)) 7))
+=> (1 2 3 4 5 6 7)"
+  (let (elems)
+    (while (consp tree)
+      (let ((elem (pop tree)))
+        (while (consp elem)
+          (push (cdr elem) tree)
+          (setq elem (car elem)))
+        (if elem (push elem elems))))
+    (if tree (push tree elems))
+    (nreverse elems)))
+
+;; Technically, `flatten-list' is a misnomer, but we provide it here
+;; for discoverability:
+(defalias 'flatten-list 'flatten-tree)
+
+;; The initial anchoring is for better performance in searching matches.
+(defconst regexp-unmatchable "\\`a\\`"
+  "Standard regexp guaranteed not to match any string at all.")
 
 ;;; subr.el ends here

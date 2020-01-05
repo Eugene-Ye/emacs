@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -413,9 +413,7 @@ While this input method is active, the variable
 	  (progn
 	    (setq robin-mode nil)
 	    (setq describe-current-input-method-function nil)
-	    (run-hooks
-	     'robin-inactivate-hook ; for backward compatibility
-	     'robin-deactivate-hook))
+	    (run-hooks 'robin-deactivate-hook))
 	(kill-local-variable 'input-method-function))
 
     ;; activate robin input method.
@@ -466,7 +464,7 @@ While this input method is active, the variable
 	  (list key)
 	(delete-region start (point))
 	(if key
-	    (setq unread-command-events (list key)))
+	    (push key unread-command-events))
 	(if (stringp output)
 	    (string-to-list output)
 	  (list output))))))
@@ -576,7 +574,7 @@ used."
 (provide 'robin)
 
 ;; Local Variables:
-;; coding: utf-8-emacs
+;; coding: utf-8
 ;; End:
 
 ;;; robin.el ends here

@@ -1,9 +1,8 @@
 ;;; iswitchb.el --- switch between buffers using substrings
 
-;; Copyright (C) 1996-1997, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1997, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Stephen Eglen <stephen@gnu.org>
-;; Maintainer: Stephen Eglen <stephen@gnu.org>
 ;; Keywords: completion convenience
 ;; Obsolete-since: 24.4
 
@@ -20,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -175,11 +174,8 @@
 ;; iswitchb-read-buffer has been written to be a drop in replacement
 ;; for the normal buffer selection routine `read-buffer'.  To use
 ;; iswitch for all buffer selections in Emacs, add:
-;; (setq read-buffer-function 'iswitchb-read-buffer)
+;; (setq read-buffer-function #'iswitchb-read-buffer)
 ;; (This variable was introduced in Emacs 20.3.)
-;; XEmacs users can get the same behavior by doing:
-;; (defalias 'read-buffer 'iswitchb-read-buffer)
-;; since `read-buffer' is defined in lisp.
 
 ;; Using iswitchb for other completion tasks.
 
@@ -353,8 +349,6 @@ See also `iswitchb-newbuffer'."
   :type 'boolean
   :group 'iswitchb)
 
-(define-obsolete-variable-alias 'iswitchb-use-fonts 'iswitchb-use-faces "22.1")
-
 (defcustom iswitchb-use-faces t
   "Non-nil means use font-lock faces for showing first match."
   :type 'boolean
@@ -389,8 +383,8 @@ See documentation of `walk-windows' for useful values."
 
 This hook is run during minibuffer setup if `iswitchb' is active.
 For instance:
-\(add-hook 'iswitchb-minibuffer-setup-hook
-	  '\(lambda () (set (make-local-variable 'max-mini-window-height) 3)))
+\(add-hook \\='iswitchb-minibuffer-setup-hook
+	  \\='\(lambda () (set (make-local-variable \\='max-mini-window-height) 3)))
 will constrain the minibuffer to a maximum height of 3 lines when
 iswitchb is running."
   :type 'hook
@@ -586,7 +580,7 @@ in a separate window.
 	   ))))
 
 (defun iswitchb-read-buffer (prompt &optional default require-match
-				    start matches-set)
+				    _predicate start matches-set)
   "Replacement for the built-in `read-buffer'.
 Return the name of a buffer selected.
 PROMPT is the prompt to give to the user.
@@ -1095,7 +1089,7 @@ Return the modified list with the last element prepended to it."
 
 	      (and iswitchb-prompt-newbuffer
 		   (y-or-n-p
-		    (format
+		    (format-message
 		     "No buffer matching `%s', create one? "
 		     buf)))))
 	;; then create a new buffer
@@ -1247,7 +1241,7 @@ Modified from `icomplete-completions'."
 
     (if (and iswitchb-use-faces comps)
 	(progn
-	  (setq first (car comps))
+	  (setq first (copy-sequence (car comps)))
 	  (setq first (format "%s" first))
 	  (put-text-property 0 (length first) 'face
 			     (if (= (length comps) 1)
@@ -1419,9 +1413,6 @@ See the variable `iswitchb-case' for details."
 ;;;###autoload
 (define-minor-mode iswitchb-mode
   "Toggle Iswitchb mode.
-With a prefix argument ARG, enable Iswitchb mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
 
 Iswitchb mode is a global minor mode that enables switching
 between buffers using substrings.  See `iswitchb' for details."

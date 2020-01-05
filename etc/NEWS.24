@@ -1,6 +1,6 @@
 GNU Emacs NEWS -- history of user-visible changes.
 
-Copyright (C) 2010-2014 Free Software Foundation, Inc.
+Copyright (C) 2010-2020 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 Please send Emacs bug reports to bug-gnu-emacs@gnu.org.
@@ -14,38 +14,45 @@ and NEWS.1-17 for changes in older Emacs versions.
 You can narrow news to a specific version by calling `view-emacs-news'
 with a prefix argument or by typing C-u C-h C-n.
 
-Temporary note:
-+++ indicates that all necessary documentation updates are complete.
-    (This means all relevant manuals in doc/ AND lisp doc-strings.)
---- means no change in the manuals is needed.
-When you add a new item, use the appropriate mark if you are sure it applies,
-otherwise leave it unmarked.
-
 
 * Changes in Emacs 24.5
 
----
+** This is mainly a bug-fix release, but there are some other changes.
+
 ** The default value of `history-length' has increased to 100.
+
+** The variable `redisplay-dont-pause' is obsolete.
 
 
 * Changes in Specialized Modes and Packages in Emacs 24.5
 
-** `call-process-shell-command' and `process-file-shell-command'
-don't take "&rest args" any more.
+** `call-process-shell-command' and `process-file-shell-command' no longer
+take "&rest args".
+
+** The option `browse-url-firefox-startup-arguments' no longer has an effect.
+
+** ERC
+
+*** New option `erc-rename-buffers'.
+
+*** New faces `erc-my-nick-prefix-face' and `erc-nick-prefix-face'.
+
+*** `erc-format-@nick' displays all user modes instead of only op and voice.
+
+*** The display of irc commands in the current buffer has been disabled.
+
+*** `erc-version' now follows the Emacs version.
 
 ** Obsolete packages
 
 *** cc-compat.el
 
----
-*** crisp.el - moved to elpa.gnu.org.
+*** crisp.el (moved to elpa.gnu.org)
 
----
 *** tpu-edt.el, ws-mode.el
 These emulations of old editors are believed to be no longer relevant
  - contact emacs-devel@gnu.org if you disagree.
 
----
 *** vi.el, vip.el (try M-x viper instead)
 
 
@@ -77,7 +84,7 @@ It is no longer needed, as the crt*.o files are no longer linked specially.
 ** Directories passed to configure option `--enable-locallisppath' are
 no longer created during installation.
 
-** Emacs for Nextstep (Mac OS X, GNUstep) can be built with ImageMagick support.
+** Emacs for Nextstep (OS X, GNUstep) can be built with ImageMagick support.
 This requires pkg-config to be available at build time.
 
 
@@ -1110,6 +1117,8 @@ a non-nil `interactive-only' property.
 The value, if non-nil, is a regexp that specifies what to trim from
 the start and end of each substring.
 
+** New function `delete-consecutive-dups'.
+
 ** Completion
 
 *** The separator used by `completing-read-multiple' is now a regexp.
@@ -1552,7 +1561,7 @@ The previous binding, introduced in Emacs 24.1, was a mistake, because
 
 *** New input method `vietnamese-vni'.
 
-** Nextstep (GNUstep / Mac OS X) port
+** Nextstep (GNUstep / OS X) port
 
 *** Support for fullscreen and the frame parameter fullscreen.
 
@@ -2366,9 +2375,9 @@ Emacs now supports `mouse-highlight', help-echo (in the echo area), and
 ** On MS Windows, you can pass `--without-libxml2' to configure.bat to omit
 support for libxml2, even if its presence is detected.
 
-** On Mac OS X, the Nextstep port requires OS X 10.4 or later.
+** On OS X, the Nextstep port requires Mac OS X 10.4 or later.
 
-** On Mac OS X, configure no longer automatically adds the Fink "/sw"
+** On OS X, configure no longer automatically adds the Fink "/sw"
 directories to the search path.  You must add them yourself if you want them.
 
 
@@ -2535,7 +2544,7 @@ automatically select it.
 
 ** An Emacs Lisp package manager is now included.
 This is a convenient way to download and install additional packages,
-from a package repository at http://elpa.gnu.org.
+from a package repository at https://elpa.gnu.org.
 
 *** M-x list-packages shows a list of packages, which can be
 selected for installation.
@@ -3552,7 +3561,7 @@ frame or window as an Elisp object.
 
 *** New variable `completion-extra-properties' used to specify extra
 properties of the current completion:
-- :annotate-function, same as the old completion-annotate-function.
+- :annotation-function, same as the old completion-annotate-function.
 - :exit-function, function to call after completion took place.
 
 *** Functions on `completion-at-point-functions' can return any of the
@@ -3595,10 +3604,12 @@ advertised at the time.)
 
 ** Debugger changes
 
-*** New macro `condition-case-unless-debug' (this was actually added in
-Emacs 23.1 as condition-case-no-debug, but not advertised)
+*** New macro `condition-case-unless-debug'.
+(This was actually added in Emacs 23.1 as condition-case-no-debug, but
+not advertised)
 
-*** The macro `with-demoted-errors' was added in Emacs 23.1, but not advertised.
+*** The macro `with-demoted-errors'.
+It was also added in Emacs 23.1, but not advertised.
 
 *** Variable `stack-trace-on-error' removed.
 
@@ -3681,6 +3692,8 @@ both non-nil.  Interactively, TRASH defaults to t, unless a prefix
 argument is supplied (see Trash changes, above).
 
 *** New file predicates: `file-equal-p', `file-in-directory-p'.
+
+*** New function `file-size-human-readable'.
 
 ** Tool-bars can display separators.
 Tool-bar separators are handled like menu separators in menu-bar maps,
@@ -3826,7 +3839,7 @@ and also when HOME is set to C:\ by default.
 (It is only used internally in the Emacs C code.)
 
 ** Customize ns-auto-hide-menu-bar to have the menu-bar hidden, but
-reappear on mouse-over.  (Requires OS X 10.6 or later.)
+reappear on mouse-over.  (Requires Mac OS X 10.6 or later.)
 
 ** On Mac OS X, dragging a file into Emacs visits the file, like on
 other platforms, rather than inserting its contents into the buffer.
@@ -3846,7 +3859,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 
 Local variables:

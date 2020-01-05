@@ -1,6 +1,6 @@
 ;;; whitespace.el --- warn about and clean bogus whitespaces in the file
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: Rajesh Vaidheeswarran <rv@gnu.org>
 ;; Keywords: convenience
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -259,7 +259,7 @@ These are mostly programming and documentation modes.  But you may add other
 modes that you want whitespaces checked in by adding something like the
 following to your `.emacs':
 
-\(setq whitespace-modes (cons 'my-mode (cons 'my-other-mode
+\(setq whitespace-modes (cons \\='my-mode (cons \\='my-other-mode
 					    whitespace-modes))\)
 
 Or, alternately, you can use the Emacs `customize' command to set this."
@@ -300,8 +300,6 @@ To disable timer scans, set this to zero."
 				 (:background "white")))
   "Face used for highlighting the bogus whitespaces that exist in the buffer."
   :group 'whitespace)
-(define-obsolete-face-alias 'whitespace-highlight-face
-  'whitespace-highlight "22.1")
 
 (if (not (assoc 'whitespace-mode minor-mode-alist))
     (setq minor-mode-alist (cons '(whitespace-mode whitespace-mode-line)
@@ -749,7 +747,6 @@ If timer is not set, then set it to scan the files in
 ;;;###autoload
 (define-minor-mode whitespace-global-mode
   "Toggle using Whitespace mode in new buffers.
-With ARG, turn the mode on if ARG is positive, otherwise turn it off.
 
 When this mode is active, `whitespace-buffer' is added to
 `find-file-hook' and `kill-buffer-hook'."

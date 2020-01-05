@@ -11,8 +11,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,8 +20,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
+#ifndef EMACS_CATEGORY_H
+#define EMACS_CATEGORY_H
 
 /* We introduce here three types of object: category, category set,
    and category table.
@@ -53,9 +55,11 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    The second extra slot is a version number of the category table.
    But, for the moment, we are not using this slot.  */
 
+#include "lisp.h"
+
 INLINE_HEADER_BEGIN
 
-#define CATEGORYP(x) RANGED_INTEGERP (0x20, x, 0x7E)
+#define CATEGORYP(x) RANGED_FIXNUMP (0x20, x, 0x7E)
 
 #define CHECK_CATEGORY(x) \
   CHECK_TYPE (CATEGORYP (x), Qcategoryp, x)
@@ -64,7 +68,7 @@ INLINE_HEADER_BEGIN
   (BOOL_VECTOR_P (x) && bool_vector_size (x) == 128)
 
 /* Return a new empty category set.  */
-#define MAKE_CATEGORY_SET (Fmake_bool_vector (make_number (128), Qnil))
+#define MAKE_CATEGORY_SET (Fmake_bool_vector (make_fixnum (128), Qnil))
 
 #define CHECK_CATEGORY_SET(x) \
   CHECK_TYPE (CATEGORY_SET_P (x), Qcategorysetp, x)
@@ -73,7 +77,7 @@ INLINE_HEADER_BEGIN
 #define CATEGORY_SET(c) char_category_set (c)
 
 /* Return true if CATEGORY_SET contains CATEGORY.
-   Faster than '!NILP (Faref (category_set, make_number (category)))'.  */
+   Faster than '!NILP (Faref (category_set, make_fixnum (category)))'.  */
 INLINE bool
 CATEGORY_MEMBER (EMACS_INT category, Lisp_Object category_set)
 {
@@ -94,16 +98,16 @@ CHAR_HAS_CATEGORY (int ch, int category)
 
 /* Return the doc string of CATEGORY in category table TABLE.  */
 #define CATEGORY_DOCSTRING(table, category)				\
-  AREF (Fchar_table_extra_slot (table, make_number (0)), ((category) - ' '))
+  AREF (Fchar_table_extra_slot (table, make_fixnum (0)), ((category) - ' '))
 
 /* Set the doc string of CATEGORY to VALUE in category table TABLE.  */
 #define SET_CATEGORY_DOCSTRING(table, category, value)			\
-  ASET (Fchar_table_extra_slot (table, make_number (0)), ((category) - ' '), value)
+  ASET (Fchar_table_extra_slot (table, make_fixnum (0)), ((category) - ' '), value)
 
 /* Return the version number of category table TABLE.  Not used for
    the moment.  */
 #define CATEGORY_TABLE_VERSION (table) \
-  Fchar_table_extra_slot (table, make_number (1))
+  Fchar_table_extra_slot (table, make_fixnum (1))
 
 /* Return true if there is a word boundary between two
    word-constituent characters C1 and C2 if they appear in this order.
@@ -116,3 +120,5 @@ CHAR_HAS_CATEGORY (int ch, int category)
 extern bool word_boundary_p (int, int);
 
 INLINE_HEADER_END
+
+#endif /* EMACS_CATEGORY_H */

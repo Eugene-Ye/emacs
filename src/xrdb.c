@@ -1,5 +1,5 @@
 /* Deal with the X Resource Manager.
-   Copyright (C) 1990, 1993-1994, 2000-2014 Free Software Foundation,
+   Copyright (C) 1990, 1993-1994, 2000-2020 Free Software Foundation,
    Inc.
 
 Author: Joseph Arceneaux
@@ -9,8 +9,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,7 +18,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
@@ -43,11 +43,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <pwd.h>
 #endif
 
-#ifdef USE_MOTIF
-/* For Vdouble_click_time.  */
-#include "keyboard.h"
-#endif
-
 /* X file search path processing.  */
 
 
@@ -65,12 +60,12 @@ x_get_customization_string (XrmDatabase db, const char *name,
 {
   char *full_name = alloca (strlen (name) + sizeof "customization" + 3);
   char *full_class = alloca (strlen (class) + sizeof "Customization" + 3);
-  char *result;
+  const char *result;
 
   sprintf (full_name,  "%s.%s", name,  "customization");
   sprintf (full_class, "%s.%s", class, "Customization");
 
-  result = x_get_string_resource (db, full_name, full_class);
+  result = x_get_string_resource (&db, full_name, full_class);
   return result ? xstrdup (result) : NULL;
 }
 
@@ -119,8 +114,8 @@ magic_db (const char *string, ptrdiff_t string_len, const char *class,
   while (p < string + string_len)
     {
       /* The chunk we're about to stick on the end of result.  */
-      const char *next = NULL;
-      ptrdiff_t next_len;
+      const char *next = p;
+      ptrdiff_t next_len = 1;
 
       if (*p == '%')
 	{
@@ -137,10 +132,13 @@ magic_db (const char *string, ptrdiff_t string_len, const char *class,
 		break;
 
 	      case 'C':
-		next = (x_customization_string
-			? x_customization_string
-			: "");
-		next_len = strlen (next);
+		if (x_customization_string)
+		  {
+		    next = x_customization_string;
+		    next_len = strlen (next);
+		  }
+		else
+		  next_len = 0;
 		break;
 
 	      case 'N':
@@ -176,17 +174,11 @@ magic_db (const char *string, ptrdiff_t string_len, const char *class,
 		return NULL;
 	      }
 	}
-      else
-	next = p, next_len = 1;
 
       /* Do we have room for this component followed by a '\0'?  */
       if (path_size - path_len <= next_len)
-	{
-	  if (min (PTRDIFF_MAX, SIZE_MAX) / 2 - 1 - path_len < next_len)
-	    memory_full (SIZE_MAX);
-	  path_size = (path_len + next_len + 1) * 2;
-	  path = xrealloc (path, path_size);
-	}
+	path = xpalloc (path, &path_size, path_len - path_size + next_len + 1,
+			-1, sizeof *path);
 
       memcpy (path + path_len, next, next_len);
       path_len += next_len;
@@ -207,34 +199,6 @@ magic_db (const char *string, ptrdiff_t string_len, const char *class,
   db = XrmGetFileDatabase (path);
   xfree (path);
   return db;
-}
-
-
-static char *
-gethomedir (void)
-{
-  struct passwd *pw;
-  char *ptr;
-  char *copy;
-
-  if ((ptr = getenv ("HOME")) == NULL)
-    {
-      if ((ptr = getenv ("LOGNAME")) != NULL
-	  || (ptr = getenv ("USER")) != NULL)
-	pw = getpwnam (ptr);
-      else
-	pw = getpwuid (getuid ());
-
-      if (pw)
-	ptr = pw->pw_dir;
-    }
-
-  if (ptr == NULL)
-    return xstrdup ("/");
-
-  copy = xmalloc (strlen (ptr) + 2);
-  strcpy (copy, ptr);
-  return strcat (copy, "/");
 }
 
 
@@ -323,17 +287,17 @@ get_user_app (const char *class)
   if (! db)
     {
       /* Check in the home directory.  This is a bit of a hack; let's
-	 hope one's home directory doesn't contain any %-escapes.  */
-      char *home = gethomedir ();
+	 hope one's home directory doesn't contain ':' or '%'.  */
+      char const *home = get_homedir ();
       db = search_magic_path (home, class, "%L/%N");
       if (! db)
 	db = search_magic_path (home, class, "%N");
-      xfree (home);
     }
 
   return db;
 }
 
+static char const xdefaults[] = ".Xdefaults";
 
 static XrmDatabase
 get_user_db (Display *display)
@@ -351,16 +315,12 @@ get_user_db (Display *display)
     db = XrmGetStringDatabase (xdefs);
   else
     {
-      char *home;
-      char *xdefault;
-
-      home = gethomedir ();
-      xdefault = xmalloc (strlen (home) + sizeof ".Xdefaults");
-      strcpy (xdefault, home);
-      strcat (xdefault, ".Xdefaults");
-      db = XrmGetFileDatabase (xdefault);
-      xfree (home);
-      xfree (xdefault);
+      /* Use ~/.Xdefaults.  */
+      char const *home = get_homedir ();
+      char *filename = xmalloc (strlen (home) + 1 + sizeof xdefaults);
+      splice_dir_file (filename, home, xdefaults);
+      db = XrmGetFileDatabase (filename);
+      xfree (filename);
     }
 
 #ifdef HAVE_XSCREENRESOURCESTRING
@@ -380,24 +340,27 @@ static XrmDatabase
 get_environ_db (void)
 {
   XrmDatabase db;
-  char *p;
-  char *path = 0;
+  char *p = getenv ("XENVIRONMENT");
+  char *filename = 0;
 
-  if ((p = getenv ("XENVIRONMENT")) == NULL)
+  if (!p)
     {
-      static char const xdefaults[] = ".Xdefaults-";
-      char *home = gethomedir ();
-      char const *host = SSDATA (Vsystem_name);
-      ptrdiff_t pathsize = (strlen (home) + sizeof xdefaults
-			    + SBYTES (Vsystem_name));
-      path = xrealloc (home, pathsize);
-      strcat (strcat (path, xdefaults), host);
-      p = path;
+      Lisp_Object system_name = Fsystem_name ();
+      if (STRINGP (system_name))
+	{
+	  /* Use ~/.Xdefaults-HOSTNAME.  */
+	  char const *home = get_homedir ();
+	  p = filename = xmalloc (strlen (home) + 1 + sizeof xdefaults
+				  + 1 + SBYTES (system_name));
+	  char *e = splice_dir_file (p, home, xdefaults);
+	  *e++ = '/';
+	  lispstpcpy (e, system_name);
+	}
     }
 
   db = XrmGetFileDatabase (p);
 
-  xfree (path);
+  xfree (filename);
 
   return db;
 }
@@ -420,7 +383,7 @@ x_load_resources (Display *display, const char *xrm_string,
   XrmDatabase db;
   char line[256];
 
-#if defined USE_MOTIF || !defined HAVE_XFT || !defined USE_LUCID
+#if defined USE_MOTIF || !(defined USE_CAIRO || defined HAVE_XFT) || !defined USE_LUCID
   const char *helv = "-*-helvetica-medium-r-*--*-120-*-*-*-*-iso8859-1";
 #endif
 
@@ -479,13 +442,13 @@ x_load_resources (Display *display, const char *xrm_string,
 
   /* Set double click time of list boxes in the file selection
      dialog from `double-click-time'.  */
-  if (INTEGERP (Vdouble_click_time) && XINT (Vdouble_click_time) > 0)
+  if (FIXNUMP (Vdouble_click_time) && XFIXNUM (Vdouble_click_time) > 0)
     {
       sprintf (line, "%s*fsb*DirList.doubleClickInterval: %"pI"d",
-	       myclass, XFASTINT (Vdouble_click_time));
+	       myclass, XFIXNAT (Vdouble_click_time));
       XrmPutLineResource (&rdb, line);
       sprintf (line, "%s*fsb*ItemsList.doubleClickInterval: %"pI"d",
-	       myclass, XFASTINT (Vdouble_click_time));
+	       myclass, XFIXNAT (Vdouble_click_time));
       XrmPutLineResource (&rdb, line);
     }
 
@@ -493,7 +456,7 @@ x_load_resources (Display *display, const char *xrm_string,
 
   sprintf (line, "Emacs.dialog*.background: grey75");
   XrmPutLineResource (&rdb, line);
-#if !defined (HAVE_XFT) || !defined (USE_LUCID)
+#if !(defined USE_CAIRO || defined HAVE_XFT) || !defined (USE_LUCID)
   sprintf (line, "Emacs.dialog*.font: %s", helv);
   XrmPutLineResource (&rdb, line);
   sprintf (line, "*XlwMenu*font: %s", helv);
@@ -584,19 +547,20 @@ x_get_resource (XrmDatabase rdb, const char *name, const char *class,
 /* Retrieve the string resource specified by NAME with CLASS from
    database RDB. */
 
-char *
-x_get_string_resource (XrmDatabase rdb, const char *name, const char *class)
+const char *
+x_get_string_resource (void *v_rdb, const char *name, const char *class)
 {
+  XrmDatabase *rdb = v_rdb;
   XrmValue value;
 
   if (inhibit_x_resources)
     /* --quick was passed, so this is a no-op.  */
     return NULL;
 
-  if (x_get_resource (rdb, name, class, x_rm_string, &value))
-    return (char *) value.addr;
+  if (x_get_resource (*rdb, name, class, x_rm_string, &value))
+    return (const char *) value.addr;
 
-  return 0;
+  return NULL;
 }
 
 /* Stand-alone test facilities.  */
@@ -670,7 +634,7 @@ main (int argc, char **argv)
   /* In a real program, you'd want to also do this: */
   display->db = xdb;
 
-  while (1)
+  while (true)
     {
       char query_name[90];
       char query_class[90];
@@ -685,7 +649,7 @@ main (int argc, char **argv)
 	  printf ("Class: ");
 	  gets (query_class);
 
-	  value = x_get_string_resource (xdb, query_name, query_class);
+	  value = x_get_string_resource (&xdb, query_name, query_class);
 
 	  if (value != NULL)
 	    printf ("\t%s(%s):  %s\n\n", query_name, query_class, value);

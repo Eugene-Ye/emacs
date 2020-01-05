@@ -1,6 +1,6 @@
-;;; erc-backend.el --- Backend network communication for ERC
+;;; erc-backend.el --- Backend network communication for ERC  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020 Free Software Foundation, Inc.
 
 ;; Filename: erc-backend.el
 ;; Author: Lawrence Mitchell <wence@gmx.li>
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -53,6 +53,7 @@
 ;; CONTENTS --- `erc-response.contents'
 ;; SENDER --- `erc-response.sender'
 ;; LINE --- `erc-response.unparsed'
+;; TAGS --- `erc-response.tags'
 ;;
 ;; WARNING, WARNING!!
 ;; It's probably not a good idea to destructively modify the list
@@ -108,14 +109,15 @@
 ;;;; Variables and options
 
 (defvar erc-server-responses (make-hash-table :test #'equal)
-  "Hashtable mapping server responses to their handler hooks.")
+  "Hash table mapping server responses to their handler hooks.")
 
 (cl-defstruct (erc-response (:conc-name erc-response.))
   (unparsed "" :type string)
   (sender "" :type string)
   (command "" :type string)
   (command-args '() :type list)
-  (contents "" :type string))
+  (contents "" :type string)
+  (tags '() :type list))
 
 ;;; User data
 
@@ -259,7 +261,7 @@ but has not been processed yet.")
   "Non-nil when we're currently processing a message.
 
 When ERC receives a private message, it sets up a new buffer for
-this query.  These in turn, though, do start flyspell. This
+this query.  These in turn, though, do start flyspell.  This
 involves starting an external process, in which case Emacs will
 wait - and when it waits, it does accept other stuff from, say,
 network exceptions.  So, if someone sends you two messages
@@ -318,7 +320,7 @@ If a key is pressed while ERC is waiting, it will stop waiting."
   "The maximum length of a single message.
 If a message exceeds this size, it is broken into multiple ones.
 
-IRC allows for lines up to 512 bytes. Two of them are CR LF.
+IRC allows for lines up to 512 bytes.  Two of them are CR LF.
 And a typical message looks like this:
 
   :nicky!uhuser@host212223.dialin.fnordisp.net PRIVMSG #lazybastards :Hello!
@@ -345,8 +347,8 @@ This will only be consulted if the coding system in
 This is either a coding system, a cons, a function, or nil.
 
 If a cons, the encoding system for outgoing text is in the car
-and the decoding system for incoming text is in the cdr. The most
-interesting use for this is to put `undecided' in the cdr. This
+and the decoding system for incoming text is in the cdr.  The most
+interesting use for this is to put `undecided' in the cdr.  This
 means that `erc-coding-system-precedence' will be consulted, and the
 first match there will be used.
 
@@ -370,13 +372,13 @@ This overrides `erc-server-coding-system' depending on the
 current target as returned by `erc-default-target'.
 
 Example: If you know that the channel #linux-ru uses the coding-system
-`cyrillic-koi8', then add '(\"#linux-ru\" . cyrillic-koi8) to the
+`cyrillic-koi8', then add (\"#linux-ru\" . cyrillic-koi8) to the
 alist."
   :group 'erc-server
-  :type '(repeat (cons (string :tag "Target")
+  :type '(repeat (cons (regexp :tag "Target")
                        coding-system)))
 
-(defcustom erc-server-connect-function 'open-network-stream
+(defcustom erc-server-connect-function #'erc-open-network-stream
   "Function used to initiate a connection.
 It should take same arguments as `open-network-stream' does."
   :group 'erc-server
@@ -464,15 +466,45 @@ If this is set to nil, never try to reconnect."
 The length is specified in `erc-split-line-length'.
 
 Currently this is called by `erc-send-input'."
-  (if (< (length longline)
-         erc-split-line-length)
-      (list longline)
+  (let ((charset (car (erc-coding-system-for-target nil))))
     (with-temp-buffer
       (insert longline)
+      ;; The line lengths are in octets, not characters (because these
+      ;; are server protocol limits), so we have to first make the
+      ;; text into bytes, then fold the bytes on "word" boundaries,
+      ;; and then make the bytes into text again.
+      (encode-coding-region (point-min) (point-max) charset)
       (let ((fill-column erc-split-line-length))
         (fill-region (point-min) (point-max)
                      nil t))
+      (decode-coding-region (point-min) (point-max) charset)
       (split-string (buffer-string) "\n"))))
+
+(defun erc-forward-word ()
+  "Move forward one word, ignoring any subword settings.
+If no subword-mode is active, then this is (forward-word)."
+  (skip-syntax-forward "^w")
+  (> (skip-syntax-forward "w") 0))
+
+(defun erc-word-at-arg-p (pos)
+  "Report whether the char after a given POS has word syntax.
+If POS is out of range, the value is nil."
+  (let ((c (char-after pos)))
+    (if c
+        (eq ?w (char-syntax c))
+      nil)))
+
+(defun erc-bounds-of-word-at-point ()
+  "Return the bounds of word at point, or nil if we're not at a word.
+If no subword-mode is active, then this is
+\(bounds-of-thing-at-point 'word)."
+  (if (or (erc-word-at-arg-p (point))
+          (erc-word-at-arg-p (1- (point))))
+      (save-excursion
+        (let* ((start (progn (skip-syntax-backward "w") (point)))
+               (end   (progn (skip-syntax-forward  "w") (point))))
+          (cons start end)))
+    nil))
 
 ;; Used by CTCP functions
 (defun erc-upcase-first-word (str)
@@ -480,7 +512,7 @@ Currently this is called by `erc-send-input'."
   (with-temp-buffer
     (insert str)
     (goto-char (point-min))
-    (upcase-word 1)
+    (upcase-region (point) (progn (erc-forward-word) (point)))
     (buffer-string)))
 
 (defun erc-server-setup-periodical-ping (buffer)
@@ -493,9 +525,19 @@ The current buffer is given by BUFFER."
                                      4 erc-server-send-ping-interval
                                      #'erc-server-send-ping
                                      buffer))
-      (setq erc-server-ping-timer-alist (cons (cons buffer
-                                                    erc-server-ping-handler)
-                                              erc-server-ping-timer-alist)))))
+
+      ;; I check the timer alist for an existing timer. If one exists,
+      ;; I get rid of it
+      (let ((timer-tuple (assq buffer erc-server-ping-timer-alist)))
+        (if timer-tuple
+            ;; this buffer already has a timer. Cancel it and set the new one
+            (progn
+              (erc-cancel-timer (cdr timer-tuple))
+              (setf (cdr (assq buffer erc-server-ping-timer-alist)) erc-server-ping-handler))
+
+          ;; no existing timer for this buffer. Add new one
+          (add-to-list 'erc-server-ping-timer-alist
+                       (cons buffer erc-server-ping-handler)))))))
 
 (defun erc-server-process-alive (&optional buffer)
   "Return non-nil when BUFFER has an `erc-server-process' open or running."
@@ -505,54 +547,56 @@ The current buffer is given by BUFFER."
          (memq (process-status erc-server-process) '(run open)))))
 
 ;;;; Connecting to a server
+(defun erc-open-network-stream (name buffer host service)
+  "As `open-network-stream', but does non-blocking IO"
+  (make-network-process :name name :buffer  buffer
+                        :host host :service service :nowait t))
 
 (defun erc-server-connect (server port buffer)
   "Perform the connection and login using the specified SERVER and PORT.
 We will store server variables in the buffer given by BUFFER."
-  (let ((msg (erc-format-message 'connect ?S server ?p port)))
+  (let ((msg (erc-format-message 'connect ?S server ?p port)) process)
     (message "%s" msg)
-    (let ((process (funcall erc-server-connect-function
-                            (format "erc-%s-%s" server port)
-                            nil server port)))
-      (unless (processp process)
-        (error "Connection attempt failed"))
+    (setq process (funcall erc-server-connect-function
+                           (format "erc-%s-%s" server port) nil server port))
+    (unless (processp process)
+      (error "Connection attempt failed"))
+    ;; Misc server variables
+    (with-current-buffer buffer
+      (setq erc-server-process process)
+      (setq erc-server-quitting nil)
+      (setq erc-server-reconnecting nil)
+      (setq erc-server-timed-out nil)
+      (setq erc-server-banned nil)
+      (setq erc-server-error-occurred nil)
+      (let ((time (erc-current-time)))
+        (setq erc-server-last-sent-time time)
+        (setq erc-server-last-ping-time time)
+        (setq erc-server-last-received-time time))
+      (setq erc-server-lines-sent 0)
+      ;; last peers (sender and receiver)
+      (setq erc-server-last-peers '(nil . nil)))
+    ;; we do our own encoding and decoding
+    (when (fboundp 'set-process-coding-system)
+      (set-process-coding-system process 'raw-text))
+    ;; process handlers
+    (set-process-sentinel process #'erc-process-sentinel)
+    (set-process-filter process #'erc-server-filter-function)
+    (set-process-buffer process buffer)
+    (erc-log "\n\n\n********************************************\n")
+    (message "%s" (erc-format-message
+                   'login ?n
+                   (with-current-buffer buffer (erc-current-nick))))
+    ;; wait with script loading until we receive a confirmation (first
+    ;; MOTD line)
+    (if (eq (process-status process) 'connect)
+        ;; waiting for a non-blocking connect - keep the user informed
+        (erc-display-message nil nil buffer "Opening connection..\n")
       (message "%s...done" msg)
-      ;; Misc server variables
-      (with-current-buffer buffer
-        (setq erc-server-process process)
-        (setq erc-server-quitting nil)
-        (setq erc-server-reconnecting nil)
-        (setq erc-server-timed-out nil)
-        (setq erc-server-banned nil)
-        (setq erc-server-error-occurred nil)
-        (let ((time (erc-current-time)))
-          (setq erc-server-last-sent-time time)
-          (setq erc-server-last-ping-time time)
-          (setq erc-server-last-received-time time))
-        (setq erc-server-lines-sent 0)
-        ;; last peers (sender and receiver)
-        (setq erc-server-last-peers '(nil . nil)))
-      ;; we do our own encoding and decoding
-      (when (fboundp 'set-process-coding-system)
-        (set-process-coding-system process 'raw-text))
-      ;; process handlers
-      (set-process-sentinel process 'erc-process-sentinel)
-      (set-process-filter process 'erc-server-filter-function)
-      (set-process-buffer process buffer)))
-  (erc-log "\n\n\n********************************************\n")
-  (message "%s" (erc-format-message
-            'login ?n
-            (with-current-buffer buffer (erc-current-nick))))
-  ;; wait with script loading until we receive a confirmation (first
-  ;; MOTD line)
-  (if (eq erc-server-connect-function 'open-network-stream-nowait)
-      ;; it's a bit unclear otherwise that it's attempting to establish a
-      ;; connection
-      (erc-display-message nil nil buffer "Opening connection..\n")
-    (erc-login)))
+      (erc-login)) ))
 
 (defun erc-server-reconnect ()
-"Reestablish the current IRC connection.
+  "Reestablish the current IRC connection.
 Make sure you are in an ERC buffer when running this."
   (let ((buffer (erc-server-buffer)))
     (unless (buffer-live-p buffer)
@@ -565,9 +609,14 @@ Make sure you are in an ERC buffer when running this."
       (setq erc-server-last-sent-time 0)
       (setq erc-server-lines-sent 0)
       (let ((erc-server-connect-function (or erc-session-connector
-                                             'open-network-stream)))
+                                             #'erc-open-network-stream)))
         (erc-open erc-session-server erc-session-port erc-server-current-nick
                   erc-session-user-full-name t erc-session-password)))))
+
+(defun erc-server-delayed-reconnect (buffer)
+  (if (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (erc-server-reconnect))))
 
 (defun erc-server-filter-function (process string)
   "The process filter for the ERC server."
@@ -599,33 +648,33 @@ Make sure you are in an ERC buffer when running this."
             (erc-log-irc-protocol line nil)
             (erc-parse-server-response process line)))))))
 
-(defsubst erc-server-reconnect-p (event)
+(define-inline erc-server-reconnect-p (event)
   "Return non-nil if ERC should attempt to reconnect automatically.
 EVENT is the message received from the closed connection process."
-  (or erc-server-reconnecting
-      (and erc-server-auto-reconnect
-           (not erc-server-banned)
-           (not erc-server-error-occurred)
-           ;; make sure we don't infinitely try to reconnect, unless the
-           ;; user wants that
-           (or (eq erc-server-reconnect-attempts t)
-               (and (integerp erc-server-reconnect-attempts)
-                    (< erc-server-reconnect-count
-                       erc-server-reconnect-attempts)))
-           (or erc-server-timed-out
-               (not (string-match "^deleted" event)))
-           ;; open-network-stream-nowait error for connection refused
-           (not (string-match "^failed with code 111" event)))))
+  (inline-letevals (event)
+    (inline-quote
+     (or erc-server-reconnecting
+         (and erc-server-auto-reconnect
+              (not erc-server-banned)
+              ;; make sure we don't infinitely try to reconnect, unless the
+              ;; user wants that
+              (or (eq erc-server-reconnect-attempts t)
+                  (and (integerp erc-server-reconnect-attempts)
+                       (< erc-server-reconnect-count
+                          erc-server-reconnect-attempts)))
+              (or erc-server-timed-out
+                  (not (string-match "^deleted" ,event)))
+              ;; open-network-stream-nowait error for connection refused
+              (if (string-match "^failed with code 111" ,event) 'nonblocking t))))))
 
 (defun erc-process-sentinel-2 (event buffer)
   "Called when `erc-process-sentinel-1' has detected an unexpected disconnect."
   (if (not (buffer-live-p buffer))
       (erc-update-mode-line)
     (with-current-buffer buffer
-      (let ((reconnect-p (erc-server-reconnect-p event)))
-        (erc-display-message nil 'error (current-buffer)
-                             (if reconnect-p 'disconnected
-                               'disconnected-noreconnect))
+      (let ((reconnect-p (erc-server-reconnect-p event)) message delay)
+        (setq message (if reconnect-p 'disconnected 'disconnected-noreconnect))
+        (erc-display-message nil 'error (current-buffer) message)
         (if (not reconnect-p)
             ;; terminate, do not reconnect
             (progn
@@ -635,25 +684,18 @@ EVENT is the message received from the closed connection process."
               (erc-update-mode-line)
               (set-buffer-modified-p nil))
           ;; reconnect
-          (condition-case err
+          (condition-case nil
               (progn
-                (setq erc-server-reconnecting nil)
-                (erc-server-reconnect)
-                (setq erc-server-reconnect-count 0))
-            (error (when (buffer-live-p buffer)
-                     (set-buffer buffer)
-                     (if (integerp erc-server-reconnect-attempts)
-                         (setq erc-server-reconnect-count
-                               (1+ erc-server-reconnect-count))
-                       (message "%s ... %s"
-                                "Reconnecting until we succeed"
-                                "kill the ERC server buffer to stop"))
-                     (if (numberp erc-server-reconnect-timeout)
-                         (run-at-time erc-server-reconnect-timeout nil
-                                      #'erc-process-sentinel-2
-                                      event buffer)
-                       (error (concat "`erc-server-reconnect-timeout`"
-                                      " must be a number")))))))))))
+                (setq erc-server-reconnecting   nil
+                      erc-server-reconnect-count (1+ erc-server-reconnect-count))
+                (setq delay erc-server-reconnect-timeout)
+                (run-at-time delay nil
+                             #'erc-server-delayed-reconnect buffer))
+            (error (unless (integerp erc-server-reconnect-attempts)
+                     (message "%s ... %s"
+                              "Reconnecting until we succeed"
+                              "kill the ERC server buffer to stop"))
+                   (erc-server-delayed-reconnect buffer))))))))
 
 (defun erc-process-sentinel-1 (event buffer)
   "Called when `erc-process-sentinel' has decided that we're disconnecting.
@@ -692,6 +734,9 @@ Conditionally try to reconnect and take appropriate action."
                    (setq erc-server-ping-handler nil)))
           (run-hook-with-args 'erc-disconnected-hook
                               (erc-current-nick) (system-name) "")
+          (dolist (buf (erc-buffer-filter (lambda () (boundp 'erc-channel-users)) cproc))
+            (with-current-buffer buf
+              (setq erc-channel-users (make-hash-table :test 'equal))))
           ;; Remove the prompt
           (goto-char (or (marker-position erc-input-marker) (point-max)))
           (forward-line 0)
@@ -720,8 +765,8 @@ This is determined via `erc-encoding-coding-alist' or
 
 (defun erc-decode-string-from-target (str target)
   "Decode STR as appropriate for TARGET.
-This is indicated by `erc-encoding-coding-alist', defaulting to the value of
-`erc-server-coding-system'."
+This is indicated by `erc-encoding-coding-alist', defaulting to the
+value of `erc-server-coding-system'."
   (unless (stringp str)
     (setq str ""))
   (let ((coding (erc-coding-system-for-target target)))
@@ -750,7 +795,7 @@ Use DISPLAY-FN to show the results."
 (defun erc-server-send (string &optional forcep target)
   "Send STRING to the current server.
 If FORCEP is non-nil, no flood protection is done - the string is
-sent directly. This might cause the messages to arrive in a wrong
+sent directly.  This might cause the messages to arrive in a wrong
 order.
 
 If TARGET is specified, look up encoding information for that
@@ -773,7 +818,7 @@ protection algorithm."
                         (+ erc-server-flood-penalty
                            erc-server-flood-last-message))
                   (erc-log-irc-protocol str 'outbound)
-                  (condition-case err
+                  (condition-case nil
                       (progn
                         ;; Set encoding just before sending the string
                         (when (fboundp 'set-process-coding-system)
@@ -794,13 +839,14 @@ protection algorithm."
 (defun erc-server-send-ping (buf)
   "Send a ping to the IRC server buffer in BUF.
 Additionally, detect whether the IRC process has hung."
-  (if (buffer-live-p buf)
+  (if (and (buffer-live-p buf)
+           (with-current-buffer buf
+             erc-server-last-received-time))
       (with-current-buffer buf
         (if (and erc-server-send-ping-timeout
-                 (>
-                  (erc-time-diff (erc-current-time)
-                                 erc-server-last-received-time)
-                  erc-server-send-ping-timeout))
+                 (time-less-p
+                  erc-server-send-ping-timeout
+                  (time-since erc-server-last-received-time)))
             (progn
               ;; if the process is hung, kill it
               (setq erc-server-timed-out t)
@@ -818,16 +864,15 @@ Additionally, detect whether the IRC process has hung."
 See `erc-server-flood-margin' for an explanation of the flood
 protection algorithm."
   (with-current-buffer buffer
-    (let ((now (erc-current-time)))
+    (let ((now (current-time)))
       (when erc-server-flood-timer
         (erc-cancel-timer erc-server-flood-timer)
         (setq erc-server-flood-timer nil))
-      (when (< erc-server-flood-last-message
-               now)
-        (setq erc-server-flood-last-message now))
+      (when (time-less-p erc-server-flood-last-message now)
+        (setq erc-server-flood-last-message (erc-emacs-time-to-erc-time now)))
       (while (and erc-server-flood-queue
-                  (< erc-server-flood-last-message
-                     (+ now erc-server-flood-margin)))
+                  (time-less-p erc-server-flood-last-message
+                               (time-add now erc-server-flood-margin)))
         (let ((msg (caar erc-server-flood-queue))
               (encoding (cdar erc-server-flood-queue)))
           (setq erc-server-flood-queue (cdr erc-server-flood-queue)
@@ -838,7 +883,7 @@ protection algorithm."
           (erc-log (concat "erc-server-send-queue: "
                            msg "(" (buffer-name buffer) ")"))
           (when (erc-server-process-alive)
-            (condition-case err
+            (condition-case nil
                 ;; Set encoding just before sending the string
                 (progn
                   (when (fboundp 'set-process-coding-system)
@@ -858,7 +903,7 @@ protection algorithm."
   "Send LINE to the server as a privmsg or a notice.
 MESSAGE-COMMAND should be either \"PRIVMSG\" or \"NOTICE\".
 If the target is \",\", the last person you've got a message from will
-be used. If the target is \".\", the last person you've sent a message
+be used.  If the target is \".\", the last person you've sent a message
 to will be used."
   (cond
    ((string-match "^\\s-*\\(\\S-+\\) ?\\(.*\\)" line)
@@ -916,16 +961,34 @@ See also `erc-server-send'."
 
 ;;;; Handling responses
 
+(defun erc-parse-tags (string)
+  "Parse IRCv3 tags list in STRING to a (tag . value) alist."
+  (let ((tags)
+        (tag-strings (split-string string ";")))
+    (dolist (tag-string tag-strings tags)
+      (let ((pair (split-string tag-string "=")))
+        (push (if (consp pair)
+                  pair
+                `(,pair))
+              tags)))))
+
 (defun erc-parse-server-response (proc string)
   "Parse and act upon a complete line from an IRC server.
 PROC is the process (connection) from which STRING was received.
 PROCs `process-buffer' is `current-buffer' when this function is called."
   (unless (string= string "") ;; Ignore empty strings
     (save-match-data
-      (let ((posn (if (eq (aref string 0) ?:)
-                      (string-match " " string)
-                    0))
-            (msg (make-erc-response :unparsed string)))
+      (let* ((tag-list (when (eq (aref string 0) ?@)
+                         (substring string 1 (string-match " " string))))
+             (msg (make-erc-response :unparsed string :tags (when tag-list
+                                                              (erc-parse-tags
+                                                               tag-list))))
+             (string (if tag-list
+                         (substring string (+ 1 (string-match " " string)))
+                       string))
+             (posn (if (eq (aref string 0) ?:)
+                       (string-match " " string)
+                     0)))
 
         (setf (erc-response.sender msg)
               (if (eq posn 0)
@@ -1005,8 +1068,8 @@ Hands off to helper functions via `erc-call-hooks'."
               erc-server-prevent-duplicates)
       (let ((m (erc-response.unparsed parsed-response)))
         ;; duplicate suppression
-        (if (< (or (gethash m erc-server-duplicates) 0)
-               (- (erc-current-time) erc-server-duplicate-timeout))
+        (if (time-less-p (or (gethash m erc-server-duplicates) 0)
+                         (time-since erc-server-duplicate-timeout))
             (erc-call-hooks process parsed-response))
         (puthash m (erc-current-time) erc-server-duplicates))
     ;; Hand off to the relevant handler.
@@ -1022,14 +1085,14 @@ See also `erc-server-responses'."
 (defun erc-call-hooks (process message)
   "Call hooks associated with MESSAGE in PROCESS.
 
-Finds hooks by looking in the `erc-server-responses' hashtable."
+Finds hooks by looking in the `erc-server-responses' hash table."
   (let ((hook (or (erc-get-hook (erc-response.command message))
                   'erc-default-server-functions)))
     (run-hook-with-args-until-success hook process message)
     (erc-with-server-buffer
       (run-hook-with-args 'erc-timer-hook (erc-current-time)))))
 
-(add-hook 'erc-default-server-functions 'erc-handle-unknown-server-response)
+(add-hook 'erc-default-server-functions #'erc-handle-unknown-server-response)
 
 (defun erc-handle-unknown-server-response (proc parsed)
   "Display unknown server response's message."
@@ -1037,7 +1100,7 @@ Finds hooks by looking in the `erc-server-responses' hashtable."
                       " "
                       (erc-response.command parsed)
                       " "
-                      (mapconcat 'identity (erc-response.command-args parsed)
+                      (mapconcat #'identity (erc-response.command-args parsed)
                                  " "))))
     (erc-display-message parsed 'notice proc line)))
 
@@ -1055,7 +1118,8 @@ NAME is the response name as sent by the server (see the IRC RFC for
 meanings).
 
 This creates:
- - a hook variable `erc-server-NAME-functions' initialized to `erc-server-NAME'.
+ - a hook variable `erc-server-NAME-functions' initialized to
+   `erc-server-NAME'.
  - a function `erc-server-NAME' with body FN-BODY.
 
 If ALIASES is non-nil, each alias in ALIASES is `defalias'ed to
@@ -1082,7 +1146,7 @@ As an example:
 Would expand to:
 
   (prog2
-      (defvar erc-server-311-functions 'erc-server-311
+      (defvar erc-server-311-functions \\='erc-server-311
         \"Some non-generic variable documentation.
 
   Hook called upon receiving a 311 server response.
@@ -1100,12 +1164,12 @@ Would expand to:
   add things to `erc-server-311-functions' instead.\"
         (do-stuff-with-whois proc parsed))
 
-    (puthash \"311\" 'erc-server-311-functions erc-server-responses)
-    (puthash \"WHOIS\" 'erc-server-WHOIS-functions erc-server-responses)
-    (puthash \"WI\" 'erc-server-WI-functions erc-server-responses)
+    (puthash \"311\" \\='erc-server-311-functions erc-server-responses)
+    (puthash \"WHOIS\" \\='erc-server-WHOIS-functions erc-server-responses)
+    (puthash \"WI\" \\='erc-server-WI-functions erc-server-responses)
 
-    (defalias 'erc-server-WHOIS 'erc-server-311)
-    (defvar erc-server-WHOIS-functions 'erc-server-311
+    (defalias \\='erc-server-WHOIS \\='erc-server-311)
+    (defvar erc-server-WHOIS-functions \\='erc-server-311
       \"Some non-generic variable documentation.
 
   Hook called upon receiving a WHOIS server response.
@@ -1116,8 +1180,8 @@ Would expand to:
 
   See also `erc-server-311'.\")
 
-    (defalias 'erc-server-WI 'erc-server-311)
-    (defvar erc-server-WI-functions 'erc-server-311
+    (defalias \\='erc-server-WI \\='erc-server-311)
+    (defvar erc-server-WI-functions \\='erc-server-311
       \"Some non-generic variable documentation.
 
   Hook called upon receiving a WI server response.
@@ -1136,7 +1200,8 @@ Would expand to:
                         aliases))
   (let* ((hook-name (intern (format "erc-server-%s-functions" name)))
          (fn-name (intern (format "erc-server-%s" name)))
-         (hook-doc (format "%sHook called upon receiving a %%s server response.
+         (hook-doc (format-message "\
+%sHook called upon receiving a %%s server response.
 Each function is called with two arguments, the process associated
 with the response and the parsed response.  If the function returns
 non-nil, stop processing the hook.  Otherwise, continue.
@@ -1146,7 +1211,8 @@ See also `%s'."
                                (concat extra-var-doc "\n\n")
                              "")
                            fn-name))
-         (fn-doc (format "%sHandler for a %s server response.
+         (fn-doc (format-message "\
+%sHandler for a %s server response.
 PROC is the server process which returned the response.
 PARSED is the actual response as an `erc-response' struct.
 If you want to add responses don't modify this function, but rather
@@ -1162,18 +1228,22 @@ add things to `%s' instead."
           (cl-loop for alias in aliases
                    collect (intern (format "erc-server-%s-functions" alias)))))
     `(prog2
-         ;; Normal hook variable.
-         (defvar ,hook-name ',fn-name ,(format hook-doc name))
+         ;; Normal hook variable.  The variable may already have a
+         ;; value at this point, so I default to nil, and (add-hook)
+         ;; unconditionally
+         (defvar ,hook-name nil ,(format hook-doc name))
+         (add-hook ',hook-name #',fn-name)
          ;; Handler function
          (defun ,fn-name (proc parsed)
            ,fn-doc
+           (ignore proc parsed)
            ,@fn-body)
 
        ;; Make find-function and find-variable find them
        (put ',fn-name 'definition-name ',name)
        (put ',hook-name 'definition-name ',name)
 
-       ;; Hashtable map of responses to hook variables
+       ;; Hash table map of responses to hook variables
        ,@(cl-loop for response in (cons name aliases)
                   for var in (cons hook-name var-alternates)
                   collect `(puthash ,(format "%s" response) ',var
@@ -1216,7 +1286,7 @@ add things to `%s' instead."
     (pcase-let ((`(,nick ,login ,host)
                  (erc-parse-user (erc-response.sender parsed))))
       ;; strip the stupid combined JOIN facility (IRC 2.9)
-      (if (string-match "^\\(.*\\)?\^g.*$" chnl)
+      (if (string-match "^\\(.*\\)\^g.*$" chnl)
           (setq chnl (match-string 1 chnl)))
       (save-excursion
         (let* ((str (cond
@@ -1279,7 +1349,7 @@ add things to `%s' instead."
 (define-erc-response-handler (MODE)
   "Handle server mode changes." nil
   (let ((tgt (car (erc-response.command-args parsed)))
-        (mode (mapconcat 'identity (cdr (erc-response.command-args parsed))
+        (mode (mapconcat #'identity (cdr (erc-response.command-args parsed))
                          " ")))
     (pcase-let ((`(,nick ,login ,host)
                  (erc-parse-user (erc-response.sender parsed))))
@@ -1321,11 +1391,11 @@ add things to `%s' instead."
                  (cons nn (cdr erc-default-recipients)))
            (rename-buffer nn t)         ; bug#12002
            (erc-update-mode-line)
-           (add-to-list 'bufs (current-buffer)))))
+           (cl-pushnew (current-buffer) bufs))))
       (erc-update-user-nick nick nn host nil nil login)
       (cond
        ((string= nick (erc-current-nick))
-        (add-to-list 'bufs (erc-server-buffer))
+        (cl-pushnew (erc-server-buffer) bufs)
         (erc-set-current-nick nn)
         (erc-update-mode-line)
         (setq erc-nick-change-attempt-count 0)
@@ -1376,7 +1446,7 @@ add things to `%s' instead."
   "Handle pong messages." nil
   (let ((time (string-to-number (erc-response.contents parsed))))
     (when (> time 0)
-      (setq erc-server-lag (erc-time-diff time (erc-current-time)))
+      (setq erc-server-lag (erc-time-diff time nil))
       (when erc-verbose-server-ping
         (erc-display-message
          parsed 'notice proc 'PONG
@@ -1446,7 +1516,7 @@ add things to `%s' instead."
 
 ;; FIXME: need clean way of specifying extra hooks in
 ;; define-erc-response-handler.
-(add-hook 'erc-server-PRIVMSG-functions 'erc-auto-query)
+(add-hook 'erc-server-PRIVMSG-functions #'erc-auto-query)
 
 (define-erc-response-handler (QUIT)
   "Another user has quit IRC." nil
@@ -1477,7 +1547,7 @@ add things to `%s' instead."
 (define-erc-response-handler (WALLOPS)
   "Display a WALLOPS message." nil
   (let ((message (erc-response.contents parsed)))
-    (pcase-let ((`(,nick ,login ,host)
+    (pcase-let ((`(,nick ,_login ,_host)
                  (erc-parse-user (erc-response.sender parsed))))
       (erc-display-message
        parsed 'notice nil
@@ -1529,14 +1599,14 @@ certain commands are accepted and more.  See documentation for
 
 A server may send more than one 005 message."
   nil
-  (let ((line (mapconcat 'identity
+  (let ((line (mapconcat #'identity
                          (setf (erc-response.command-args parsed)
                                (cdr (erc-response.command-args parsed)))
                          " ")))
     (while (erc-response.command-args parsed)
       (let ((section (pop (erc-response.command-args parsed))))
         ;; fill erc-server-parameters
-        (when (string-match "^\\([A-Z]+\\)\=\\(.*\\)$\\|^\\([A-Z]+\\)$"
+        (when (string-match "^\\([A-Z]+\\)=\\(.*\\)$\\|^\\([A-Z]+\\)$"
                             section)
           (add-to-list 'erc-server-parameters
                        `(,(or (match-string 1 section)
@@ -1548,7 +1618,7 @@ A server may send more than one 005 message."
 (define-erc-response-handler (221)
   "Display the current user modes." nil
   (let* ((nick (car (erc-response.command-args parsed)))
-         (modes (mapconcat 'identity
+         (modes (mapconcat #'identity
                            (cdr (erc-response.command-args parsed)) " ")))
     (erc-set-modes nick modes)
     (erc-display-message parsed 'notice 'active 's221 ?n nick ?m modes)))
@@ -1576,12 +1646,12 @@ See `erc-display-server-message'." nil
 
 (define-erc-response-handler (275)
   "Display secure connection message." nil
-  (pcase-let ((`(,nick ,user ,message)
+  (pcase-let ((`(,nick ,_user ,_message)
                (cdr (erc-response.command-args parsed))))
     (erc-display-message
      parsed 'notice 'active 's275
      ?n nick
-     ?m (mapconcat 'identity (cddr (erc-response.command-args parsed))
+     ?m (mapconcat #'identity (cddr (erc-response.command-args parsed))
                    " "))))
 
 (define-erc-response-handler (290)
@@ -1612,12 +1682,12 @@ See `erc-display-server-message'." nil
 
 (define-erc-response-handler (307)
   "Display nick-identified message." nil
-  (pcase-let ((`(,nick ,user ,message)
+  (pcase-let ((`(,nick ,_user ,_message)
                (cdr (erc-response.command-args parsed))))
     (erc-display-message
      parsed 'notice 'active 's307
      ?n nick
-     ?m (mapconcat 'identity (cddr (erc-response.command-args parsed))
+     ?m (mapconcat #'identity (cddr (erc-response.command-args parsed))
                    " "))))
 
 (define-erc-response-handler (311 314)
@@ -1659,7 +1729,7 @@ See `erc-display-server-message'." nil
                (cdr (erc-response.command-args parsed))))
     (setq time (when on-since
                  (format-time-string erc-server-timestamp-format
-                                     (erc-string-to-emacs-time on-since))))
+                                     (string-to-number on-since))))
     (erc-update-user-nick nick nick nil nil nil
                           (and time (format "on since %s" time)))
     (if time
@@ -1691,12 +1761,12 @@ See `erc-display-server-message'." nil
   "Display a message for the 321 event."
   (erc-display-message parsed 'notice proc 's321)
   nil)
-(add-hook 'erc-server-321-functions 'erc-server-321-message t)
+(add-hook 'erc-server-321-functions #'erc-server-321-message t)
 
 (define-erc-response-handler (322)
   "LIST notice." nil
   (let ((topic (erc-response.contents parsed)))
-    (pcase-let ((`(,channel ,num-users)
+    (pcase-let ((`(,channel ,_num-users)
                  (cdr (erc-response.command-args parsed))))
       (add-to-list 'erc-channel-list (list channel))
       (erc-update-channel-topic channel topic))))
@@ -1709,12 +1779,12 @@ See `erc-display-server-message'." nil
       (erc-display-message
        parsed 'notice proc 's322
        ?c channel ?u num-users ?t (or topic "")))))
-(add-hook 'erc-server-322-functions 'erc-server-322-message t)
+(add-hook 'erc-server-322-functions #'erc-server-322-message t)
 
 (define-erc-response-handler (324)
   "Channel or nick modes." nil
   (let ((channel (cadr (erc-response.command-args parsed)))
-        (modes (mapconcat 'identity (cddr (erc-response.command-args parsed))
+        (modes (mapconcat #'identity (cddr (erc-response.command-args parsed))
                           " ")))
     (erc-set-modes channel modes)
     (erc-display-message
@@ -1731,7 +1801,7 @@ See `erc-display-server-message'." nil
 (define-erc-response-handler (329)
   "Channel creation date." nil
   (let ((channel (cadr (erc-response.command-args parsed)))
-        (time (erc-string-to-emacs-time
+        (time (string-to-number
                (nth 2 (erc-response.command-args parsed)))))
     (erc-display-message
      parsed 'notice (erc-get-buffer channel proc)
@@ -1756,8 +1826,7 @@ See `erc-display-server-message'." nil
 
 (define-erc-response-handler (331)
   "No topic set for channel." nil
-  (let ((channel (cadr (erc-response.command-args parsed)))
-        (topic (erc-response.contents parsed)))
+  (let ((channel (cadr (erc-response.command-args parsed))))
     (erc-display-message parsed 'notice (erc-get-buffer channel proc)
                          's331 ?c channel)))
 
@@ -1774,7 +1843,7 @@ See `erc-display-server-message'." nil
   (pcase-let ((`(,channel ,nick ,time)
                (cdr (erc-response.command-args parsed))))
     (setq time (format-time-string erc-server-timestamp-format
-                                   (erc-string-to-emacs-time time)))
+                                   (string-to-number time)))
     (erc-update-channel-topic channel
                               (format "\C-o (%s, %s)" nick time)
                               'append)
@@ -1791,12 +1860,10 @@ See `erc-display-server-message'." nil
 
 (define-erc-response-handler (352)
   "WHO notice." nil
-  (pcase-let ((`(,channel ,user ,host ,server ,nick ,away-flag)
+  (pcase-let ((`(,channel ,user ,host ,_server ,nick ,away-flag)
                (cdr (erc-response.command-args parsed))))
-    (let ((full-name (erc-response.contents parsed))
-          hopcount)
+    (let ((full-name (erc-response.contents parsed)))
       (when (string-match "\\(^[0-9]+ \\)\\(.*\\)$" full-name)
-        (setq hopcount (match-string 1 full-name))
         (setq full-name (match-string 2 full-name)))
       (erc-update-channel-member channel nick nick nil nil nil nil nil nil host user full-name)
       (erc-display-message parsed 'notice 'active 's352
@@ -1960,7 +2027,7 @@ See `erc-display-server-message'." nil
   "You need to be a channel operator to do that." nil
   (let ((channel (cadr (erc-response.command-args parsed)))
         (message (erc-response.contents parsed)))
-    (erc-display-message parsed '(error notice) 'active 's482
+    (erc-display-message parsed '(notice error) 'active 's482
                          ?c channel ?m message)))
 
 (define-erc-response-handler (671)
@@ -2009,6 +2076,3 @@ See `erc-display-error-notice'." nil
 (provide 'erc-backend)
 
 ;;; erc-backend.el ends here
-;; Local Variables:
-;; indent-tabs-mode: nil
-;; End:

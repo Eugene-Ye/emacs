@@ -1,10 +1,9 @@
 ;;; edt-user.el --- Sample user customizations for Emacs EDT emulation
 
-;; Copyright (C) 1986, 1992-1993, 2000-2014 Free Software Foundation,
+;; Copyright (C) 1986, 1992-1993, 2000-2020 Free Software Foundation,
 ;; Inc.
 
-;; Author: Kevin Gallagher <kgallagh@@spd.dsccc.com>
-;; Maintainer: Kevin Gallagher <kgallagh@@spd.dsccc.com>
+;; Author: Kevin Gallagher <kevin.gal@verizon.net>
 ;; Keywords: emulations
 
 ;; This file is part of GNU Emacs.
@@ -20,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -160,7 +159,7 @@ G-C-\\: Split Window
   G-%: Go to Percentage
   G- : Undo  (GOLD Spacebar)
   G-=: Go to Line
-  G-`: What line
+  G-\\=`: What line
   G-/: Query-Replace"
 
   (interactive)

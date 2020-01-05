@@ -1,8 +1,8 @@
 ;;; semantic/mru-bookmark.el --- Automatic bookmark tracking
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -45,7 +45,6 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
 (require 'semantic)
 (require 'eieio-base)
 (require 'ring)
@@ -78,7 +77,7 @@ Set this when the tag gets unlinked from the buffer it belongs to.")
 	   :initform t
 	   :documentation
 	   "The reason this tag is interesting.
-Nice values are 'edit, 'read, 'jump, and 'mark.
+Nice values include the following:
  edit - created because the tag text was edited.
  read - created because point lingered in tag text.
  jump - jumped to another tag from this tag.
@@ -86,7 +85,7 @@ Nice values are 'edit, 'read, 'jump, and 'mark.
    )
   "A single bookmark.")
 
-(defmethod initialize-instance :AFTER ((sbm semantic-bookmark) &rest fields)
+(cl-defmethod initialize-instance :after ((sbm semantic-bookmark) &rest fields)
   "Initialize the bookmark SBM with details about :tag."
   (condition-case nil
       (save-excursion
@@ -96,7 +95,7 @@ Nice values are 'edit, 'read, 'jump, and 'mark.
     (error (message "Error bookmarking tag.")))
   )
 
-(defmethod semantic-mrub-visit ((sbm semantic-bookmark))
+(cl-defmethod semantic-mrub-visit ((sbm semantic-bookmark))
   "Visit the semantic tag bookmark SBM.
 Uses `semantic-go-to-tag' and highlighting."
   (require 'semantic/decorate)
@@ -113,11 +112,11 @@ Uses `semantic-go-to-tag' and highlighting."
 	  (forward-char o))
       (error nil))
     ;; make it visible
-    (switch-to-buffer (current-buffer))
+    (pop-to-buffer-same-window (current-buffer))
     (semantic-momentary-highlight-tag tag)
     ))
 
-(defmethod semantic-mrub-update ((sbm semantic-bookmark) point reason)
+(cl-defmethod semantic-mrub-update ((sbm semantic-bookmark) point reason)
   "Update the existing bookmark SBM.
 POINT is some important location.
 REASON is a symbol.  See slot `reason' on `semantic-bookmark'."
@@ -132,7 +131,7 @@ REASON is a symbol.  See slot `reason' on `semantic-bookmark'."
     (error nil))
   )
 
-(defmethod semantic-mrub-preflush ((sbm semantic-bookmark))
+(cl-defmethod semantic-mrub-preflush ((sbm semantic-bookmark))
   "Method called on a tag before the current buffer list of tags is flushed.
 If there is a buffer match, unlink the tag."
   (let ((tag (oref sbm tag))
@@ -166,7 +165,6 @@ We can't use the built-in ring data structure because we need
 to delete some items from the ring when we don't have the data.")
 
 (defvar semantic-mru-bookmark-ring (semantic-bookmark-ring
-				    "Ring"
 				    :ring (make-ring 20))
   "The MRU bookmark ring.
 This ring tracks the most recent active tags of interest.")
@@ -183,7 +181,7 @@ Argument POINT is where to find the tag near."
 	(when nearby (setq tag nearby))))
     tag))
 
-(defmethod semantic-mrub-push ((sbr semantic-bookmark-ring) point
+(cl-defmethod semantic-mrub-push ((sbr semantic-bookmark-ring) point
 			       &optional reason)
   "Add a bookmark to the ring SBR from POINT.
 REASON is why it is being pushed.  See doc for `semantic-bookmark'
@@ -207,7 +205,7 @@ The resulting bookmark is then sorted within the ring."
       )))
 
 (defun semantic-mrub-cache-flush-fcn ()
-  "Function called in the `semantic-before-toplevel-cache-flush-hook`.
+  "Function called in the `semantic-before-toplevel-cache-flush-hook'.
 Cause tags in the ring to become unlinked."
   (let* ((ring (oref semantic-mru-bookmark-ring ring))
 	 (len (ring-length ring))
@@ -254,8 +252,7 @@ been edited, and you can re-visit them with \\[semantic-mrub-switch-tags]."
 
 ;;;###autoload
 (define-minor-mode global-semantic-mru-bookmark-mode
-  "Toggle global use of option `semantic-mru-bookmark-mode'.
-If ARG is positive or nil, enable, if it is negative, disable."
+  "Toggle global use of option `semantic-mru-bookmark-mode'."
   :global t :group 'semantic :group 'semantic-modes
   ;; Not needed because it's autoloaded instead.
   ;; :require 'semantic-util-modes
@@ -263,7 +260,7 @@ If ARG is positive or nil, enable, if it is negative, disable."
    'semantic-mru-bookmark-mode (if global-semantic-mru-bookmark-mode 1 -1)))
 
 (defcustom semantic-mru-bookmark-mode-hook nil
-  "*Hook run at the end of function `semantic-mru-bookmark-mode'."
+  "Hook run at the end of function `semantic-mru-bookmark-mode'."
   :group 'semantic
   :type 'hook)
 
@@ -280,10 +277,9 @@ been edited, and you can re-visit them with \\[semantic-mrub-switch-tags].
 
 \\{semantic-mru-bookmark-mode-map}
 
-With prefix argument ARG, turn on if positive, otherwise off.  The
-minor mode can be turned on only if semantic feature is available and
-the current buffer was set up for parsing.  Return non-nil if the
-minor mode is enabled."
+The minor mode can be turned on only if semantic feature is
+available and the current buffer was set up for parsing.  Return
+non-nil if the minor mode is enabled."
   :keymap semantic-mru-bookmark-mode-map
   (if semantic-mru-bookmark-mode
       (if (not (and (featurep 'semantic) (semantic-active-p)))
@@ -292,7 +288,6 @@ minor mode is enabled."
             (setq semantic-mru-bookmark-mode nil)
             (error "Buffer %s was not set up for parsing"
                    (buffer-name)))
-        (semantic-make-local-hook 'semantic-edits-new-change-functions)
         (add-hook 'semantic-edits-new-change-functions
                   'semantic-mru-bookmark-change-hook-fcn nil t)
         (add-hook 'semantic-edits-move-change-hooks
@@ -319,7 +314,7 @@ minor mode is enabled."
 	(al nil))
     (while (< idx len)
       (let ((r (ring-ref ring idx)))
-	(setq al (cons (cons (oref r :object-name) r)
+	(setq al (cons (cons (oref r object-name) r)
 		       al)))
       (setq idx (1+ idx)))
     (nreverse al)))

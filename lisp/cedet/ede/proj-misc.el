@@ -1,6 +1,6 @@
 ;;; ede-proj-misc.el --- EDE Generic Project Emacs Lisp support
 
-;; Copyright (C) 1998-2001, 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2001, 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: project, make
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -26,7 +26,6 @@
 ;; This misc target lets the user link in custom makefiles to an EDE
 ;; project.
 
-(eval-when-compile (require 'cl))
 (require 'ede/pmake)
 (require 'ede/proj-comp)
 
@@ -49,14 +48,12 @@ A user-written makefile is used to build this target.
 All listed sources are included in the distribution.")
 
 (defvar ede-misc-source
-  (ede-sourcecode "ede-misc-source"
-		  :name "Miscellaneous"
+  (ede-sourcecode :name "Miscellaneous"
 		  :sourcepattern ".*")
   "Miscellaneous field definition.")
 
 (defvar ede-misc-compile
-  (ede-compiler "ede-misc-compile"
-		:name "Sub Makefile"
+  (ede-compiler :name "Sub Makefile"
 		:commands
 		'(
 		  )
@@ -65,11 +62,11 @@ All listed sources are included in the distribution.")
 		)
   "Compile code via a sub-makefile.")
 
-(defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-makefile-miscelaneous))
+(cl-defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-makefile-miscelaneous))
   "Return the variable name for THIS's sources."
   (concat (ede-pmake-varname this) "_MISC"))
 
-(defmethod ede-proj-makefile-dependency-files
+(cl-defmethod ede-proj-makefile-dependency-files
   ((this ede-proj-target-makefile-miscelaneous))
   "Return a list of files which THIS target depends on."
   (with-slots (submakefile) this
@@ -79,7 +76,7 @@ All listed sources are included in the distribution.")
 	   nil)
 	  (t (list submakefile)))))
 
-(defmethod ede-proj-makefile-insert-rules ((this ede-proj-target-makefile-miscelaneous))
+(cl-defmethod ede-proj-makefile-insert-rules ((this ede-proj-target-makefile-miscelaneous))
   "Create the make rule needed to create an archive for THIS."
   ;; DO NOT call the next method.  We will never have any compilers,
   ;; or any dependencies, or stuff like this.  This rule will let us

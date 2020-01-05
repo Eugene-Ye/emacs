@@ -1,7 +1,6 @@
-;;; -*- lexical-binding: t -*-
-;;; ielm.el --- interaction mode for Emacs Lisp
+;;; ielm.el --- interaction mode for Emacs Lisp  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1994, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1994, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Smith <maa036@lancaster.ac.uk>
 ;; Maintainer: emacs-devel@gnu.org
@@ -21,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -62,11 +61,11 @@ narrowing in effect.  This way you will be certain that none of
 the remaining prompts will be accidentally messed up.  You may
 wish to put something like the following in your init file:
 
-\(add-hook 'ielm-mode-hook
+\(add-hook \\='ielm-mode-hook
           (lambda ()
-             (define-key ielm-map \"\\C-w\" 'comint-kill-region)
+             (define-key ielm-map \"\\C-w\" \\='comint-kill-region)
              (define-key ielm-map [C-S-backspace]
-               'comint-kill-whole-line)))
+               \\='comint-kill-whole-line)))
 
 If you set `comint-prompt-read-only' to t, you might wish to use
 `comint-mode-hook' and `comint-mode-map' instead of
@@ -116,45 +115,37 @@ such as `edebug-defun' to work with such inputs."
   :type 'boolean
   :group 'ielm)
 
+(defvaralias 'inferior-emacs-lisp-mode-hook 'ielm-mode-hook)
 (defcustom ielm-mode-hook nil
   "Hooks to be run when IELM (`inferior-emacs-lisp-mode') is started."
   :options '(eldoc-mode)
   :type 'hook
   :group 'ielm)
-(defvaralias 'inferior-emacs-lisp-mode-hook 'ielm-mode-hook)
 
-(defvar * nil
-  "Most recent value evaluated in IELM.")
+;; We define these symbols (that are only used buffer-locally in ielm
+;; buffers) this way to avoid having them be defined in the global
+;; Emacs namespace.
+(defvar *)
+(put '* 'variable-documentation "Most recent value evaluated in IELM.")
 
-(defvar ** nil
-  "Second-most-recent value evaluated in IELM.")
+(defvar **)
+(put '** 'variable-documentation "Second-most-recent value evaluated in IELM.")
 
-(defvar *** nil
-  "Third-most-recent value evaluated in IELM.")
+(defvar ***)
+(put '*** 'variable-documentation "Third-most-recent value evaluated in IELM.")
 
 (defvar ielm-match-data nil
   "Match data saved at the end of last command.")
 
-(defvar *1 nil
-  "During IELM evaluation, most recent value evaluated in IELM.
-Normally identical to `*'.  However, if the working buffer is an IELM
-buffer, distinct from the process buffer, then `*' gives the value in
-the working buffer, `*1' the value in the process buffer.
-The intended value is only accessible during IELM evaluation.")
-
-(defvar *2 nil
-  "During IELM evaluation, second-most-recent value evaluated in IELM.
-Normally identical to `**'.  However, if the working buffer is an IELM
-buffer, distinct from the process buffer, then `**' gives the value in
-the working buffer, `*2' the value in the process buffer.
-The intended value is only accessible during IELM evaluation.")
-
-(defvar *3 nil
-  "During IELM evaluation, third-most-recent value evaluated in IELM.
-Normally identical to `***'.  However, if the working buffer is an IELM
-buffer, distinct from the process buffer, then `***' gives the value in
-the working buffer, `*3' the value in the process buffer.
-The intended value is only accessible during IELM evaluation.")
+;; During IELM evaluation, *1 is the most recent value evaluated in
+;; IELM.  Normally identical to `*'.  However, if the working buffer
+;; is an IELM buffer, distinct from the process buffer, then `*' gives
+;; the value in the working buffer, `*1' the value in the process
+;; buffer.  The intended value is only accessible during IELM
+;; evaluation.  *2 and *3 are the same for ** and ***.
+(defvar *1)
+(defvar *2)
+(defvar *3)
 
 ;;; System variables
 
@@ -166,6 +157,7 @@ This variable is buffer-local.")
   "*** Welcome to IELM ***  Type (describe-mode) for help.\n"
   "Message to display when IELM is started.")
 
+(defvaralias 'inferior-emacs-lisp-mode-map 'ielm-map)
 (defvar ielm-map
   (let ((map (make-sparse-keymap)))
     (define-key map "\t" 'ielm-tab)
@@ -184,7 +176,6 @@ This variable is buffer-local.")
     (define-key map "\C-c\C-v" 'ielm-print-working-buffer)
     map)
   "Keymap for IELM mode.")
-(defvaralias 'inferior-emacs-lisp-mode-map 'ielm-map)
 
 (easy-menu-define ielm-menu ielm-map
   "IELM mode menu."
@@ -217,7 +208,7 @@ This variable is buffer-local.")
 
 (defun ielm-indent-line nil
   "Indent the current line as Lisp code if it is not a prompt line."
-  (when (save-excursion (comint-bol) (bolp))
+  (when (save-excursion (comint-bol t) (bolp))
     (lisp-indent-line)))
 
 ;;; Working buffer manipulation
@@ -380,12 +371,12 @@ nonempty, then flushes the buffer."
                      (*3 ***)
                      (active-process (ielm-process))
                      (old-standard-output standard-output)
-                     new-standard-output 
+                     new-standard-output
                      ielm-temp-buffer)
                 (set-match-data ielm-match-data)
                 (save-excursion
                   (with-temp-buffer
-                    (condition-case err
+                    (condition-case-unless-debug err
                         (unwind-protect
                             ;; The next let form creates default
                             ;; bindings for *, ** and ***.  But
@@ -437,15 +428,26 @@ nonempty, then flushes the buffer."
 
       (goto-char pmark)
       (unless error-type
-        (condition-case nil
+        (condition-case err
             ;; Self-referential objects cause loops in the printer, so
             ;; trap quits here. May as well do errors, too
             (unless for-effect
-              (setq output (concat output (pp-to-string result)
-				   (let ((str (eval-expression-print-format result)))
-				     (if str (propertize str 'font-lock-face 'shadow))))))
-          (error (setq error-type "IELM Error")
-                 (setq result "Error during pretty-printing (bug in pp)"))
+              (let* ((ielmbuf (current-buffer))
+                     (aux (let ((str (eval-expression-print-format result)))
+			    (if str (propertize str 'font-lock-face 'shadow)))))
+                (setq output (with-temp-buffer
+                               (let ((tmpbuf (current-buffer)))
+                                 ;; Use print settings (e.g. print-circle,
+                                 ;; print-gensym, etc...) from the
+                                 ;; right buffer!
+                                 (with-current-buffer ielmbuf
+                                   (cl-prin1 result tmpbuf))
+                                 (pp-buffer)
+                                 (concat (buffer-string) aux))))))
+          (error
+           (setq error-type "IELM Error")
+           (setq result (format "Error during pretty-printing (bug in pp): %S"
+                                err)))
           (quit  (setq error-type "IELM Error")
                  (setq result "Quit during pretty-printing"))))
       (if error-type
@@ -511,15 +513,12 @@ evaluations respectively.  If the working buffer is another IELM
 buffer, then the values in the working buffer are used.  The variables
 `*1', `*2' and `*3', yield the process buffer values.
 
-If, at the start of evaluation, `standard-output' is `t' (the
+If, at the start of evaluation, `standard-output' is t (the
 default), `standard-output' is set to a special function that
 causes output to be directed to the ielm buffer.
 `standard-output' is restored after evaluation unless explicitly
 set to a different value during evaluation.  You can use (princ
 VALUE) or (pp VALUE) to write to the ielm buffer.
-
-Expressions evaluated by IELM are not subject to `debug-on-quit' or
-`debug-on-error'.
 
 The behavior of IELM may be customized with the following variables:
 * To stop beeping on error, set `ielm-noisy' to nil.
@@ -542,8 +541,8 @@ Customized bindings may be defined in `ielm-map', which currently contains:
   (set (make-local-variable 'completion-at-point-functions)
        '(comint-replace-by-expanded-history
          ielm-complete-filename elisp-completion-at-point))
-  (setq-local eldoc-documentation-function
-              #'elisp-eldoc-documentation-function)
+  (add-function :before-until (local 'eldoc-documentation-function)
+                #'elisp-eldoc-documentation-function)
   (set (make-local-variable 'ielm-prompt-internal) ielm-prompt)
   (set (make-local-variable 'comint-prompt-read-only) ielm-prompt-read-only)
   (setq comint-get-old-input 'ielm-get-old-input)
@@ -552,10 +551,11 @@ Customized bindings may be defined in `ielm-map', which currently contains:
   ;; Useful for `hs-minor-mode'.
   (setq-local comment-start ";")
   (setq-local comment-use-syntax t)
+  (setq-local lexical-binding t)
 
-  (set (make-local-variable 'indent-line-function) 'ielm-indent-line)
+  (set (make-local-variable 'indent-line-function) #'ielm-indent-line)
   (set (make-local-variable 'ielm-working-buffer) (current-buffer))
-  (set (make-local-variable 'fill-paragraph-function) 'lisp-fill-paragraph)
+  (set (make-local-variable 'fill-paragraph-function) #'lisp-fill-paragraph)
 
   ;; Value holders
   (set (make-local-variable '*) nil)
@@ -605,17 +605,19 @@ Customized bindings may be defined in `ielm-map', which currently contains:
 ;;; User command
 
 ;;;###autoload
-(defun ielm nil
+(defun ielm (&optional buf-name)
   "Interactively evaluate Emacs Lisp expressions.
-Switches to the buffer `*ielm*', or creates it if it does not exist.
+Switches to the buffer named BUF-NAME if provided (`*ielm*' by default),
+or creates it if it does not exist.
 See `inferior-emacs-lisp-mode' for details."
   (interactive)
-  (let (old-point)
-    (unless (comint-check-proc "*ielm*")
-      (with-current-buffer (get-buffer-create "*ielm*")
+  (let (old-point
+        (buf-name (or buf-name "*ielm*")))
+    (unless (comint-check-proc buf-name)
+      (with-current-buffer (get-buffer-create buf-name)
         (unless (zerop (buffer-size)) (setq old-point (point)))
         (inferior-emacs-lisp-mode)))
-    (switch-to-buffer "*ielm*")
+    (pop-to-buffer-same-window buf-name)
     (when old-point (push-mark old-point))))
 
 (provide 'ielm)

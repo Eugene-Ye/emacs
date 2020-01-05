@@ -7,7 +7,7 @@
 --                                                                  --
 ----------------------------------------------------------------------
 
-  "Is it legal for a `struct interval' to have a total_length field of
+  "Is it legal for a 'struct interval' to have a total_length field of
 zero?"
   "We can't be arrested for it as far as I know, but it is definitely
 invalid for an interval to have zero length."
@@ -125,20 +125,6 @@ this is a variable concept ;-)"
 course we all know that Emacs was there before Word, but this might
 have escaped John's notice."
                                              -- David Kastrup and RMS
-
-----------------------------------------------------------------------
-
-Re: patch for woman (woman-topic-at-point)
-
-  "Sorry for the long message.  I wanted to make the problem clear
-also for people not familiar with `woman'."
-  "Most hackers, I take?
-   For a moment there I thought you had a patch that you could put on
-a woman, and it would make her come right to the topic at point
-without attempting any course of action that requires an advance
-course in divination.
-   There'd be quite a sensational market for that, you know."
-                                    -- Emilio Lopes and David Kastrup
 
 ----------------------------------------------------------------------
 

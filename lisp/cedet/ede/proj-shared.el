@@ -1,6 +1,6 @@
 ;;; ede-proj-shared.el --- EDE Generic Project shared library support
 
-;;; Copyright (C) 1998-2000, 2009-2014 Free Software Foundation, Inc.
+;;; Copyright (C) 1998-2000, 2009-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: project, make
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -75,7 +75,6 @@ Use ldlibs to add addition libraries.")
 		      ("LTLINK" . "$(LIBTOOL) --mode=link $(CC) $(CFLAGS) $(LDFLAGS) -L. -o $@")
 		      )
 	 :rules (list (ede-makefile-rule
-		       "cc-inference-rule-libtool"
 		       :target "%.o"
 		       :dependencies "%.c"
 		       :rules '("@echo '$(LTCOMPILE) -o $@ $<'; \\"
@@ -122,7 +121,6 @@ Use ldlibs to add addition libraries.")
 		      ("LTCOMPILE" . "$(LIBTOOL) --tag=CXX --mode=compile $(CXX) $(DEFS) $(INCLUDES) $(CPPFLAGS) $(CFLAGS)")
 		      )
 	 :rules (list (ede-makefile-rule
-		       "c++-inference-rule-libtool"
 		       :target "%.o"
 		       :dependencies "%.cpp"
 		       :rules '("@echo '$(LTCOMPILE) -o $@ $<'; \\"
@@ -166,19 +164,19 @@ Use ldlibs to add addition libraries.")
        "%.lo: %.c\n"
        "\t@echo '$(LTCOMPILE) -c $<'; \\\n"
        "\t$(LTCOMPILE) -Wp,-MD,.deps/$(*F).p -c $<\n"
-       "\t@-sed -e 's/^\([^:]*\)\.o:/\1.lo \1.o:/' \\\n"
+       "\t@-sed -e 's/^\\([^:]*\\)\\.o:/\\1.lo \\1.o:/' \\\n"
        "\t      < .deps/$(*F).p > .deps/$(*F).P\n"
        "\t@-rm -f .deps/$(*F).p\n\n"))
   )
 
-(defmethod ede-proj-configure-add-missing
+(cl-defmethod ede-proj-configure-add-missing
   ((this ede-proj-target-makefile-shared-object))
   "Query if any files needed by THIS provided by automake are missing.
 Results in --add-missing being passed to automake."
   (not (and (ede-expand-filename (ede-toplevel) "ltconfig")
 	    (ede-expand-filename (ede-toplevel) "ltmain.sh"))))
 
-(defmethod ede-proj-makefile-insert-automake-pre-variables
+(cl-defmethod ede-proj-makefile-insert-automake-pre-variables
   ((this ede-proj-target-makefile-shared-object))
   "Insert bin_PROGRAMS variables needed by target THIS.
 We aren't actually inserting SOURCE details, but this is used by the
@@ -186,23 +184,23 @@ Makefile.am generator, so use it to add this important bin program."
   (ede-pmake-insert-variable-shared "lib_LTLIBRARIES"
      (insert (concat "lib" (ede-name this) ".la"))))
 
-(defmethod ede-proj-makefile-insert-automake-post-variables
+(cl-defmethod ede-proj-makefile-insert-automake-post-variables
   ((this ede-proj-target-makefile-shared-object))
   "Insert bin_PROGRAMS variables needed by target THIS.
 We need to override -program which has an LDADD element."
   nil)
 
-(defmethod ede-proj-makefile-target-name ((this ede-proj-target-makefile-shared-object))
+(cl-defmethod ede-proj-makefile-target-name ((this ede-proj-target-makefile-shared-object))
   "Return the name of the main target for THIS target."
   ;; We need some platform gunk to make the .so change to .sl, or .a,
   ;; depending on the platform we are going to compile against.
   (concat "lib" (ede-name this) ".la"))
 
-(defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-makefile-shared-object))
+(cl-defmethod ede-proj-makefile-sourcevar ((this ede-proj-target-makefile-shared-object))
   "Return the variable name for THIS's sources."
   (if (eq (oref (ede-target-parent this) makefile-type) 'Makefile.am)
       (concat "lib" (oref this name) "_la_SOURCES")
-    (call-next-method)))
+    (cl-call-next-method)))
 
 
 (provide 'ede/proj-shared)

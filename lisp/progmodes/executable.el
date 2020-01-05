@@ -1,6 +1,6 @@
-;;; executable.el --- base functionality for executable interpreter scripts -*- byte-compile-dynamic: t -*-
+;;; executable.el --- base functionality for executable interpreter scripts
 
-;; Copyright (C) 1994-1996, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1996, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Daniel Pfeiffer <occitan@esperanto.org>
 ;; Keywords: languages, unix
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -83,13 +83,21 @@ When this is `function', only ask when called non-interactively."
   :type 'regexp
   :group 'executable)
 
-
 (defcustom executable-prefix "#!"
-  "Interpreter magic number prefix inserted when there was no magic number."
-  :version "24.3"                       ; "#! " -> "#!"
+  "Interpreter magic number prefix inserted when there was no magic number.
+Use of `executable-prefix-env' is preferable to this option."
+  :version "26.1"                       ; deprecated
   :type 'string
   :group 'executable)
 
+(defcustom executable-prefix-env nil
+  "If non-nil, use \"/usr/bin/env\" in interpreter magic number.
+If this variable is non-nil, the interpreter magic number inserted
+by `executable-set-magic' will be \"#!/usr/bin/env INTERPRETER\",
+otherwise it will be \"#!/path/to/INTERPRETER\"."
+  :version "26.1"
+  :type 'boolean
+  :group 'executable)
 
 (defcustom executable-chmod 73
   "After saving, if the file is not executable, set this mode.
@@ -104,10 +112,12 @@ Typical values are 73 (+x) or -493 (rwxr-xr-x)."
 (defvar executable-command nil)
 
 (defcustom executable-self-display "tail"
-  "Command you use with argument `+2' to make text files self-display.
+  "Command you use with argument `-n+2' to make text files self-display.
 Note that the like of `more' doesn't work too well under Emacs \\[shell]."
   :type 'string
   :group 'executable)
+
+(make-obsolete-variable 'executable-self-display nil "25.1" 'set)
 
 
 (defvar executable-font-lock-keywords
@@ -197,7 +207,7 @@ command to find the next error.  The buffer is also in `comint-mode' and
 (defun executable-set-magic (interpreter &optional argument
 					 no-query-flag insert-flag)
   "Set this buffer's interpreter to INTERPRETER with optional ARGUMENT.
-The variables `executable-magicless-file-regexp', `executable-prefix',
+The variables `executable-magicless-file-regexp', `executable-prefix-env',
 `executable-insert', `executable-query' and `executable-chmod' control
 when and how magic numbers are inserted or replaced and scripts made
 executable."
@@ -217,6 +227,14 @@ executable."
 			   interpreter)
 			 (and argument (string< "" argument) " ")
 			 argument))
+
+  ;; For backward compatibility, allow `executable-prefix-env' to be
+  ;; overridden by custom `executable-prefix'.
+  (if (string-match "#!\\([ \t]*/usr/bin/env[ \t]*\\)?$" executable-prefix)
+      (if executable-prefix-env
+          (setq argument (concat "/usr/bin/env "
+                                 (file-name-nondirectory argument))))
+    (setq argument (concat (substring executable-prefix 2) argument)))
 
   (or buffer-read-only
       (if buffer-file-name
@@ -238,27 +256,26 @@ executable."
 			 (save-window-excursion
 			   ;; Make buffer visible before question.
 			   (switch-to-buffer (current-buffer))
-			   (y-or-n-p (concat "Replace magic number by `"
-					     executable-prefix argument "'? "))))
+			   (y-or-n-p (format-message
+				      "Replace magic number by `#!%s'? "
+				      argument))))
 		     (progn
 		       (replace-match argument t t nil 1)
-		       (message "Magic number changed to `%s'"
-				(concat executable-prefix argument)))))
-	  (insert executable-prefix argument ?\n)
-	  (message "Magic number changed to `%s'"
-		   (concat executable-prefix argument)))))
+		       (message "Magic number changed to `#!%s'" argument))))
+	  (insert "#!" argument ?\n)
+	  (message "Magic number changed to `#!%s'" argument))))
     interpreter)
 
 
 
-;;;###autoload
 (defun executable-self-display ()
   "Turn a text file into a self-displaying Un*x command.
 The magic number of such a command displays all lines but itself."
+  (declare (obsolete nil "25.1"))
   (interactive)
   (if (eq this-command 'executable-self-display)
       (setq this-command 'executable-set-magic))
-  (executable-set-magic executable-self-display "+2"))
+  (executable-set-magic executable-self-display "-n+2"))
 
 ;;;###autoload
 (defun executable-make-buffer-file-executable-if-script-p ()

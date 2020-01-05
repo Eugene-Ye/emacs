@@ -1,6 +1,6 @@
 ;;; novice.el --- handling of disabled commands ("novice mode") for Emacs
 
-;; Copyright (C) 1985-1987, 1994, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1985-1987, 1994, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -34,9 +34,6 @@
 ;; The command is found in this-command
 ;; and the keys are returned by (this-command-keys).
 
-;;;###autoload
-(define-obsolete-variable-alias 'disabled-command-hook
-  'disabled-command-function "22.1")
 ;;;###autoload
 (defvar disabled-command-function 'disabled-command-function
   "Function to call to handle disabled commands.
@@ -65,7 +62,8 @@ If nil, the feature is disabled, i.e., all commands work normally.")
 	(if (stringp (get cmd 'disabled))
 	    (princ (get cmd 'disabled))
 	 (princ "It is disabled because new users often find it confusing.\n")
-	 (princ "Here's the first part of its description:\n\n")
+	 (princ (substitute-command-keys
+		 "Here's the first part of its description:\n\n"))
 	 ;; Keep only the first paragraph of the documentation.
           (with-current-buffer "*Disabled Command*" ;; standard-output
 	   (goto-char (point-max))
@@ -80,11 +78,11 @@ If nil, the feature is disabled, i.e., all commands work normally.")
 	     (goto-char (point-max))
 	     (indent-rigidly start (point) 3))))
        (princ "\n\nDo you want to use this command anyway?\n\n")
-       (princ "You can now type
+       (princ (substitute-command-keys "You can now type
 y   to try it and enable it (no questions if you use it again).
 n   to cancel--don't try the command, and it remains disabled.
 SPC to try the command just this once, but leave it disabled.
-!   to try it, and enable all disabled commands for this session only.")
+!   to try it, and enable all disabled commands for this session only."))
         ;; Redundant since with-output-to-temp-buffer will do it anyway.
         ;; (with-current-buffer standard-output
         ;;   (help-mode))

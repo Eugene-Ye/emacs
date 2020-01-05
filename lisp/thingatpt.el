@@ -1,6 +1,6 @@
-;;; thingatpt.el --- get the `thing' at point
+;;; thingatpt.el --- get the `thing' at point  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1991-1998, 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1991-1998, 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Mike Williams <mikew@gopher.dosli.govt.nz>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -42,6 +42,9 @@
 ;;   beginning-op	Function to call to skip to the beginning of a "thing".
 ;;   end-op		Function to call to skip to the end of a "thing".
 ;;
+;; For simple things, defined as sequences of specific kinds of characters,
+;; use macro define-thing-chars.
+;;
 ;; Reliance on existing operators means that many `things' can be accessed
 ;; without further code:  eg.
 ;;     (thing-at-point 'line)
@@ -58,7 +61,7 @@
   "Move forward to the end of the Nth next THING.
 THING should be a symbol specifying a type of syntactic entity.
 Possibilities include `symbol', `list', `sexp', `defun',
-`filename', `url', `email', `word', `sentence', `whitespace',
+`filename', `url', `email', `uuid', `word', `sentence', `whitespace',
 `line', and `page'."
   (let ((forward-op (or (get thing 'forward-op)
 			(intern-soft (format "forward-%s" thing)))))
@@ -73,7 +76,7 @@ Possibilities include `symbol', `list', `sexp', `defun',
   "Determine the start and end buffer locations for the THING at point.
 THING should be a symbol specifying a type of syntactic entity.
 Possibilities include `symbol', `list', `sexp', `defun',
-`filename', `url', `email', `word', `sentence', `whitespace',
+`filename', `url', `email', `uuid', `word', `sentence', `whitespace',
 `line', and `page'.
 
 See the file `thingatpt.el' for documentation on how to define a
@@ -131,7 +134,7 @@ positions of the thing found."
   "Return the THING at point.
 THING should be a symbol specifying a type of syntactic entity.
 Possibilities include `symbol', `list', `sexp', `defun',
-`filename', `url', `email', `word', `sentence', `whitespace',
+`filename', `url', `email', `uuid', `word', `sentence', `whitespace',
 `line', `number', and `page'.
 
 When the optional argument NO-PROPERTIES is non-nil,
@@ -145,7 +148,7 @@ a symbol as a valid THING."
            (let ((bounds (bounds-of-thing-at-point thing)))
              (when bounds
                (buffer-substring (car bounds) (cdr bounds)))))))
-    (when (and text no-properties)
+    (when (and text no-properties (sequencep text))
       (set-text-properties 0 (length text) nil text))
     text))
 
@@ -178,34 +181,42 @@ The bounds of THING are determined by `bounds-of-thing-at-point'."
 ;;  Sexps
 
 (defun in-string-p ()
-  "Return non-nil if point is in a string.
-\[This is an internal function.]"
+  "Return non-nil if point is in a string."
+  (declare (obsolete "use (nth 3 (syntax-ppss)) instead." "25.1"))
   (let ((orig (point)))
     (save-excursion
       (beginning-of-defun)
       (nth 3 (parse-partial-sexp (point) orig)))))
 
-(defun end-of-sexp ()
-  "Move point to the end of the current sexp.
-\[This is an internal function.]"
+(defun thing-at-point--end-of-sexp ()
+  "Move point to the end of the current sexp."
   (let ((char-syntax (syntax-after (point))))
     (if (or (eq char-syntax ?\))
-	    (and (eq char-syntax ?\") (in-string-p)))
+	    (and (eq char-syntax ?\") (nth 3 (syntax-ppss))))
 	(forward-char 1)
-      (forward-sexp 1))))
+      (condition-case _
+          (forward-sexp 1)
+        (scan-error nil)))))
 
-(put 'sexp 'end-op 'end-of-sexp)
+(define-obsolete-function-alias 'end-of-sexp
+  'thing-at-point--end-of-sexp "25.1"
+  "This is an internal thingatpt function and should not be used.")
 
-(defun beginning-of-sexp ()
-  "Move point to the beginning of the current sexp.
-\[This is an internal function.]"
+(put 'sexp 'end-op 'thing-at-point--end-of-sexp)
+
+(defun thing-at-point--beginning-of-sexp ()
+  "Move point to the beginning of the current sexp."
   (let ((char-syntax (char-syntax (char-before))))
     (if (or (eq char-syntax ?\()
-	    (and (eq char-syntax ?\") (in-string-p)))
+	    (and (eq char-syntax ?\") (nth 3 (syntax-ppss))))
 	(forward-char -1)
       (forward-sexp -1))))
 
-(put 'sexp 'beginning-op 'beginning-of-sexp)
+(define-obsolete-function-alias 'beginning-of-sexp
+  'thing-at-point--beginning-of-sexp "25.1"
+  "This is an internal thingatpt function and should not be used.")
+
+(put 'sexp 'beginning-op 'thing-at-point--beginning-of-sexp)
 
 ;;  Lists
 
@@ -213,22 +224,15 @@ The bounds of THING are determined by `bounds-of-thing-at-point'."
 
 (defun thing-at-point-bounds-of-list-at-point ()
   "Return the bounds of the list at point.
+Prefer the enclosing list with fallback on sexp at point.
 \[Internal function used by `bounds-of-thing-at-point'.]"
   (save-excursion
-    (let ((opoint (point))
-	  (beg (ignore-errors
-		 (up-list -1)
-		 (point))))
-      (ignore-errors
-	(if beg
-	    (progn (forward-sexp)
-		   (cons beg (point)))
-	  ;; Are we are at the beginning of a top-level sexp?
-	  (forward-sexp)
-	  (let ((end (point)))
-	    (backward-sexp)
-	    (if (>= opoint (point))
-		(cons opoint end))))))))
+    (if (ignore-errors (up-list -1))
+	(ignore-errors (cons (point) (progn (forward-sexp) (point))))
+      (let ((bound (bounds-of-thing-at-point 'sexp)))
+	(and bound
+	     (<= (car bound) (point)) (< (point) (cdr bound))
+	     bound)))))
 
 ;; Defuns
 
@@ -236,21 +240,28 @@ The bounds of THING are determined by `bounds-of-thing-at-point'."
 (put 'defun 'end-op       'end-of-defun)
 (put 'defun 'forward-op   'end-of-defun)
 
+;; Things defined by sets of characters
+
+(defmacro define-thing-chars (thing chars)
+  "Define THING as a sequence of CHARS.
+E.g.:
+\(define-thing-chars twitter-screen-name \"[:alnum:]_\")"
+  `(progn
+     (put ',thing 'end-op
+          (lambda ()
+            (re-search-forward (concat "\\=[" ,chars "]*") nil t)))
+     (put ',thing 'beginning-op
+          (lambda ()
+            (if (re-search-backward (concat "[^" ,chars "]") nil t)
+	        (forward-char)
+	      (goto-char (point-min)))))))
+
 ;;  Filenames
 
 (defvar thing-at-point-file-name-chars "-~/[:alnum:]_.${}#%,:"
   "Characters allowable in filenames.")
 
-(put 'filename 'end-op
-     (lambda ()
-       (re-search-forward (concat "\\=[" thing-at-point-file-name-chars "]*")
-			  nil t)))
-(put 'filename 'beginning-op
-     (lambda ()
-       (if (re-search-backward (concat "[^" thing-at-point-file-name-chars "]")
-			       nil t)
-	   (forward-char)
-	 (goto-char (point-min)))))
+(define-thing-chars filename thing-at-point-file-name-chars)
 
 ;;  URIs
 
@@ -274,8 +285,8 @@ If nil, construct the regexp from `thing-at-point-uri-schemes'.")
     "finger://" "fish://" "ftp://" "geo:" "git://" "go:" "gopher://"
     "h323:" "http://" "https://" "im:" "imap://" "info:" "ipp:"
     "irc://" "irc6://" "ircs://" "iris.beep:" "jar:" "ldap://"
-    "ldaps://" "mailto:" "mid:"  "mtqp://" "mupdate://" "news:"
-    "nfs://" "nntp://" "opaquelocktoken:" "pop://" "pres:"
+    "ldaps://" "magnet:" "mailto:" "mid:"  "mtqp://" "mupdate://"
+    "news:" "nfs://" "nntp://" "opaquelocktoken:" "pop://" "pres:"
     "resource://" "rmi://" "rsync://" "rtsp://" "rtspu://" "service:"
     "sftp://" "sip:" "sips:" "smb://" "sms:" "snmp://" "soap.beep://"
     "soap.beeps://" "ssh://" "svn://" "svn+ssh://" "tag:" "tel:"
@@ -283,7 +294,7 @@ If nil, construct the regexp from `thing-at-point-uri-schemes'.")
     "uuid:" "vemmi://"  "webcal://" "xri://" "xmlrpc.beep://"
     "xmlrpc.beeps://" "z39.50r://" "z39.50s://" "xmpp:"
     ;; Compatibility
-    "fax:" "mms://" "mmsh://" "modem:" "prospero:" "snews:"
+    "fax:" "man:" "mms://" "mmsh://" "modem:" "prospero:" "snews:"
     "wais://")
   "List of URI schemes recognized by `thing-at-point-url-at-point'.
 Each string in this list should correspond to the start of a
@@ -355,7 +366,7 @@ the bounds of a possible ill-formed URI (one lacking a scheme)."
       (if found
 	  (cons (match-beginning 1) (match-end 1))))))
 
-(defun thing-at-point--bounds-of-well-formed-url (beg end _pt)
+(defun thing-at-point--bounds-of-well-formed-url (beg end pt)
   (save-excursion
     (goto-char beg)
     (let (url-beg paren-end regexp)
@@ -379,10 +390,16 @@ the bounds of a possible ill-formed URI (one lacking a scheme)."
 	     (save-restriction
 	       (narrow-to-region (1- url-beg) (min end (point-max)))
 	       (setq paren-end (ignore-errors
-				 (scan-lists (1- url-beg) 1 0))))
+                                 ;; Make the scan work inside comments.
+                                 (let ((parse-sexp-ignore-comments nil))
+                                   (scan-lists (1- url-beg) 1 0)))))
 	     (not (blink-matching-check-mismatch (1- url-beg) paren-end))
 	     (setq end (1- paren-end)))
-	(cons url-beg end)))))
+	;; Ensure PT is actually within BOUNDARY. Check the following
+	;; example with point on the beginning of the line:
+	;;
+	;; 3,1406710489,https://gnu.org,0,"0"
+	(and (<= url-beg pt end) (cons url-beg end))))))
 
 (put 'url 'thing-at-point 'thing-at-point-url-at-point)
 
@@ -451,11 +468,14 @@ looks like an email address, \"ftp://\" if it starts with
      (while htbs
        (setq htb (car htbs) htbs (cdr htbs))
        (ignore-errors
-	 ;; errs: htb symbol may be unbound, or not a hash-table.
-	 ;; gnus-gethash is just a macro for intern-soft.
-	 (and (symbol-value htb)
-	      (intern-soft string (symbol-value htb))
-	      (setq ret string htbs nil))
+         (setq htb (symbol-value htb))
+	 (when (cond ((obarrayp htb)
+	              (intern-soft string htb))
+                     ((listp htb)
+                      (member string htb))
+                     ((hash-table-p htb)
+                      (gethash string htb)))
+	   (setq ret string htbs nil))
 	 ;; If we made it this far, gnus is running, so ignore "heads":
 	 (setq heads nil)))
      (or ret (not heads)
@@ -467,7 +487,7 @@ looks like an email address, \"ftp://\" if it starts with
 
 (put 'url 'end-op (lambda () (end-of-thing 'url)))
 
-(put 'url 'beginning-op (lambda () (end-of-thing 'url)))
+(put 'url 'beginning-op (lambda () (beginning-of-thing 'url)))
 
 ;; The normal thingatpt mechanism doesn't work for complex regexps.
 ;; This should work for almost any regexp wherever we are in the
@@ -479,19 +499,26 @@ looks like an email address, \"ftp://\" if it starts with
 (defun thing-at-point-looking-at (regexp &optional distance)
   "Return non-nil if point is in or just after a match for REGEXP.
 Set the match data from the earliest such match ending at or after
-point."
+point.
+
+Optional argument DISTANCE limits search for REGEXP forward and
+back from point."
   (save-excursion
     (let ((old-point (point))
 	  (forward-bound (and distance (+ (point) distance)))
 	  (backward-bound (and distance (- (point) distance)))
-	  match)
+	  match prev-pos new-pos)
       (and (looking-at regexp)
 	   (>= (match-end 0) old-point)
 	   (setq match (point)))
       ;; Search back repeatedly from end of next match.
       ;; This may fail if next match ends before this match does.
       (re-search-forward regexp forward-bound 'limit)
-      (while (and (re-search-backward regexp backward-bound t)
+      (setq prev-pos (point))
+      (while (and (setq new-pos (re-search-backward regexp backward-bound t))
+                  ;; Avoid inflooping with some regexps, such as "^",
+                  ;; matching which never moves point.
+                  (< new-pos prev-pos)
 		  (or (> (match-beginning 0) old-point)
 		      (and (looking-at regexp)	; Extend match-end past search start
 			   (>= (match-end 0) old-point)
@@ -540,17 +567,35 @@ with angle brackets.")
 (put 'buffer 'end-op (lambda () (goto-char (point-max))))
 (put 'buffer 'beginning-op (lambda () (goto-char (point-min))))
 
+;; UUID
+
+(defconst thing-at-point-uuid-regexp
+  (rx bow
+      (repeat 8 hex-digit) "-"
+      (repeat 4 hex-digit) "-"
+      (repeat 4 hex-digit) "-"
+      (repeat 4 hex-digit) "-"
+      (repeat 12 hex-digit)
+      eow)
+  "A regular expression matching a UUID.
+See RFC 4122 for the description of the format.")
+
+(put 'uuid 'bounds-of-thing-at-point
+     (lambda ()
+       (when (thing-at-point-looking-at thing-at-point-uuid-regexp 36)
+         (cons (match-beginning 0) (match-end 0)))))
+
 ;;  Aliases
 
-(defun word-at-point ()
+(defun word-at-point (&optional no-properties)
   "Return the word at point.  See `thing-at-point'."
-  (thing-at-point 'word))
+  (thing-at-point 'word no-properties))
 
-(defun sentence-at-point ()
+(defun sentence-at-point (&optional no-properties)
   "Return the sentence at point.  See `thing-at-point'."
-  (thing-at-point 'sentence))
+  (thing-at-point 'sentence no-properties))
 
-(defun read-from-whole-string (str)
+(defun thing-at-point--read-from-whole-string (str)
   "Read a Lisp expression from STR.
 Signal an error if the entire string was not used."
   (let* ((read-data (read-from-string str))
@@ -564,9 +609,16 @@ Signal an error if the entire string was not used."
 	(error "Can't read whole string")
       (car read-data))))
 
+(define-obsolete-function-alias 'read-from-whole-string
+  'thing-at-point--read-from-whole-string "25.1"
+  "This is an internal thingatpt function and should not be used.")
+
 (defun form-at-point (&optional thing pred)
-  (let ((sexp (ignore-errors
-		(read-from-whole-string (thing-at-point (or thing 'sexp))))))
+  (let* ((obj (thing-at-point (or thing 'sexp)))
+         (sexp (if (stringp obj)
+                   (ignore-errors
+                     (thing-at-point--read-from-whole-string obj))
+                 obj)))
     (if (or (not pred) (funcall pred sexp)) sexp)))
 
 ;;;###autoload
@@ -580,12 +632,27 @@ Signal an error if the entire string was not used."
     (if thing (intern thing))))
 ;;;###autoload
 (defun number-at-point ()
-  "Return the number at point, or nil if none is found."
-  (form-at-point 'sexp 'numberp))
+  "Return the number at point, or nil if none is found.
+Decimal numbers like \"14\" or \"-14.5\", as well as hex numbers
+like \"0xBEEF09\" or \"#xBEEF09\", are recognized."
+  (when (thing-at-point-looking-at
+         "\\(-?[0-9]+\\.?[0-9]*\\)\\|\\(0x\\|#x\\)\\([a-zA-Z0-9]+\\)" 500)
+    (if (match-beginning 1)
+        (string-to-number
+         (buffer-substring (match-beginning 1) (match-end 1)))
+      (string-to-number
+       (buffer-substring (match-beginning 3) (match-end 3))
+       16))))
+
 (put 'number 'thing-at-point 'number-at-point)
 ;;;###autoload
-(defun list-at-point ()
-  "Return the Lisp list at point, or nil if none is found."
-  (form-at-point 'list 'listp))
+(defun list-at-point (&optional ignore-comment-or-string)
+  "Return the Lisp list at point, or nil if none is found.
+If IGNORE-COMMENT-OR-STRING is non-nil comments and strings are
+treated as white space."
+  (let ((ppss (and ignore-comment-or-string (syntax-ppss))))
+    (save-excursion
+      (goto-char (or (nth 8 ppss) (point)))
+      (form-at-point 'list 'listp))))
 
 ;;; thingatpt.el ends here

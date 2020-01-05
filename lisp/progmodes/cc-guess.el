@@ -1,7 +1,7 @@
 ;;; cc-guess.el --- guess indentation values by scanning existing code
 
-;; Copyright (C) 1985, 1987, 1992-2006, 2011-2014
-;;   Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2006, 2011-2020 Free Software
+;; Foundation, Inc.
 
 ;; Author:     1994-1995 Barry A. Warsaw
 ;;             2011-     Masatake YAMATO
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -91,7 +91,7 @@ The offset of a line included in the indent information returned by
 (defcustom c-guess-region-max 50000
   "The maximum region size for examining indent information with `c-guess'.
 It takes a long time to examine indent information from a large region;
-this option helps you limit that time. `nil' means no limit."
+this option helps you limit that time. nil means no limit."
   :version "24.1"
   :type 'integer
   :group 'c)
@@ -465,7 +465,7 @@ the absolute file name of the file if STYLE-NAME is nil."
 (defun c-guess-dump-guessed-style (&optional printer)
   "Show the guessed style.
 `pp' is used to print the style but if PRINTER is given,
-PRINTER is used instead. If PRINTER is not `nil', it
+PRINTER is used instead. If PRINTER is not nil, it
 is called with one argument, the guessed style."
   (interactive)
   (let ((style (c-guess-make-style c-guess-guessed-basic-offset
@@ -494,8 +494,7 @@ is called with one argument, the guessed style."
   ;; If an entry in `c-offsets-alist' holds a guessed value, move it to
   ;; front in the field. In addition alphabetical sort by entry name is done.
   (setq style (copy-tree style))
-  (let ((offsets-alist-cell (assq 'c-offsets-alist style))
-	(guessed-syntactic-symbols (c-guess-guessed-syntactic-symbols)))
+  (let ((offsets-alist-cell (assq 'c-offsets-alist style)))
     (setcdr offsets-alist-cell
 	    (sort (cdr offsets-alist-cell)
 		  (lambda (a b)
@@ -572,4 +571,9 @@ WITH-NAME is asked to the user."
 
 
 (cc-provide 'cc-guess)
+
+;; Local Variables:
+;; indent-tabs-mode: t
+;; tab-width: 8
+;; End:
 ;;; cc-guess.el ends here

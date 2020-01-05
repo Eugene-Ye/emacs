@@ -1,6 +1,6 @@
 ;;; proced.el --- operate on system processes like dired
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Roland Winkler <winkler@gnu.org>
 ;; Keywords: Processes, Unix
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -78,12 +78,22 @@ the external command (usually \"kill\")."
     ("KILL" . "  (9.  Kill - cannot be caught or ignored)")
     ("ALRM" . "  (14. Alarm Clock)")
     ("TERM" . "  (15. Termination)")
-    ;; POSIX 1003.1-2001
-    ;; Which systems do not support these signals so that we can
-    ;; exclude them from `proced-signal-list'?
-    ("CONT" . "  (Continue executing)")
+    ;; signals supported on systems conforming to POSIX 1003.1-2001
+    ;; according to (info "(coreutils) Signal specifications")
+    ("BUS" . "   (Access to an undefined portion of a memory object)")
+    ("CHLD" . "  (Child process terminated, stopped, or continued)")
+    ("CONT" . "  (Continue executing, if stopped)")
+    ("FPE" . "   (Erroneous arithmetic operation)")
+    ("ILL" . "   (Illegal Instruction)")
+    ("PIPE" . "  (Write on a pipe with no one to read it)")
+    ("SEGV" . "  (Invalid memory reference)")
     ("STOP" . "  (Stop executing / pause - cannot be caught or ignored)")
-    ("TSTP" . "  (Terminal stop / pause)"))
+    ("TSTP" . "  (Terminal stop / pause)")
+    ("TTIN" . "  (Background process attempting read)")
+    ("TTOU" . "  (Background process attempting write)")
+    ("URG" . "   (High bandwidth data is available at a socket)")
+    ("USR1" . "  (User-defined signal 1)")
+    ("USR2" . "  (User-defined signal 2)"))
   "List of signals, used for minibuffer completion."
   :group 'proced
   :type '(repeat (cons (string :tag "signal name")
@@ -159,15 +169,15 @@ argument, the value of the attribute.  The value nil means take as is.
 
 If JUSTIFY is an integer, its modulus gives the width of the attribute
 values formatted with FORMAT.  If JUSTIFY is positive, NAME appears
-right-justified, otherwise it appears left-justified.  If JUSTIFY is 'left
-or 'right, the field width is calculated from all field values in the listing.
-If JUSTIFY is 'left, the field values are formatted left-justified and
+right-justified, otherwise it appears left-justified.  If JUSTIFY is `left'
+or `right', the field width is calculated from all field values in the listing.
+If JUSTIFY is `left', the field values are formatted left-justified and
 right-justified otherwise.
 
 PREDICATE is the predicate for sorting and filtering the process listing
 based on attribute KEY.  PREDICATE takes two arguments P1 and P2,
 the corresponding attribute values of two processes.  PREDICATE should
-return 'equal if P1 has same rank like P2.  Any other non-nil value says
+return `equal' if P1 has same rank like P2.  Any other non-nil value says
 that P1 is \"less than\" P2, or nil if not.
 If PREDICATE is nil the attribute cannot be sorted.
 
@@ -178,7 +188,7 @@ SORT-SCHEME is a list (KEY1 KEY2 ...) defining a hierarchy of rules
 for sorting the process listing.  KEY1, KEY2, ... are KEYs appearing as cars
 of `proced-grammar-alist'.  First the PREDICATE of KEY1 is evaluated.
 If it yields non-equal, it defines the sort order for the corresponding
-processes.  If it evaluates to 'equal the PREDICATE of KEY2 is evaluated, etc.
+processes.  If it evaluates to `equal' the PREDICATE of KEY2 is evaluated, etc.
 
 REFINER can be a list of flags (LESS-B EQUAL-B LARGER-B) used by the command
 `proced-refine' (see there) to refine the listing based on attribute KEY.
@@ -186,7 +196,7 @@ This command compares the value of attribute KEY of every process with
 the value of attribute KEY of the process at the position of point
 using PREDICATE.
 If PREDICATE yields non-nil, the process is accepted if LESS-B is non-nil.
-If PREDICATE yields 'equal, the process is accepted if EQUAL-B is non-nil.
+If PREDICATE yields `equal', the process is accepted if EQUAL-B is non-nil.
 If PREDICATE yields nil, the process is accepted if LARGER-B is non-nil.
 
 REFINER can also be a list (FUNCTION HELP-ECHO).
@@ -463,6 +473,7 @@ Important: the match ends just after the marker.")
     (define-key km "\C-n" 'next-line)
     (define-key km "\C-p" 'previous-line)
     (define-key km "\C-?" 'previous-line)
+    (define-key km [?\S-\ ] 'previous-line)
     (define-key km [down] 'next-line)
     (define-key km [up] 'previous-line)
     ;; marking
@@ -604,7 +615,10 @@ Important: the match ends just after the marker.")
 
 (defun proced-header-line ()
   "Return header line for Proced buffer."
-  (list (propertize " " 'display '(space :align-to 0))
+  (list (propertize " "
+                    'display
+                    (list 'space :align-to
+                          (line-number-display-width 'columns)))
         (if (<= (window-hscroll) (length proced-header-line))
             (replace-regexp-in-string ;; preserve text properties
              "\\(%\\)" "\\1\\1"
@@ -642,6 +656,10 @@ mode line, using \"+\" or \"-\" for ascending or descending sort order.
 
 Type \\[proced-toggle-tree] to toggle whether the listing is
 displayed as process tree.
+
+Type \\[proced-toggle-auto-update] to automatically update the
+process list.  The time interval for updates can be configured
+via `proced-auto-update-interval'.
 
 An existing Proced listing can be refined by typing \\[proced-refine].
 Refining an existing listing does not update the variable `proced-filter'.
@@ -765,7 +783,7 @@ The time interval for updates is specified via `proced-auto-update-interval'."
       (while (not (eobp))
         (cond ((looking-at mark-re)
                (proced-insert-mark nil))
-              ((looking-at " ")
+              ((= (following-char) ?\s)
                (proced-insert-mark t))
               (t
                (forward-line 1)))))))
@@ -1189,10 +1207,7 @@ Return `equal' if T1 equals T2.  Return nil otherwise."
 
 ;;; Sorting
 
-(defsubst proced-xor (b1 b2)
-  "Return the logical exclusive or of args B1 and B2."
-  (and (or b1 b2)
-       (not (and b1 b2))))
+(define-obsolete-function-alias 'proced-xor 'xor "27.1")
 
 (defun proced-sort-p (p1 p2)
   "Predicate for sorting processes P1 and P2."
@@ -1203,8 +1218,8 @@ Return `equal' if T1 equals T2.  Return nil otherwise."
              (k2 (cdr (assq (car sorter) (cdr p2)))))
         ;; if the attributes are undefined, we should really abort sorting
         (if (and k1 k2)
-            (proced-xor (funcall (nth 1 sorter) k1 k2)
-                        (nth 2 sorter))))
+            (xor (funcall (nth 1 sorter) k1 k2)
+                 (nth 2 sorter))))
     (let ((sort-list proced-sort-internal) sorter predicate k1 k2)
       (catch 'done
         (while (setq sorter (pop sort-list))
@@ -1214,7 +1229,7 @@ Return `equal' if T1 equals T2.  Return nil otherwise."
                 (if (and k1 k2)
                     (funcall (nth 1 sorter) k1 k2)))
           (if (not (eq predicate 'equal))
-              (throw 'done (proced-xor predicate (nth 2 sorter)))))
+              (throw 'done (xor predicate (nth 2 sorter)))))
         (eq t predicate)))))
 
 (defun proced-sort (process-alist sorter descend)
@@ -1250,9 +1265,9 @@ When called interactively, an empty string means nil, i.e., no sorting.
 
 Prefix ARG controls sort order:
 - If prefix ARG is positive (negative), sort in ascending (descending) order.
-- If ARG is nil or 'no-arg and SCHEME is equal to the previous sorting scheme,
+- If ARG is nil or `no-arg' and SCHEME is equal to the previous sorting scheme,
   reverse the sorting order.
-- If ARG is nil or 'no-arg and SCHEME differs from the previous sorting scheme,
+- If ARG is nil or `no-arg' and SCHEME differs from the previous sorting scheme,
   adopt the sorting order defined for SCHEME in `proced-grammar-alist'.
 
 Set variable `proced-sort' to SCHEME.  The current sort scheme is displayed
@@ -1343,7 +1358,7 @@ Prefix ARG controls sort order, see `proced-sort-interactive'."
 
 (defun proced-format-time (time)
   "Format time interval TIME."
-  (let* ((ftime (float-time time))
+  (let* ((ftime (time-convert time 'integer))
          (days (truncate ftime 86400))
          (ftime (mod ftime 86400))
          (hours (truncate ftime 3600))
@@ -1362,12 +1377,12 @@ Prefix ARG controls sort order, see `proced-sort-interactive'."
 The return string is always 6 characters wide."
   (let ((d-start (decode-time start))
         (d-current (decode-time)))
-    (cond ( ;; process started in previous years
-           (< (nth 5 d-start) (nth 5 d-current))
+    (cond (;; process started in previous years
+           (< (decoded-time-year d-start) (decoded-time-year d-current))
            (format-time-string "  %Y" start))
           ;; process started today
-          ((and (= (nth 3 d-start) (nth 3 d-current))
-                (= (nth 4 d-start) (nth 4 d-current)))
+          ((and (= (decoded-time-day d-start) (decoded-time-day d-current))
+                (= (decoded-time-month d-start) (decoded-time-month d-current)))
            (format-time-string " %H:%M" start))
           (t ;; process started this year
            (format-time-string "%b %e" start)))))
@@ -1434,7 +1449,7 @@ Replace newline characters by \"^J\" (two characters)."
              (hprops
               (if (nth 4 grammar)
                   (let ((descend (if (eq key sort-key) proced-descend (nth 5 grammar))))
-                    `(proced-key ,key mouse-face highlight
+                    `(proced-key ,key mouse-face header-line-highlight
                                  help-echo ,(format proced-header-help-echo
                                                     (if descend "-" "+")
                                                     (nth 1 grammar)
@@ -1739,9 +1754,10 @@ The value returned is the value of the last form in BODY."
        (save-window-excursion
          ;; Analogous to `dired-pop-to-buffer'
          ;; Don't split window horizontally.  (Bug#1806)
-         (let (split-width-threshold)
-           (pop-to-buffer (current-buffer)))
-         (fit-window-to-buffer (get-buffer-window) nil 1)
+         (display-buffer (current-buffer)
+                         '(display-buffer-in-direction
+                           (direction . bottom)
+                           (window-height . fit-window-to-buffer)))
          ,@body))))
 
 (defun proced-send-signal (&optional signal process-alist)
@@ -1799,7 +1815,7 @@ supported but discouraged.  It will be removed in a future version of Emacs."
 
   (let (failures)
     ;; Why not always use `signal-process'?  See
-    ;; http://lists.gnu.org/archive/html/emacs-devel/2008-03/msg02955.html
+    ;; https://lists.gnu.org/r/emacs-devel/2008-03/msg02955.html
     (if (functionp proced-signal-function)
         ;; use built-in `signal-process'
         (let ((signal (if (stringp signal)
@@ -1915,7 +1931,7 @@ and \f (formfeed) at the end."
       (let (buffer-read-only)
 	(cond ((stringp log)
 	       (insert (if args
-			   (apply 'format log args)
+			   (apply #'format-message log args)
 			 log)))
 	      ((bufferp log)
 	       (insert-buffer-substring log))
@@ -1924,8 +1940,8 @@ and \f (formfeed) at the end."
 	       (unless (bolp)
 		 (insert "\n"))
 	       (insert (current-time-string)
-		       "\tBuffer `" (buffer-name obuf) "', "
-                       (format "signal `%s'\n" (car args)))
+		       (format-message "\tBuffer `%s', signal `%s'\n"
+				       (buffer-name obuf) (car args)))
 	       (goto-char (point-max))
 	       (insert "\f\n")))))))
 

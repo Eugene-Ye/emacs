@@ -1,6 +1,6 @@
-;;; timer.el --- run a function with args at some time in future
+;;; timer.el --- run a function with args at some time in future -*- lexical-binding: t -*-
 
-;; Copyright (C) 1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Package: emacs
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -57,17 +57,11 @@
 
 (defun timer--time-setter (timer time)
   (timer--check timer)
-  (setf (timer--high-seconds timer) (pop time))
-  (let ((low time) (usecs 0) (psecs 0))
-    (when (consp time)
-      (setq low (pop time))
-      (when time
-        (setq usecs (pop time))
-        (when time
-          (setq psecs (car time)))))
-    (setf (timer--low-seconds timer) low)
-    (setf (timer--usecs timer) usecs)
-    (setf (timer--psecs timer) psecs)
+  (let ((lt (time-convert time 'list)))
+    (setf (timer--high-seconds timer) (nth 0 lt))
+    (setf (timer--low-seconds timer) (nth 1 lt))
+    (setf (timer--usecs timer) (nth 2 lt))
+    (setf (timer--psecs timer) (nth 3 lt))
     time))
 
 ;; Pseudo field `time'.
@@ -80,7 +74,7 @@
 
 (defun timer-set-time (timer time &optional delta)
   "Set the trigger time of TIMER to TIME.
-TIME must be in the internal format returned by, e.g., `current-time'.
+TIME must be a Lisp time value.
 If optional third argument DELTA is a positive number, make the timer
 fire repeatedly that many seconds apart."
   (setf (timer--time timer) time)
@@ -94,7 +88,7 @@ SECS may be an integer, floating point number, or the internal
 time format returned by, e.g., `current-idle-time'.
 If optional third argument REPEAT is non-nil, make the timer
 fire each time Emacs is idle for that many seconds."
-  (setf (timer--time timer) (if (consp secs) secs (seconds-to-time secs)))
+  (setf (timer--time timer) secs)
   (setf (timer--repeat-delay timer) repeat)
   timer)
 
@@ -102,24 +96,17 @@ fire each time Emacs is idle for that many seconds."
   "Yield the next value after TIME that is an integral multiple of SECS.
 More precisely, the next value, after TIME, that is an integral multiple
 of SECS seconds since the epoch.  SECS may be a fraction."
-  (let* ((trillion 1e12)
-	 (time-sec (+ (nth 1 time)
-		      (* 65536.0 (nth 0 time))))
-	 (delta-sec (mod (- time-sec) secs))
-	 (next-sec (+ time-sec (ffloor delta-sec)))
-	 (next-sec-psec (ffloor (* trillion (mod delta-sec 1))))
-	 (sub-time-psec (+ (or (nth 3 time) 0)
-			   (* 1e6 (nth 2 time))))
-	 (psec-diff (- sub-time-psec next-sec-psec)))
-    (if (and (<= next-sec time-sec) (< 0 psec-diff))
-	(setq next-sec-psec (+ sub-time-psec
-			       (mod (- psec-diff) (* trillion secs)))))
-    (setq next-sec (+ next-sec (floor next-sec-psec trillion)))
-    (setq next-sec-psec (mod next-sec-psec trillion))
-    (list (floor next-sec 65536)
-	  (floor (mod next-sec 65536))
-	  (floor next-sec-psec 1000000)
-	  (floor (mod next-sec-psec 1000000)))))
+  (let* ((ticks-hz (time-convert time t))
+	 (ticks (car ticks-hz))
+	 (hz (cdr ticks-hz))
+	 trunc-s-ticks)
+    (while (let ((s-ticks (* secs hz)))
+	     (setq trunc-s-ticks (truncate s-ticks))
+	     (/= s-ticks trunc-s-ticks))
+      (setq ticks (ash ticks 1))
+      (setq hz (ash hz 1)))
+    (let ((more-ticks (+ ticks trunc-s-ticks)))
+      (time-convert (cons (- more-ticks (% more-ticks trunc-s-ticks)) hz)))))
 
 (defun timer-relative-time (time secs &optional usecs psecs)
   "Advance TIME by SECS seconds and optionally USECS microseconds
@@ -140,20 +127,6 @@ and PSECS picoseconds.  SECS may be a fraction.  If USECS or PSECS are
 omitted, they are treated as zero."
   (setf (timer--time timer)
         (timer-relative-time (timer--time timer) secs usecs psecs)))
-
-(defun timer-set-time-with-usecs (timer time usecs &optional delta)
-  "Set the trigger time of TIMER to TIME plus USECS.
-TIME must be in the internal format returned by, e.g., `current-time'.
-The microsecond count from TIME is ignored, and USECS is used instead.
-If optional fourth argument DELTA is a positive number, make the timer
-fire repeatedly that many seconds apart."
-  (declare (obsolete "use `timer-set-time' and `timer-inc-time' instead."
-		     "22.1"))
-  (setf (timer--time timer) time)
-  (setf (timer--usecs timer) usecs)
-  (setf (timer--psecs timer) 0)
-  (setf (timer--repeat-delay timer) (and (numberp delta) (> delta 0) delta))
-  timer)
 
 (defun timer-set-function (timer function &optional args)
   "Make TIMER call FUNCTION with optional ARGS when triggering."
@@ -205,7 +178,7 @@ timers).  If nil, allocate a new cell."
   "Insert TIMER into `timer-idle-list'.
 This arranges to activate TIMER whenever Emacs is next idle.
 If optional argument DONT-WAIT is non-nil, set TIMER to activate
-immediately \(see below\), or at the right time, if Emacs is
+immediately \(see below), or at the right time, if Emacs is
 already idle.
 
 REUSE-CELL, if non-nil, is a cons cell to reuse when inserting
@@ -273,8 +246,8 @@ how many will really happen."
 (defun timer-until (timer time)
   "Calculate number of seconds from when TIMER will run, until TIME.
 TIMER is a timer, and stands for the time when its next repeat is scheduled.
-TIME is a time-list."
-  (- (float-time time) (float-time (timer--time timer))))
+TIME is a Lisp time value."
+  (float-time (time-subtract time (timer--time timer))))
 
 (defun timer-event-handler (timer)
   "Call the handler for the timer TIMER.
@@ -305,7 +278,7 @@ This function is called, by name, directly by the C code."
               ;; perhaps because Emacs was suspended for a long time,
               ;; limit how many times things get repeated.
               (if (and (numberp timer-max-repeats)
-                       (< 0 (timer-until timer nil)))
+		       (time-less-p (timer--time timer) nil))
                   (let ((repeats (/ (timer-until timer nil)
                                     (timer--repeat-delay timer))))
                     (if (> repeats timer-max-repeats)
@@ -324,7 +297,8 @@ This function is called, by name, directly by the C code."
               (apply (timer--function timer) (timer--args timer)))
           (error (message "Error running timer%s: %S"
                           (if (symbolp (timer--function timer))
-                              (format " `%s'" (timer--function timer)) "")
+                              (format-message " `%s'" (timer--function timer))
+                            "")
                           err)))
         (when (and retrigger
                    ;; If the timer's been canceled, don't "retrigger" it
@@ -344,18 +318,26 @@ This function is called, by name, directly by the C code."
 (defun run-at-time (time repeat function &rest args)
   "Perform an action at time TIME.
 Repeat the action every REPEAT seconds, if REPEAT is non-nil.
-TIME should be one of: a string giving an absolute time like
-\"11:23pm\" (the acceptable formats are those recognized by
-`diary-entry-time'; note that such times are interpreted as times
-today, even if in the past); a string giving a relative time like
-\"2 hours 35 minutes\" (the acceptable formats are those
-recognized by `timer-duration'); nil meaning now; a number of
-seconds from now; a value from `encode-time'; or t (with non-nil
-REPEAT) meaning the next integral multiple of REPEAT.  REPEAT may
-be an integer or floating point number.  The action is to call
-FUNCTION with arguments ARGS.
+REPEAT may be an integer or floating point number.
+TIME should be one of:
+- a string giving today's time like \"11:23pm\"
+  (the acceptable formats are HHMM, H:MM, HH:MM, HHam, HHAM,
+  HHpm, HHPM, HH:MMam, HH:MMAM, HH:MMpm, or HH:MMPM;
+  a period `.' can be used instead of a colon `:' to separate
+  the hour and minute parts);
+- a string giving a relative time like \"90\" or \"2 hours 35 minutes\"
+  (the acceptable forms are a number of seconds without units
+  or some combination of values using units in `timer-duration-words');
+- nil, meaning now;
+- a number of seconds from now;
+- a value from `encode-time';
+- or t (with non-nil REPEAT) meaning the next integral
+  multiple of REPEAT.
 
-This function returns a timer object which you can use in `cancel-timer'."
+The action is to call FUNCTION with arguments ARGS.
+
+This function returns a timer object which you can use in
+`cancel-timer'."
   (interactive "sRun at time: \nNRepeat interval: \naFunction: ")
 
   (or (null repeat)
@@ -390,8 +372,11 @@ This function returns a timer object which you can use in `cancel-timer'."
 	      (now (decode-time)))
 	  (if (>= hhmm 0)
 	      (setq time
-		    (encode-time 0 (% hhmm 100) (/ hhmm 100) (nth 3 now)
-				 (nth 4 now) (nth 5 now) (nth 8 now)))))))
+		    (encode-time 0 (% hhmm 100) (/ hhmm 100)
+                                 (decoded-time-day now)
+				 (decoded-time-month now)
+                                 (decoded-time-year now)
+                                 (decoded-time-zone now)))))))
 
   (or (consp time)
       (error "Invalid time format"))
@@ -415,6 +400,8 @@ This function returns a timer object which you can use in `cancel-timer'."
 (defun add-timeout (secs function object &optional repeat)
   "Add a timer to run SECS seconds from now, to call FUNCTION on OBJECT.
 If REPEAT is non-nil, repeat the timer every REPEAT seconds.
+
+This function returns a timer object which you can use in `cancel-timer'.
 This function is for compatibility; see also `run-with-timer'."
   (run-with-timer secs repeat function object))
 

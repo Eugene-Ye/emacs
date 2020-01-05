@@ -1,12 +1,12 @@
 /* systime.h - System-dependent definitions for time manipulations.
-   Copyright (C) 1993-1994, 2002-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-1994, 2002-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,21 +14,20 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #ifndef EMACS_SYSTIME_H
 #define EMACS_SYSTIME_H
 
+#include "lisp.h"
 #include <timespec.h>
 
 INLINE_HEADER_BEGIN
 
-#ifdef emacs
-# ifdef HAVE_X_WINDOWS
-#  include <X11/X.h>
-# else
+#ifdef HAVE_X_WINDOWS
+# include <X11/X.h>
+#else
 typedef unsigned long Time;
-# endif
 #endif
 
 /* On some configurations (hpux8.0, X11R4), sys/time.h and X11/Xos.h
@@ -42,6 +41,8 @@ typedef unsigned long Time;
 #endif
 
 #include <sys/time.h>	/* for 'struct timeval' */
+
+#undef hz /* AIX <sys/param.h> #defines this.  */
 
 /* Emacs uses struct timespec to represent nonnegative temporal intervals.
 
@@ -58,69 +59,45 @@ invalid_timespec (void)
 }
 
 /* Return true if TIME is a valid timespec.  This currently doesn't worry
-   about whether tv_nsec is less than TIMESPEC_RESOLUTION; leap seconds
-   might cause a problem if it did.  */
+   about whether tv_nsec is less than TIMESPEC_HZ; leap seconds might
+   cause a problem if it did.  */
 INLINE bool
 timespec_valid_p (struct timespec t)
 {
   return t.tv_nsec >= 0;
 }
 
-/* Return current system time.  */
-INLINE struct timespec
-current_timespec (void)
-{
-  struct timespec r;
-  gettime (&r);
-  return r;
-}
-
 /* defined in sysdep.c */
 extern int set_file_times (int, const char *, struct timespec, struct timespec);
-extern struct timeval make_timeval (struct timespec) ATTRIBUTE_CONST;
 
 /* defined in keyboard.c */
 extern void set_waiting_for_input (struct timespec *);
-
-/* When lisp.h is not included Lisp_Object is not defined (this can
-   happen when this files is used outside the src directory).
-   Use GCPRO1 to determine if lisp.h was included.  */
-#ifdef GCPRO1
 
 /* Emacs uses the integer list (HI LO US PS) to represent the time
    (HI << LO_TIME_BITS) + LO + US / 1e6 + PS / 1e12.  */
 enum { LO_TIME_BITS = 16 };
 
-/* A Lisp time (HI LO US PS), sans the cons cells.  */
+/* Components of a new-format Lisp timestamp.  */
 struct lisp_time
 {
-  EMACS_INT hi;
-  int lo, us, ps;
+  /* Clock count as a Lisp integer.  */
+  Lisp_Object ticks;
+
+  /* Clock frequency (ticks per second) as a positive Lisp integer.
+     (TICKS . HZ) is a valid Lisp timestamp unless HZ < 65536.  */
+  Lisp_Object hz;
 };
 
-/* defined in editfns.c */
+/* defined in timefns.c */
+extern struct timeval make_timeval (struct timespec) ATTRIBUTE_CONST;
 extern Lisp_Object make_lisp_time (struct timespec);
-extern bool decode_time_components (Lisp_Object, Lisp_Object, Lisp_Object,
-				    Lisp_Object, struct lisp_time *, double *);
-extern struct timespec lisp_to_timespec (struct lisp_time);
+extern Lisp_Object timespec_to_lisp (struct timespec);
+extern bool list4_to_timespec (Lisp_Object, Lisp_Object, Lisp_Object,
+			       Lisp_Object, struct timespec *);
 extern struct timespec lisp_time_argument (Lisp_Object);
-#endif
-
-#ifndef HAVE_TZALLOC
-# undef mktime_z
-# undef timezone_t
-# undef tzalloc
-# undef tzfree
-# define mktime_z emacs_mktime_z
-# define timezone_t emacs_timezone_t
-# define tzalloc emacs_tzalloc
-# define tzfree emacs_tzfree
-typedef char const *timezone_t;
-INLINE timezone_t tzalloc (char const *name) { return name; }
-INLINE void tzfree (timezone_t tz) { }
-/* Defined in editfns.c.  */
-extern time_t mktime_z (timezone_t, struct tm *);
-#endif
+extern AVOID time_overflow (void);
+extern void init_timefns (void);
+extern void syms_of_timefns (void);
 
 INLINE_HEADER_END
 

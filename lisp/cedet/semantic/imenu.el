@@ -1,9 +1,9 @@
 ;;; semantic/imenu.el --- Use Semantic as an imenu tag generator
 
-;; Copyright (C) 2000-2005, 2007-2008, 2010-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2005, 2007-2008, 2010-2020 Free Software
+;; Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
-;; Maintainer: Eric Ludlam
 
 ;; This file is part of GNU Emacs.
 
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -56,7 +56,7 @@
 
 ;;;###autoload
 (defcustom semantic-imenu-summary-function 'semantic-format-tag-abbreviate
-  "*Function to use when creating items in Imenu.
+  "Function to use when creating items in Imenu.
 Some useful functions are found in `semantic-format-tag-functions'."
   :group 'semantic-imenu
   :type semantic-format-tag-custom-list)
@@ -64,20 +64,20 @@ Some useful functions are found in `semantic-format-tag-functions'."
 
 ;;;###autoload
 (defcustom semantic-imenu-bucketize-file t
-  "*Non-nil if tags in a file are to be grouped into buckets."
+  "Non-nil if tags in a file are to be grouped into buckets."
   :group 'semantic-imenu
   :type 'boolean)
 (make-variable-buffer-local 'semantic-imenu-bucketize-file)
 
 (defcustom semantic-imenu-adopt-external-members t
-  "*Non-nil if types in a file should adopt externally defined members.
+  "Non-nil if types in a file should adopt externally defined members.
 C++ and CLOS can define methods that are not in the body of a class
 definition."
   :group 'semantic-imenu
   :type 'boolean)
 
 (defcustom semantic-imenu-buckets-to-submenu t
-  "*Non-nil if buckets of tags are to be turned into submenus.
+  "Non-nil if buckets of tags are to be turned into submenus.
 This option is ignored if `semantic-imenu-bucketize-file' is nil."
   :group 'semantic-imenu
   :type 'boolean)
@@ -85,7 +85,7 @@ This option is ignored if `semantic-imenu-bucketize-file' is nil."
 
 ;;;###autoload
 (defcustom semantic-imenu-expand-type-members t
-  "*Non-nil if types should have submenus with members in them."
+  "Non-nil if types should have submenus with members in them."
   :group 'semantic-imenu
   :type 'boolean)
 (make-variable-buffer-local 'semantic-imenu-expand-type-members)
@@ -93,7 +93,7 @@ This option is ignored if `semantic-imenu-bucketize-file' is nil."
                             'semantic-imenu-expand-type-members "23.2")
 
 (defcustom semantic-imenu-bucketize-type-members t
-  "*Non-nil if members of a type should be grouped into buckets.
+  "Non-nil if members of a type should be grouped into buckets.
 A nil value means to keep them in the same order.
 Overridden to nil if `semantic-imenu-bucketize-file' is nil."
   :group 'semantic-imenu
@@ -103,7 +103,7 @@ Overridden to nil if `semantic-imenu-bucketize-file' is nil."
                             'semantic-imenu-bucketize-type-members "23.2")
 
 (defcustom semantic-imenu-sort-bucket-function nil
-  "*Function to use when sorting tags in the buckets of functions.
+  "Function to use when sorting tags in the buckets of functions.
 See `semantic-bucketize' and the FILTER argument for more details on this function."
   :group 'semantic-imenu
   :type '(radio (const :tag "No Sorting" nil)
@@ -119,7 +119,7 @@ See `semantic-bucketize' and the FILTER argument for more details on this functi
 (make-variable-buffer-local 'semantic-imenu-sort-bucket-function)
 
 (defcustom semantic-imenu-index-directory nil
-  "*Non nil to index the entire directory for tags.
+  "Non-nil to index the entire directory for tags.
 Doesn't actually parse the entire directory, but displays tags for all files
 currently listed in the current Semantic database.
 This variable has no meaning if semanticdb is not active."
@@ -127,7 +127,7 @@ This variable has no meaning if semanticdb is not active."
   :type 'boolean)
 
 (defcustom semantic-imenu-auto-rebuild-directory-indexes nil
-  "*If non-nil automatically rebuild directory index imenus.
+  "If non-nil automatically rebuild directory index imenus.
 That is when a directory index imenu is updated, automatically rebuild
 other buffer local ones based on the same semanticdb."
   :group 'semantic-imenu
@@ -155,7 +155,7 @@ By default, a `type' has interesting children.  In Texinfo, however, a
 If TAG doesn't have an overlay, and instead as a vector of positions,
 concoct a combination of file name, and position."
   (let ((o (semantic-tag-overlay tag)))
-    (if (not (semantic-overlay-p o))
+    (if (not (overlayp o))
 	(let ((v (make-vector 3 nil)))
 	  (aset v 0 semantic-imenu-directory-current-file)
 	  (aset v 1 (aref o 0))
@@ -170,9 +170,9 @@ Used to override function `imenu-default-goto-function' so that
 we can continue to use overlays to maintain the current position.
 Optional argument REST is some extra stuff."
   (require 'pulse)
-  (if (semantic-overlay-p position)
-      (let ((os (semantic-overlay-start position))
-	    (ob (semantic-overlay-buffer position)))
+  (if (overlayp position)
+      (let ((os (overlay-start position))
+	    (ob (overlay-buffer position)))
 	(if os
 	    (progn
 	      (if (not (eq ob (current-buffer)))
@@ -240,10 +240,8 @@ Optional argument STREAM is an optional stream of tags used to create menus."
 	   (or stream (semantic-fetch-tags-fast)))
         (semantic-create-imenu-index-1
 	 (or stream (semantic-fetch-tags-fast)) nil))
-    (semantic-make-local-hook 'semantic-after-toplevel-cache-change-hook)
     (add-hook 'semantic-after-toplevel-cache-change-hook
               'semantic-imenu-flush-fcn nil t)
-    (semantic-make-local-hook 'semantic-after-partial-cache-change-hook)
     (add-hook 'semantic-after-partial-cache-change-hook
               'semantic-imenu-flush-fcn nil t)))
 
@@ -440,12 +438,7 @@ Optional argument PARENT is a tag parent of STREAM."
               ;; Rebuild the imenu
               (imenu--cleanup)
               (setq imenu--index-alist nil)
-              (funcall
-               (if (fboundp 'imenu-menu-filter)
-                   ;; XEmacs imenu
-                   'imenu-menu-filter
-                 ;; Emacs imenu
-                 'imenu-update-menubar))))))))
+              (imenu-update-menubar)))))))
 
 (defun semantic-imenu-semanticdb-hook ()
   "Function to be called from `semanticdb-mode-hook'.
@@ -487,7 +480,7 @@ Clears all imenu menus that may be depending on the database."
 ;;; Which function support
 ;;
 ;; The which-function library will display the current function in the
-;; mode line.  It tries do do this through imenu.  With a semantic parsed
+;; mode line.  It tries to do this through imenu.  With a semantic parsed
 ;; buffer, there is a much more efficient way of doing this.
 ;; Advise `which-function' so that we optionally use semantic tags
 ;; instead, and get better stuff.
@@ -497,7 +490,7 @@ Clears all imenu menus that may be depending on the database."
   "Function to convert semantic tags into `which-function' text.")
 
 (defcustom semantic-which-function-use-color nil
-  "*Use color when displaying the current function with `which-function'."
+  "Use color when displaying the current function with `which-function'."
   :group 'semantic-imenu
   :type 'boolean)
 

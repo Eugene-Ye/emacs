@@ -1,5 +1,5 @@
 /* ftfont.c -- FreeType font driver.
-   Copyright (C) 2006-2014 Free Software Foundation, Inc.
+   Copyright (C) 2006-2020 Free Software Foundation, Inc.
    Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
      Registration Number H13PRO009
@@ -8,8 +8,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,32 +17,39 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
-#include <stdio.h>
 #include <fontconfig/fontconfig.h>
 #include <fontconfig/fcfreetype.h>
+
+/* These two blocks are here because this file is built when using XFT
+   and when using Cairo, so struct font_info in ftfont.h needs access
+   to the appropriate types.  */
+#ifdef HAVE_XFT
+# include <X11/Xlib.h>
+# include <X11/Xft/Xft.h>
+#endif
+#ifdef USE_CAIRO
+# include <cairo-ft.h>
+#endif
 
 #include <c-strcase.h>
 
 #include "lisp.h"
 #include "dispextern.h"
-#include "frame.h"
-#include "blockinput.h"
 #include "character.h"
 #include "charset.h"
-#include "coding.h"
+#include "category.h"
 #include "composite.h"
-#include "fontset.h"
 #include "font.h"
 #include "ftfont.h"
+#include "pdumper.h"
 
-/* Symbolic type of this font-driver.  */
-static Lisp_Object Qfreetype;
-
-/* Fontconfig's generic families and their aliases.  */
-static Lisp_Object Qmonospace, Qsans_serif, Qserif, Qmono, Qsans, Qsans__serif;
+static struct font_driver const ftfont_driver;
+#ifdef HAVE_HARFBUZZ
+static struct font_driver fthbfont_driver;
+#endif	/* HAVE_HARFBUZZ */
 
 /* Flag to tell if FcInit is already called or not.  */
 static bool fc_initialized;
@@ -56,23 +63,6 @@ static Lisp_Object freetype_font_cache;
 /* Cache for FT_Face and FcCharSet. */
 static Lisp_Object ft_face_cache;
 
-/* The actual structure for FreeType font that can be cast to struct
-   font.  */
-
-struct ftfont_info
-{
-  struct font font;
-#ifdef HAVE_LIBOTF
-  /* The following four members must be here in this order to be
-     compatible with struct xftfont_info (in xftfont.c).  */
-  bool maybe_otf;	/* Flag to tell if this may be OTF or not.  */
-  OTF *otf;
-#endif	/* HAVE_LIBOTF */
-  FT_Size ft_size;
-  int index;
-  FT_Matrix matrix;
-};
-
 enum ftfont_cache_for
   {
     FTFONT_CACHE_FOR_FACE,
@@ -80,14 +70,8 @@ enum ftfont_cache_for
     FTFONT_CACHE_FOR_ENTITY
   };
 
-static Lisp_Object ftfont_pattern_entity (FcPattern *, Lisp_Object);
-
-static Lisp_Object ftfont_resolve_generic_family (Lisp_Object,
-                                                  FcPattern *);
 static Lisp_Object ftfont_lookup_cache (Lisp_Object,
                                         enum ftfont_cache_for);
-
-static void ftfont_filter_properties (Lisp_Object font, Lisp_Object alist);
 
 #define SYMBOL_FcChar8(SYM) (FcChar8 *) SDATA (SYMBOL_NAME (SYM))
 
@@ -207,7 +191,7 @@ ftfont_pattern_entity (FcPattern *p, Lisp_Object extra)
     return Qnil;
 
   file = (char *) str;
-  key = Fcons (build_unibyte_string (file), make_number (idx));
+  key = Fcons (build_unibyte_string (file), make_fixnum (idx));
   cache = ftfont_lookup_cache (key, FTFONT_CACHE_FOR_ENTITY);
   entity = XCAR (cache);
   if (! NILP (entity))
@@ -243,35 +227,35 @@ ftfont_pattern_entity (FcPattern *p, Lisp_Object extra)
     {
       if (numeric >= FC_WEIGHT_REGULAR && numeric < FC_WEIGHT_MEDIUM)
 	numeric = FC_WEIGHT_MEDIUM;
-      FONT_SET_STYLE (entity, FONT_WEIGHT_INDEX, make_number (numeric));
+      FONT_SET_STYLE (entity, FONT_WEIGHT_INDEX, make_fixnum (numeric));
     }
   if (FcPatternGetInteger (p, FC_SLANT, 0, &numeric) == FcResultMatch)
     {
       numeric += 100;
-      FONT_SET_STYLE (entity, FONT_SLANT_INDEX, make_number (numeric));
+      FONT_SET_STYLE (entity, FONT_SLANT_INDEX, make_fixnum (numeric));
     }
   if (FcPatternGetInteger (p, FC_WIDTH, 0, &numeric) == FcResultMatch)
     {
-      FONT_SET_STYLE (entity, FONT_WIDTH_INDEX, make_number (numeric));
+      FONT_SET_STYLE (entity, FONT_WIDTH_INDEX, make_fixnum (numeric));
     }
   if (FcPatternGetDouble (p, FC_PIXEL_SIZE, 0, &dbl) == FcResultMatch)
     {
-      ASET (entity, FONT_SIZE_INDEX, make_number (dbl));
+      ASET (entity, FONT_SIZE_INDEX, make_fixnum (dbl));
     }
   else
-    ASET (entity, FONT_SIZE_INDEX, make_number (0));
+    ASET (entity, FONT_SIZE_INDEX, make_fixnum (0));
   if (FcPatternGetInteger (p, FC_SPACING, 0, &numeric) == FcResultMatch)
-    ASET (entity, FONT_SPACING_INDEX, make_number (numeric));
+    ASET (entity, FONT_SPACING_INDEX, make_fixnum (numeric));
   if (FcPatternGetDouble (p, FC_DPI, 0, &dbl) == FcResultMatch)
     {
       int dpi = dbl;
-      ASET (entity, FONT_DPI_INDEX, make_number (dpi));
+      ASET (entity, FONT_DPI_INDEX, make_fixnum (dpi));
     }
   if (FcPatternGetBool (p, FC_SCALABLE, 0, &b) == FcResultMatch
       && b == FcTrue)
     {
-      ASET (entity, FONT_SIZE_INDEX, make_number (0));
-      ASET (entity, FONT_AVGWIDTH_INDEX, make_number (0));
+      ASET (entity, FONT_SIZE_INDEX, make_fixnum (0));
+      ASET (entity, FONT_AVGWIDTH_INDEX, make_fixnum (0));
     }
   else
     {
@@ -287,7 +271,7 @@ ftfont_pattern_entity (FcPattern *p, Lisp_Object extra)
 
 	  if (FT_Get_BDF_Property (ft_face, "AVERAGE_WIDTH", &rec) == 0
 	      && rec.type == BDF_PROPERTY_TYPE_INTEGER)
-	    ASET (entity, FONT_AVGWIDTH_INDEX, make_number (rec.u.integer));
+	    ASET (entity, FONT_AVGWIDTH_INDEX, make_fixnum (rec.u.integer));
 	  FT_Done_Face (ft_face);
 	}
     }
@@ -356,6 +340,7 @@ struct ftfont_cache_data
 {
   FT_Face ft_face;
   FcCharSet *fc_charset;
+  intptr_t face_refcount;
 };
 
 static Lisp_Object
@@ -381,24 +366,16 @@ ftfont_lookup_cache (Lisp_Object key, enum ftfont_cache_for cache_for)
   if (NILP (cache))
     {
       if (NILP (ft_face_cache))
-	{
-	  Lisp_Object args[2];
-
-	  args[0] = QCtest;
-	  args[1] = Qequal;
-	  ft_face_cache = Fmake_hash_table (2, args);
-	}
-      cache_data = xmalloc (sizeof *cache_data);
-      cache_data->ft_face = NULL;
-      cache_data->fc_charset = NULL;
-      val = make_save_ptr_int (cache_data, 0);
+	ft_face_cache = CALLN (Fmake_hash_table, QCtest, Qequal);
+      cache_data = xzalloc (sizeof *cache_data);
+      val = make_mint_ptr (cache_data);
       cache = Fcons (Qnil, val);
       Fputhash (key, cache, ft_face_cache);
     }
   else
     {
       val = XCDR (cache);
-      cache_data = XSAVE_POINTER (val, 0);
+      cache_data = xmint_pointer (val);
     }
 
   if (cache_for == FTFONT_CACHE_FOR_ENTITY)
@@ -408,7 +385,7 @@ ftfont_lookup_cache (Lisp_Object key, enum ftfont_cache_for cache_for)
       ? ! cache_data->ft_face : ! cache_data->fc_charset)
     {
       char *filename = SSDATA (XCAR (key));
-      int idx = XINT (XCDR (key));
+      int idx = XFIXNUM (XCDR (key));
 
       if (cache_for == FTFONT_CACHE_FOR_FACE)
 	{
@@ -456,7 +433,7 @@ ftfont_lookup_cache (Lisp_Object key, enum ftfont_cache_for cache_for)
   return cache;
 }
 
-FcCharSet *
+static FcCharSet *
 ftfont_get_fc_charset (Lisp_Object entity)
 {
   Lisp_Object val, cache;
@@ -464,13 +441,13 @@ ftfont_get_fc_charset (Lisp_Object entity)
 
   cache = ftfont_lookup_cache (entity, FTFONT_CACHE_FOR_CHARSET);
   val = XCDR (cache);
-  cache_data = XSAVE_POINTER (val, 0);
+  cache_data = xmint_pointer (val);
   return cache_data->fc_charset;
 }
 
 #ifdef HAVE_LIBOTF
 static OTF *
-ftfont_get_otf (struct ftfont_info *ftfont_info)
+ftfont_get_otf (struct font_info *ftfont_info)
 {
   OTF *otf;
 
@@ -491,79 +468,7 @@ ftfont_get_otf (struct ftfont_info *ftfont_info)
 }
 #endif	/* HAVE_LIBOTF */
 
-static Lisp_Object ftfont_get_cache (struct frame *);
-static Lisp_Object ftfont_list (struct frame *, Lisp_Object);
-static Lisp_Object ftfont_match (struct frame *, Lisp_Object);
-static Lisp_Object ftfont_list_family (struct frame *);
-static Lisp_Object ftfont_open (struct frame *, Lisp_Object, int);
-static void ftfont_close (struct font *);
-static int ftfont_has_char (Lisp_Object, int);
-static unsigned ftfont_encode_char (struct font *, int);
-static void ftfont_text_extents (struct font *, unsigned *, int,
-				 struct font_metrics *);
-static int ftfont_get_bitmap (struct font *, unsigned,
-                              struct font_bitmap *, int);
-static int ftfont_anchor_point (struct font *, unsigned, int,
-                                int *, int *);
-#ifdef HAVE_LIBOTF
-static Lisp_Object ftfont_otf_capability (struct font *);
-# ifdef HAVE_M17N_FLT
-static Lisp_Object ftfont_shape (Lisp_Object);
-# endif
-#endif
-
-#ifdef HAVE_OTF_GET_VARIATION_GLYPHS
-static int ftfont_variation_glyphs (struct font *, int c,
-                                    unsigned variations[256]);
-#endif /* HAVE_OTF_GET_VARIATION_GLYPHS */
-
-struct font_driver ftfont_driver =
-  {
-    LISP_INITIALLY_ZERO,	/* Qfreetype */
-    0,				/* case insensitive */
-    ftfont_get_cache,
-    ftfont_list,
-    ftfont_match,
-    ftfont_list_family,
-    NULL,			/* free_entity */
-    ftfont_open,
-    ftfont_close,
-    /* We can't draw a text without device dependent functions.  */
-    NULL,			/* prepare_face */
-    NULL,			/* done_face */
-    ftfont_has_char,
-    ftfont_encode_char,
-    ftfont_text_extents,
-    /* We can't draw a text without device dependent functions.  */
-    NULL,			/* draw */
-    ftfont_get_bitmap,
-    NULL,			/* free_bitmap */
-    ftfont_anchor_point,
-#ifdef HAVE_LIBOTF
-    ftfont_otf_capability,
-#else  /* not HAVE_LIBOTF */
-    NULL,
-#endif	/* not HAVE_LIBOTF */
-    NULL,			/* otf_drive */
-    NULL,			/* start_for_frame */
-    NULL,			/* end_for_frame */
-#if defined (HAVE_M17N_FLT) && defined (HAVE_LIBOTF)
-    ftfont_shape,
-#else  /* not (HAVE_M17N_FLT && HAVE_LIBOTF) */
-    NULL,
-#endif	/* not (HAVE_M17N_FLT && HAVE_LIBOTF) */
-    NULL,			/* check */
-
-#ifdef HAVE_OTF_GET_VARIATION_GLYPHS
-    ftfont_variation_glyphs,
-#else
-    NULL,
-#endif
-
-    ftfont_filter_properties, /* filter_properties */
-  };
-
-static Lisp_Object
+Lisp_Object
 ftfont_get_cache (struct frame *f)
 {
   return freetype_font_cache;
@@ -575,7 +480,6 @@ ftfont_get_charset (Lisp_Object registry)
   char *str = SSDATA (SYMBOL_NAME (registry));
   USE_SAFE_ALLOCA;
   char *re = SAFE_ALLOCA (SBYTES (SYMBOL_NAME (registry)) * 2 + 1);
-  Lisp_Object regexp;
   int i, j;
 
   for (i = j = 0; i < SBYTES (SYMBOL_NAME (registry)); i++, j++)
@@ -589,13 +493,13 @@ ftfont_get_charset (Lisp_Object registry)
 	re[j] = '.';
     }
   re[j] = '\0';
-  regexp = make_unibyte_string (re, j);
-  SAFE_FREE ();
+  AUTO_STRING_WITH_LEN (regexp, re, j);
   for (i = 0; fc_charset_table[i].name; i++)
     if (fast_c_string_match_ignore_case
 	(regexp, fc_charset_table[i].name,
 	 strlen (fc_charset_table[i].name)) >= 0)
       break;
+  SAFE_FREE ();
   if (! fc_charset_table[i].name)
     return -1;
   if (! fc_charset_table[i].fc_charset)
@@ -647,7 +551,19 @@ struct OpenTypeSpec
     OTF_TAG_STR (TAG, str);			\
     (SYM) = font_intern_prop (str, 4, 1);	\
   } while (0)
-#endif
+#elif defined HAVE_HARFBUZZ
+/* Libotf emulations on HarfBuzz for the functions called from
+   ftfont_list.  They are a bit slower than the original ones, so used
+   as fallbacks when libotf is not available.  */
+typedef hb_face_t OTF;
+typedef unsigned int OTF_tag;
+static OTF *hbotf_open (const char *);
+static int hbotf_check_features (OTF *, int, OTF_tag, OTF_tag,
+				 const OTF_tag *, int);
+#define OTF_open hbotf_open
+#define OTF_close hb_face_destroy
+#define OTF_check_features hbotf_check_features
+#endif	/* !HAVE_LIBOTF && HAVE_HARFBUZZ */
 
 
 static struct OpenTypeSpec *
@@ -684,16 +600,14 @@ ftfont_get_open_type_spec (Lisp_Object otf_spec)
   spec->nfeatures[0] = spec->nfeatures[1] = 0;
   for (i = 0; i < 2 && ! NILP (otf_spec); i++, otf_spec = XCDR (otf_spec))
     {
-      Lisp_Object len;
-
       val = XCAR (otf_spec);
       if (NILP (val))
 	continue;
-      len = Flength (val);
+      ptrdiff_t len = list_length (val);
       spec->features[i] =
-	(min (PTRDIFF_MAX, SIZE_MAX) / sizeof (int) < XINT (len)
+	(min (PTRDIFF_MAX, SIZE_MAX) / sizeof (int) < len
 	 ? 0
-	 : malloc (XINT (len) * sizeof *spec->features[i]));
+	 : malloc (len * sizeof *spec->features[i]));
       if (! spec->features[i])
 	{
 	  if (i > 0 && spec->features[0])
@@ -710,7 +624,7 @@ ftfont_get_open_type_spec (Lisp_Object otf_spec)
 	      unsigned int tag;
 
 	      OTF_SYM_TAG (XCAR (val), tag);
-	      spec->features[i][j++] = negative ? tag & 0x80000000 : tag;
+	      spec->features[i][j++] = negative ? tag | 0x80000000 : tag;
 	    }
 	}
       spec->nfeatures[i] = j;
@@ -737,10 +651,10 @@ ftfont_spec_pattern (Lisp_Object spec, char *otlayout, struct OpenTypeSpec **ots
     /* Fontconfig doesn't support reverse-italic/oblique.  */
     return NULL;
 
-  if (INTEGERP (AREF (spec, FONT_DPI_INDEX)))
-    dpi = XINT (AREF (spec, FONT_DPI_INDEX));
-  if (INTEGERP (AREF (spec, FONT_AVGWIDTH_INDEX))
-      && XINT (AREF (spec, FONT_AVGWIDTH_INDEX)) == 0)
+  if (FIXNUMP (AREF (spec, FONT_DPI_INDEX)))
+    dpi = XFIXNUM (AREF (spec, FONT_DPI_INDEX));
+  if (FIXNUMP (AREF (spec, FONT_AVGWIDTH_INDEX))
+      && XFIXNUM (AREF (spec, FONT_AVGWIDTH_INDEX)) == 0)
     scalable = 1;
 
   registry = AREF (spec, FONT_REGISTRY_INDEX);
@@ -777,8 +691,8 @@ ftfont_spec_pattern (Lisp_Object spec, char *otlayout, struct OpenTypeSpec **ots
       key = XCAR (XCAR (extra)), val = XCDR (XCAR (extra));
       if (EQ (key, QCdpi))
 	{
-	  if (INTEGERP (val))
-	    dpi = XINT (val);
+	  if (FIXNUMP (val))
+	    dpi = XFIXNUM (val);
 	}
       else if (EQ (key, QClang))
 	{
@@ -826,7 +740,7 @@ ftfont_spec_pattern (Lisp_Object spec, char *otlayout, struct OpenTypeSpec **ots
 	    goto err;
 	  for (chars = XCDR (chars); CONSP (chars); chars = XCDR (chars))
 	    if (CHARACTERP (XCAR (chars))
-		&& ! FcCharSetAddChar (charset, XFASTINT (XCAR (chars))))
+		&& ! FcCharSetAddChar (charset, XFIXNAT (XCAR (chars))))
 	      goto err;
 	}
     }
@@ -854,6 +768,13 @@ ftfont_spec_pattern (Lisp_Object spec, char *otlayout, struct OpenTypeSpec **ots
   if (scalable >= 0
       && ! FcPatternAddBool (pattern, FC_SCALABLE, scalable ? FcTrue : FcFalse))
     goto err;
+#if defined HAVE_XFT && defined FC_COLOR
+  /* We really don't like color fonts, they cause Xft crashes.  See
+     Bug#30874.  */
+  if (Vxft_ignore_color_fonts
+      && ! FcPatternAddBool (pattern, FC_COLOR, FcFalse))
+    goto err;
+#endif
 
   goto finish;
 
@@ -916,8 +837,8 @@ ftfont_list (struct frame *f, Lisp_Object spec)
 	}
       val = Qnil;
     }
-  if (INTEGERP (AREF (spec, FONT_SPACING_INDEX)))
-    spacing = XINT (AREF (spec, FONT_SPACING_INDEX));
+  if (FIXNUMP (AREF (spec, FONT_SPACING_INDEX)))
+    spacing = XFIXNUM (AREF (spec, FONT_SPACING_INDEX));
   family = AREF (spec, FONT_FAMILY_INDEX);
   if (! NILP (family))
     {
@@ -943,6 +864,9 @@ ftfont_list (struct frame *f, Lisp_Object spec)
 #endif	/* FC_CAPABILITY */
 #ifdef FC_FONTFORMAT
 			     FC_FONTFORMAT,
+#endif
+#if defined HAVE_XFT && defined FC_COLOR
+                             FC_COLOR,
 #endif
 			     NULL);
   if (! objset)
@@ -983,7 +907,19 @@ ftfont_list (struct frame *f, Lisp_Object spec)
   for (i = 0; i < fontset->nfont; i++)
     {
       Lisp_Object entity;
-
+#if defined HAVE_XFT && defined FC_COLOR
+      {
+        /* Some fonts, notably NotoColorEmoji, have an FC_COLOR value
+           that's neither FcTrue nor FcFalse, which means FcFontList
+           returns them even when it shouldn't really do so, so we
+           need to manually skip them here (Bug#37786).  */
+        FcBool b;
+        if (Vxft_ignore_color_fonts
+            && FcPatternGetBool (fontset->fonts[i], FC_COLOR, 0, &b)
+            == FcResultMatch && b != FcFalse)
+            continue;
+      }
+#endif
       if (spacing >= 0)
 	{
 	  int this;
@@ -1005,7 +941,7 @@ ftfont_list (struct frame *f, Lisp_Object spec)
 	    continue;
 	}
 #endif	/* FC_CAPABILITY */
-#ifdef HAVE_LIBOTF
+#if defined HAVE_LIBOTF || defined HAVE_HARFBUZZ
       if (otspec)
 	{
 	  FcChar8 *file;
@@ -1030,7 +966,7 @@ ftfont_list (struct frame *f, Lisp_Object spec)
 	  if (!passed)
 	    continue;
 	}
-#endif	/* HAVE_LIBOTF */
+#endif	/* HAVE_LIBOTF || HAVE_HARFBUZZ */
       if (VECTORP (chars))
 	{
 	  ptrdiff_t j;
@@ -1039,8 +975,8 @@ ftfont_list (struct frame *f, Lisp_Object spec)
 	      != FcResultMatch)
 	    continue;
 	  for (j = 0; j < ASIZE (chars); j++)
-	    if (TYPE_RANGED_INTEGERP (FcChar32, AREF (chars, j))
-		&& FcCharSetHasChar (charset, XFASTINT (AREF (chars, j))))
+	    if (TYPE_RANGED_FIXNUMP (FcChar32, AREF (chars, j))
+		&& FcCharSetHasChar (charset, XFIXNAT (AREF (chars, j))))
 	      break;
 	  if (j == ASIZE (chars))
 	    continue;
@@ -1080,6 +1016,16 @@ ftfont_list (struct frame *f, Lisp_Object spec)
   return val;
 }
 
+Lisp_Object
+ftfont_list2 (struct frame *f, Lisp_Object spec, Lisp_Object type)
+{
+  Lisp_Object list = ftfont_list (f, spec);
+
+  for (Lisp_Object tail = list; CONSP (tail); tail = XCDR (tail))
+    ASET (XCAR (tail), FONT_TYPE_INDEX, type);
+  return list;
+}
+
 static Lisp_Object
 ftfont_match (struct frame *f, Lisp_Object spec)
 {
@@ -1100,12 +1046,12 @@ ftfont_match (struct frame *f, Lisp_Object spec)
   if (! pattern)
     return Qnil;
 
-  if (INTEGERP (AREF (spec, FONT_SIZE_INDEX)))
+  if (FIXNUMP (AREF (spec, FONT_SIZE_INDEX)))
     {
       FcValue value;
 
       value.type = FcTypeDouble;
-      value.u.d = XINT (AREF (spec, FONT_SIZE_INDEX));
+      value.u.d = XFIXNUM (AREF (spec, FONT_SIZE_INDEX));
       FcPatternAdd (pattern, FC_PIXEL_SIZE, value, FcFalse);
     }
   if (FcConfigSubstitute (NULL, pattern, FcMatchPattern) == FcTrue)
@@ -1130,7 +1076,17 @@ ftfont_match (struct frame *f, Lisp_Object spec)
   return entity;
 }
 
-static Lisp_Object
+Lisp_Object
+ftfont_match2 (struct frame *f, Lisp_Object spec, Lisp_Object type)
+{
+  Lisp_Object entity = ftfont_match (f, spec);
+
+  if (! NILP (entity))
+    ASET (entity, FONT_TYPE_INDEX, type);
+  return entity;
+}
+
+Lisp_Object
 ftfont_list_family (struct frame *f)
 {
   Lisp_Object list = Qnil;
@@ -1172,11 +1128,163 @@ ftfont_list_family (struct frame *f)
   return list;
 }
 
+void
+ftfont_fix_match (FcPattern *pat, FcPattern *match)
+{
+  /*  These values are not used for matching (except antialias), but for
+      rendering, so make sure they are carried over to the match.
+      We also put antialias here because most fonts are antialiased, so
+      the match will have antialias true.  */
 
-static Lisp_Object
+  FcBool b = FcTrue;
+  int i;
+  double dpi;
+
+  FcPatternGetBool (pat, FC_ANTIALIAS, 0, &b);
+  if (! b)
+    {
+      FcPatternDel (match, FC_ANTIALIAS);
+      FcPatternAddBool (match, FC_ANTIALIAS, FcFalse);
+    }
+  FcPatternGetBool (pat, FC_HINTING, 0, &b);
+  if (! b)
+    {
+      FcPatternDel (match, FC_HINTING);
+      FcPatternAddBool (match, FC_HINTING, FcFalse);
+    }
+#ifndef FC_HINT_STYLE
+# define FC_HINT_STYLE "hintstyle"
+#endif
+  if (FcResultMatch == FcPatternGetInteger (pat, FC_HINT_STYLE, 0, &i))
+    {
+      FcPatternDel (match, FC_HINT_STYLE);
+      FcPatternAddInteger (match, FC_HINT_STYLE, i);
+    }
+#ifndef FC_LCD_FILTER
+  /* Older fontconfig versions don't have FC_LCD_FILTER. */
+#define FC_LCD_FILTER "lcdfilter"
+#endif
+  if (FcResultMatch == FcPatternGetInteger (pat, FC_LCD_FILTER, 0, &i))
+    {
+      FcPatternDel (match, FC_LCD_FILTER);
+      FcPatternAddInteger (match, FC_LCD_FILTER, i);
+    }
+  if (FcResultMatch == FcPatternGetInteger (pat, FC_RGBA, 0, &i))
+    {
+      FcPatternDel (match, FC_RGBA);
+      FcPatternAddInteger (match, FC_RGBA, i);
+    }
+  if (FcResultMatch == FcPatternGetDouble (pat, FC_DPI, 0, &dpi))
+    {
+      FcPatternDel (match, FC_DPI);
+      FcPatternAddDouble (match, FC_DPI, dpi);
+    }
+}
+
+void
+ftfont_add_rendering_parameters (FcPattern *pat, Lisp_Object entity)
+{
+  Lisp_Object tail;
+  int ival;
+
+  for (tail = AREF (entity, FONT_EXTRA_INDEX); CONSP (tail); tail = XCDR (tail))
+    {
+      Lisp_Object key = XCAR (XCAR (tail));
+      Lisp_Object val = XCDR (XCAR (tail));
+
+      if (EQ (key, QCantialias))
+          FcPatternAddBool (pat, FC_ANTIALIAS, NILP (val) ? FcFalse : FcTrue);
+      else if (EQ (key, QChinting))
+	FcPatternAddBool (pat, FC_HINTING, NILP (val) ? FcFalse : FcTrue);
+      else if (EQ (key, QCautohint))
+	FcPatternAddBool (pat, FC_AUTOHINT, NILP (val) ? FcFalse : FcTrue);
+      else if (EQ (key, QChintstyle))
+	{
+	  if (FIXNUMP (val))
+	    FcPatternAddInteger (pat, FC_HINT_STYLE, XFIXNUM (val));
+          else if (SYMBOLP (val)
+                   && FcNameConstant (SDATA (SYMBOL_NAME (val)), &ival))
+	    FcPatternAddInteger (pat, FC_HINT_STYLE, ival);
+	}
+      else if (EQ (key, QCrgba))
+	{
+	  if (FIXNUMP (val))
+	    FcPatternAddInteger (pat, FC_RGBA, XFIXNUM (val));
+          else if (SYMBOLP (val)
+                   && FcNameConstant (SDATA (SYMBOL_NAME (val)), &ival))
+	    FcPatternAddInteger (pat, FC_RGBA, ival);
+	}
+      else if (EQ (key, QClcdfilter))
+	{
+	  if (FIXNUMP (val))
+	    FcPatternAddInteger (pat, FC_LCD_FILTER, ival = XFIXNUM (val));
+          else if (SYMBOLP (val)
+                   && FcNameConstant (SDATA (SYMBOL_NAME (val)), &ival))
+	    FcPatternAddInteger (pat, FC_LCD_FILTER, ival);
+	}
+#ifdef FC_EMBOLDEN
+      else if (EQ (key, QCembolden))
+	FcPatternAddBool (pat, FC_EMBOLDEN, NILP (val) ? FcFalse : FcTrue);
+#endif
+    }
+}
+
+FcPattern *
+ftfont_entity_pattern (Lisp_Object entity, int pixel_size)
+{
+  Lisp_Object val, filename, idx;
+  FcPattern *pat;
+  int i;
+
+  val = assq_no_quit (QCfont_entity, AREF (entity, FONT_EXTRA_INDEX));
+  eassert (CONSP (val));
+  val = XCDR (val);
+  filename = XCAR (val);
+  idx = XCDR (val);
+  pat = FcPatternCreate ();
+  FcPatternAddInteger (pat, FC_WEIGHT, FONT_WEIGHT_NUMERIC (entity));
+  i = FONT_SLANT_NUMERIC (entity) - 100;
+  if (i < 0) i = 0;
+  FcPatternAddInteger (pat, FC_SLANT, i);
+  FcPatternAddInteger (pat, FC_WIDTH, FONT_WIDTH_NUMERIC (entity));
+  FcPatternAddDouble (pat, FC_PIXEL_SIZE, pixel_size);
+  val = AREF (entity, FONT_FAMILY_INDEX);
+  if (! NILP (val))
+    FcPatternAddString (pat, FC_FAMILY, (FcChar8 *) SDATA (SYMBOL_NAME (val)));
+  val = AREF (entity, FONT_FOUNDRY_INDEX);
+  if (! NILP (val))
+    FcPatternAddString (pat, FC_FOUNDRY, (FcChar8 *) SDATA (SYMBOL_NAME (val)));
+  val = AREF (entity, FONT_SPACING_INDEX);
+  if (! NILP (val))
+    FcPatternAddInteger (pat, FC_SPACING, XFIXNUM (val));
+  val = AREF (entity, FONT_DPI_INDEX);
+  if (! NILP (val))
+    {
+      double dbl = XFIXNUM (val);
+
+      FcPatternAddDouble (pat, FC_DPI, dbl);
+    }
+  val = AREF (entity, FONT_AVGWIDTH_INDEX);
+  if (FIXNUMP (val) && XFIXNUM (val) == 0)
+    FcPatternAddBool (pat, FC_SCALABLE, FcTrue);
+  /* This is necessary to identify the exact font (e.g. 10x20.pcf.gz
+     over 10x20-ISO8859-1.pcf.gz).  */
+  FcPatternAddCharSet (pat, FC_CHARSET, ftfont_get_fc_charset (entity));
+
+  ftfont_add_rendering_parameters (pat, entity);
+
+  FcPatternAddString (pat, FC_FILE, (FcChar8 *) SDATA (filename));
+  FcPatternAddInteger (pat, FC_INDEX, XFIXNUM (idx));
+
+  return pat;
+}
+
+#ifndef USE_CAIRO
+
+Lisp_Object
 ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
 {
-  struct ftfont_info *ftfont_info;
+  struct font_info *ftfont_info;
   struct font *font;
   struct ftfont_cache_data *cache_data;
   FT_Face ft_face;
@@ -1186,7 +1294,7 @@ ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
   bool scalable;
   int spacing;
   int i;
-  int upEM;
+  double upEM;
 
   val = assq_no_quit (QCfont_entity, AREF (entity, FONT_EXTRA_INDEX));
   if (! CONSP (val))
@@ -1197,10 +1305,9 @@ ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
     return Qnil;
   filename = XCAR (val);
   idx = XCDR (val);
-  val = XCDR (cache);
-  cache_data = XSAVE_POINTER (XCDR (cache), 0);
+  cache_data = xmint_pointer (XCDR (cache));
   ft_face = cache_data->ft_face;
-  if (XSAVE_INTEGER (val, 1) > 0)
+  if (cache_data->face_refcount > 0)
     {
       /* FT_Face in this cache is already used by the different size.  */
       if (FT_New_Size (ft_face, &ft_size) != 0)
@@ -1211,51 +1318,80 @@ ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
 	  return Qnil;
 	}
     }
-  set_save_integer (val, 1, XSAVE_INTEGER (val, 1) + 1);
-  size = XINT (AREF (entity, FONT_SIZE_INDEX));
+  size = XFIXNUM (AREF (entity, FONT_SIZE_INDEX));
   if (size == 0)
     size = pixel_size;
   if (FT_Set_Pixel_Sizes (ft_face, size, size) != 0)
     {
-      if (XSAVE_INTEGER (val, 1) == 0)
-	FT_Done_Face (ft_face);
+      if (cache_data->face_refcount == 0)
+	{
+	  FT_Done_Face (ft_face);
+	  cache_data->ft_face = NULL;
+	}
       return Qnil;
     }
+  cache_data->face_refcount++;
 
-  font_object = font_build_object (VECSIZE (struct ftfont_info),
+  font_object = font_build_object (VECSIZE (struct font_info),
 				   Qfreetype, entity, size);
   ASET (font_object, FONT_FILE_INDEX, filename);
   font = XFONT_OBJECT (font_object);
-  ftfont_info = (struct ftfont_info *) font;
+  ftfont_info = (struct font_info *) font;
   ftfont_info->ft_size = ft_face->size;
-  ftfont_info->index = XINT (idx);
+  ftfont_info->index = XFIXNUM (idx);
 #ifdef HAVE_LIBOTF
   ftfont_info->maybe_otf = (ft_face->face_flags & FT_FACE_FLAG_SFNT) != 0;
   ftfont_info->otf = NULL;
 #endif	/* HAVE_LIBOTF */
+#ifdef HAVE_HARFBUZZ
+  ftfont_info->hb_font = NULL;
+#endif	/* HAVE_HARFBUZZ */
   /* This means that there's no need of transformation.  */
   ftfont_info->matrix.xx = 0;
   font->pixel_size = size;
+#ifdef HAVE_HARFBUZZ
+  if (EQ (AREF (font_object, FONT_TYPE_INDEX), Qfreetypehb))
+    font->driver = &fthbfont_driver;
+  else
+#endif	/* HAVE_HARFBUZZ */
   font->driver = &ftfont_driver;
   font->encoding_charset = font->repertory_charset = -1;
 
+  val = assq_no_quit (QCminspace, AREF (entity, FONT_EXTRA_INDEX));
+  bool no_leading_p = !(CONSP (val) && NILP (XCDR (val)));
   upEM = ft_face->units_per_EM;
-  scalable = (INTEGERP (AREF (entity, FONT_AVGWIDTH_INDEX))
-	      && XINT (AREF (entity, FONT_AVGWIDTH_INDEX)) == 0);
+  scalable = (FIXNUMP (AREF (entity, FONT_AVGWIDTH_INDEX))
+	      && XFIXNUM (AREF (entity, FONT_AVGWIDTH_INDEX)) == 0);
   if (scalable)
     {
-      font->ascent = ft_face->ascender * size / upEM;
-      font->descent = - ft_face->descender * size / upEM;
-      font->height = ft_face->height * size / upEM;
+      font->ascent = ft_face->ascender * size / upEM + 0.5;
+      if (no_leading_p)
+	{
+	  font->descent = - ft_face->descender * size / upEM + 0.5;
+	  font->height = font->ascent + font->descent;
+	}
+      else
+	{
+	  font->height = ft_face->height * size / upEM + 0.5;
+	  font->descent = font->height - font->ascent;
+	}
     }
   else
     {
       font->ascent = ft_face->size->metrics.ascender >> 6;
-      font->descent = - ft_face->size->metrics.descender >> 6;
-      font->height = ft_face->size->metrics.height >> 6;
+      if (no_leading_p)
+	{
+	  font->descent = - ft_face->size->metrics.descender >> 6;
+	  font->height = font->ascent + font->descent;
+	}
+      else
+	{
+	  font->height = ft_face->size->metrics.height >> 6;
+	  font->descent = font->height - font->ascent;
+	}
     }
-  if (INTEGERP (AREF (entity, FONT_SPACING_INDEX)))
-    spacing = XINT (AREF (entity, FONT_SPACING_INDEX));
+  if (FIXNUMP (AREF (entity, FONT_SPACING_INDEX)))
+    spacing = XFIXNUM (AREF (entity, FONT_SPACING_INDEX));
   else
     spacing = FC_PROPORTIONAL;
   if (spacing != FC_PROPORTIONAL
@@ -1264,7 +1400,7 @@ ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
 #endif	/* FC_DUAL */
       )
     font->min_width = font->average_width = font->space_width
-      = (scalable ? ft_face->max_advance_width * size / upEM
+      = (scalable ? ft_face->max_advance_width * size / upEM + 0.5
 	 : ft_face->size->metrics.max_advance >> 6);
   else
     {
@@ -1294,8 +1430,10 @@ ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
   font->vertical_centering = 0;
   if (scalable)
     {
-      font->underline_position = -ft_face->underline_position * size / upEM;
-      font->underline_thickness = ft_face->underline_thickness * size / upEM;
+      font->underline_position = (-ft_face->underline_position * size / upEM
+				  + 0.5);
+      font->underline_thickness = (ft_face->underline_thickness * size / upEM
+				   + 0.5);
     }
   else
     {
@@ -1306,25 +1444,31 @@ ftfont_open (struct frame *f, Lisp_Object entity, int pixel_size)
   return font_object;
 }
 
-static void
+void
 ftfont_close (struct font *font)
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  if (font_data_structures_may_be_ill_formed ())
+    return;
+
+  struct font_info *ftfont_info = (struct font_info *) font;
   Lisp_Object val, cache;
 
-  val = Fcons (font->props[FONT_FILE_INDEX], make_number (ftfont_info->index));
+  val = Fcons (font->props[FONT_FILE_INDEX], make_fixnum (ftfont_info->index));
   cache = ftfont_lookup_cache (val, FTFONT_CACHE_FOR_FACE);
   eassert (CONSP (cache));
   val = XCDR (cache);
-  set_save_integer (val, 1, XSAVE_INTEGER (val, 1) - 1);
-  if (XSAVE_INTEGER (val, 1) == 0)
+  struct ftfont_cache_data *cache_data = xmint_pointer (val);
+  cache_data->face_refcount--;
+  if (cache_data->face_refcount == 0)
     {
-      struct ftfont_cache_data *cache_data = XSAVE_POINTER (val, 0);
-
       FT_Done_Face (cache_data->ft_face);
 #ifdef HAVE_LIBOTF
       if (ftfont_info->otf)
 	OTF_close (ftfont_info->otf);
+#endif
+#ifdef HAVE_HARFBUZZ
+      if (ftfont_info->hb_font)
+	hb_font_destroy (ftfont_info->hb_font);
 #endif
       cache_data->ft_face = NULL;
     }
@@ -1332,7 +1476,9 @@ ftfont_close (struct font *font)
     FT_Done_Size (ftfont_info->ft_size);
 }
 
-static int
+#endif /* !USE_CAIRO */
+
+int
 ftfont_has_char (Lisp_Object font, int c)
 {
   struct charset *cs = NULL;
@@ -1354,18 +1500,20 @@ ftfont_has_char (Lisp_Object font, int c)
     }
   else
     {
-      struct ftfont_info *ftfont_info;
+      struct font_info *ftfont_info;
 
-      ftfont_info = (struct ftfont_info *) XFONT_OBJECT (font);
+      ftfont_info = (struct font_info *) XFONT_OBJECT (font);
       return (FT_Get_Char_Index (ftfont_info->ft_size->face, (FT_ULong) c)
 	      != 0);
     }
 }
 
-static unsigned
+#ifndef USE_CAIRO
+
+unsigned
 ftfont_encode_char (struct font *font, int c)
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  struct font_info *ftfont_info = (struct font_info *) font;
   FT_Face ft_face = ftfont_info->ft_size->face;
   FT_ULong charcode = c;
   FT_UInt code = FT_Get_Char_Index (ft_face, charcode);
@@ -1373,11 +1521,29 @@ ftfont_encode_char (struct font *font, int c)
   return (code > 0 ? code : FONT_INVALID_CODE);
 }
 
-static void
-ftfont_text_extents (struct font *font, unsigned int *code,
+static bool
+ftfont_glyph_metrics (FT_Face ft_face, int c, int *advance, int *lbearing,
+                      int *rbearing, int *ascent, int *descent)
+{
+  if (FT_Load_Glyph (ft_face, c, FT_LOAD_DEFAULT) == 0)
+    {
+      FT_Glyph_Metrics *m = &ft_face->glyph->metrics;
+      *advance = m->horiAdvance >> 6;
+      *lbearing = m->horiBearingX >> 6;
+      *rbearing = (m->horiBearingX + m->width) >> 6;
+      *ascent = m->horiBearingY >> 6;
+      *descent = (m->height - m->horiBearingY) >> 6;
+      return true;
+    }
+
+  return false;
+}
+
+void
+ftfont_text_extents (struct font *font, const unsigned int *code,
 		     int nglyphs, struct font_metrics *metrics)
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  struct font_info *ftfont_info = (struct font_info *) font;
   FT_Face ft_face = ftfont_info->ft_size->face;
   int i, width = 0;
   bool first;
@@ -1387,29 +1553,27 @@ ftfont_text_extents (struct font *font, unsigned int *code,
 
   for (i = 0, first = 1; i < nglyphs; i++)
     {
-      if (FT_Load_Glyph (ft_face, code[i], FT_LOAD_DEFAULT) == 0)
+      int advance, lbearing, rbearing, ascent, descent;
+      if (ftfont_glyph_metrics (ft_face, code[i], &advance, &lbearing,
+                                &rbearing, &ascent, &descent))
 	{
-	  FT_Glyph_Metrics *m = &ft_face->glyph->metrics;
-
 	  if (first)
 	    {
-	      metrics->lbearing = m->horiBearingX >> 6;
-	      metrics->rbearing = (m->horiBearingX + m->width) >> 6;
-	      metrics->ascent = m->horiBearingY >> 6;
-	      metrics->descent = (m->height - m->horiBearingY) >> 6;
+	      metrics->lbearing = lbearing;
+	      metrics->rbearing = rbearing;
+	      metrics->ascent = ascent;
+	      metrics->descent = descent;
 	      first = 0;
 	    }
-	  if (metrics->lbearing > width + (m->horiBearingX >> 6))
-	    metrics->lbearing = width + (m->horiBearingX >> 6);
-	  if (metrics->rbearing
-	      < width + ((m->horiBearingX + m->width) >> 6))
-	    metrics->rbearing
-	      = width + ((m->horiBearingX + m->width) >> 6);
-	  if (metrics->ascent < (m->horiBearingY >> 6))
-	    metrics->ascent = m->horiBearingY >> 6;
-	  if (metrics->descent > ((m->height - m->horiBearingY) >> 6))
-	    metrics->descent = (m->height - m->horiBearingY) >> 6;
-	  width += m->horiAdvance >> 6;
+	  if (metrics->lbearing > width + lbearing)
+	    metrics->lbearing = width + lbearing;
+	  if (metrics->rbearing < width + rbearing)
+	    metrics->rbearing = width + rbearing;
+	  if (metrics->ascent < ascent)
+	    metrics->ascent = ascent;
+	  if (metrics->descent > descent)
+	    metrics->descent = descent;
+	  width += advance;
 	}
       else
 	width += font->space_width;
@@ -1417,10 +1581,12 @@ ftfont_text_extents (struct font *font, unsigned int *code,
   metrics->width = width;
 }
 
-static int
+#endif /* !USE_CAIRO */
+
+int
 ftfont_get_bitmap (struct font *font, unsigned int code, struct font_bitmap *bitmap, int bits_per_pixel)
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  struct font_info *ftfont_info = (struct font_info *) font;
   FT_Face ft_face = ftfont_info->ft_size->face;
   FT_Int32 load_flags = FT_LOAD_RENDER;
 
@@ -1460,11 +1626,11 @@ ftfont_get_bitmap (struct font *font, unsigned int code, struct font_bitmap *bit
   return 0;
 }
 
-static int
+int
 ftfont_anchor_point (struct font *font, unsigned int code, int idx,
 		     int *x, int *y)
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  struct font_info *ftfont_info = (struct font_info *) font;
   FT_Face ft_face = ftfont_info->ft_size->face;
 
   if (ftfont_info->ft_size != ft_face->size)
@@ -1526,10 +1692,10 @@ ftfont_otf_features (OTF_GSUB_GPOS *gsub_gpos)
 }
 
 
-static Lisp_Object
+Lisp_Object
 ftfont_otf_capability (struct font *font)
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  struct font_info *ftfont_info = (struct font_info *) font;
   OTF *otf = ftfont_get_otf (ftfont_info);
   Lisp_Object gsub_gpos;
 
@@ -1564,21 +1730,33 @@ struct MFLTFontFT
   FT_Matrix *matrix;
 };
 
+/* The actual type of elements in the array MFLTGlyphString.glyphs.
+   We use this structure instead of MFLTGlyph to utilize the new
+   feature of libotf ver.0.9.15 which requires saving and restoring
+   the value of OTF_GlyphString.positioning_type in the succeeding
+   calls of the callback function MFLTFont.drive_otf (which is set to
+   ftfont_drive_otf).  */
+
+typedef struct {
+  MFLTGlyph g;
+  unsigned int libotf_positioning_type;
+} MFLTGlyphFT;
+
 static int
 ftfont_get_glyph_id (MFLTFont *font, MFLTGlyphString *gstring,
 		     int from, int to)
 {
   struct MFLTFontFT *flt_font_ft = (struct MFLTFontFT *) font;
   FT_Face ft_face = flt_font_ft->ft_face;
-  MFLTGlyph *g;
+  MFLTGlyphFT *g;
 
-  for (g = gstring->glyphs + from; from < to; g++, from++)
-    if (! g->encoded)
+  for (g = (MFLTGlyphFT *) (gstring->glyphs) + from; from < to; g++, from++)
+    if (! g->g.encoded)
       {
-	FT_UInt code = FT_Get_Char_Index (ft_face, g->code);
+	FT_UInt code = FT_Get_Char_Index (ft_face, g->g.code);
 
-	g->code = code > 0 ? code : FONT_INVALID_CODE;
-	g->encoded = 1;
+	g->g.code = code > 0 ? code : FONT_INVALID_CODE;
+	g->g.encoded = 1;
       }
   return 0;
 }
@@ -1595,16 +1773,17 @@ ftfont_get_metrics (MFLTFont *font, MFLTGlyphString *gstring,
 {
   struct MFLTFontFT *flt_font_ft = (struct MFLTFontFT *) font;
   FT_Face ft_face = flt_font_ft->ft_face;
-  MFLTGlyph *g;
+  MFLTGlyphFT *g;
 
-  for (g = gstring->glyphs + from; from < to; g++, from++)
-    if (! g->measured)
+  for (g = (MFLTGlyphFT *) (gstring->glyphs) + from; from < to; g++, from++)
+    if (! g->g.measured)
       {
-	if (g->code != FONT_INVALID_CODE)
+	if (g->g.code != FONT_INVALID_CODE)
 	  {
 	    FT_Glyph_Metrics *m;
 
-	    if (FT_Load_Glyph (ft_face, g->code, FT_LOAD_DEFAULT) != 0)
+	    if (FT_Load_Glyph (ft_face, g->g.code, FT_LOAD_DEFAULT) != 0
+		&& FT_Load_Glyph (ft_face, g->g.code, FT_LOAD_NO_HINTING) != 0)
 	      emacs_abort ();
 	    m = &ft_face->glyph->metrics;
 	    if (flt_font_ft->matrix)
@@ -1618,29 +1797,29 @@ ftfont_get_metrics (MFLTFont *font, MFLTGlyphString *gstring,
 		v[1].y = v[3].y = m->horiBearingY - m->height;
 		for (i = 0; i < 4; i++)
 		  FT_Vector_Transform (v + i, flt_font_ft->matrix);
-		g->lbearing = v[0].x < v[1].x ? FLOOR (v[0].x) : FLOOR (v[1].x);
-		g->rbearing = v[2].x > v[3].x ? CEIL (v[2].x) : CEIL (v[3].x);
-		g->ascent = v[0].y > v[2].y ? CEIL (v[0].y) : CEIL (v[2].y);
-		g->descent = v[1].y < v[3].y ? - FLOOR (v[1].y) : - FLOOR (v[3].y);
+		g->g.lbearing = v[0].x < v[1].x ? FLOOR (v[0].x) : FLOOR (v[1].x);
+		g->g.rbearing = v[2].x > v[3].x ? CEIL (v[2].x) : CEIL (v[3].x);
+		g->g.ascent = v[0].y > v[2].y ? CEIL (v[0].y) : CEIL (v[2].y);
+		g->g.descent = v[1].y < v[3].y ? - FLOOR (v[1].y) : - FLOOR (v[3].y);
 	      }
 	    else
 	      {
-		g->lbearing = FLOOR (m->horiBearingX);
-		g->rbearing = CEIL (m->horiBearingX + m->width);
-		g->ascent = CEIL (m->horiBearingY);
-		g->descent = - FLOOR (m->horiBearingY - m->height);
+		g->g.lbearing = FLOOR (m->horiBearingX);
+		g->g.rbearing = CEIL (m->horiBearingX + m->width);
+		g->g.ascent = CEIL (m->horiBearingY);
+		g->g.descent = - FLOOR (m->horiBearingY - m->height);
 	      }
-	    g->xadv = ROUND (ft_face->glyph->advance.x);
+	    g->g.xadv = ROUND (ft_face->glyph->advance.x);
 	  }
 	else
 	  {
-	    g->lbearing = 0;
-	    g->rbearing = g->xadv = flt_font_ft->font->space_width << 6;
-	    g->ascent = flt_font_ft->font->ascent << 6;
-	    g->descent = flt_font_ft->font->descent << 6;
+	    g->g.lbearing = 0;
+	    g->g.rbearing = g->g.xadv = flt_font_ft->font->space_width << 6;
+	    g->g.ascent = flt_font_ft->font->ascent << 6;
+	    g->g.descent = flt_font_ft->font->descent << 6;
 	  }
-	g->yadv = 0;
-	g->measured = 1;
+	g->g.yadv = 0;
+	g->g.measured = 1;
       }
   return 0;
 }
@@ -1758,9 +1937,11 @@ setup_otf_gstring (int size)
 {
   if (otf_gstring.size < size)
     {
-      otf_gstring.glyphs = xnrealloc (otf_gstring.glyphs,
-				      size, sizeof (OTF_Glyph));
-      otf_gstring.size = size;
+      ptrdiff_t new_size = otf_gstring.size;
+      xfree (otf_gstring.glyphs);
+      otf_gstring.glyphs = xpalloc (NULL, &new_size, size - otf_gstring.size,
+				    INT_MAX, sizeof *otf_gstring.glyphs);
+      otf_gstring.size = new_size;
     }
   otf_gstring.used = size;
   memset (otf_gstring.glyphs, 0, sizeof (OTF_Glyph) * size);
@@ -1791,6 +1972,8 @@ ftfont_drive_otf (MFLTFont *font,
 		  MFLTGlyphAdjustment *adjustment)
 {
   struct MFLTFontFT *flt_font_ft = (struct MFLTFontFT *) font;
+  MFLTGlyphFT *in_glyphs = (MFLTGlyphFT *) (in->glyphs) + from;
+  MFLTGlyphFT *out_glyphs = out ? (MFLTGlyphFT *) (out->glyphs) : NULL;
   FT_Face ft_face = flt_font_ft->ft_face;
   OTF *otf = flt_font_ft->otf;
   int len = to - from;
@@ -1842,8 +2025,11 @@ ftfont_drive_otf (MFLTFont *font,
   setup_otf_gstring (len);
   for (i = 0; i < len; i++)
     {
-      otf_gstring.glyphs[i].c = in->glyphs[from + i].c & 0x11FFFF;
-      otf_gstring.glyphs[i].glyph_id = in->glyphs[from + i].code;
+      otf_gstring.glyphs[i].c = in_glyphs[i].g.c & 0x11FFFF;
+      otf_gstring.glyphs[i].glyph_id = in_glyphs[i].g.code;
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+      otf_gstring.glyphs[i].positioning_type = in_glyphs[i].libotf_positioning_type;
+#endif
     }
 
   OTF_drive_gdef (otf, &otf_gstring);
@@ -1851,9 +2037,15 @@ ftfont_drive_otf (MFLTFont *font,
 
   if (gsub_features && out)
     {
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+      if (OTF_drive_gsub_features (otf, &otf_gstring, script, langsys,
+				   gsub_features) < 0)
+	goto simple_copy;
+#else
       if (OTF_drive_gsub_with_log (otf, &otf_gstring, script, langsys,
 				   gsub_features) < 0)
 	goto simple_copy;
+#endif
       if (out->allocated < out->used + otf_gstring.used)
 	{
 	  SAFE_FREE ();
@@ -1862,60 +2054,76 @@ ftfont_drive_otf (MFLTFont *font,
       features = otf->gsub->FeatureList.Feature;
       for (i = 0, otfg = otf_gstring.glyphs; i < otf_gstring.used; )
 	{
-	  MFLTGlyph *g;
+	  MFLTGlyphFT *g;
 	  int min_from, max_to;
-	  int feature_idx = otfg->positioning_type >> 4;
+	  int feature_idx;
 
-	  g = out->glyphs + out->used;
-	  *g = in->glyphs[from + otfg->f.index.from];
-	  if (g->code != otfg->glyph_id)
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+	  feature_idx = OTF_POSITIONING_TYPE_GET_FEATURE (otfg);
+#else
+	  feature_idx = otfg->positioning_type >> 4;
+#endif
+	  g = out_glyphs + out->used;
+	  *g = in_glyphs[otfg->f.index.from];
+	  if (g->g.code != otfg->glyph_id)
 	    {
-	      g->c = 0;
-	      g->code = otfg->glyph_id;
-	      g->measured = 0;
+	      g->g.c = 0;
+	      g->g.code = otfg->glyph_id;
+	      g->g.measured = 0;
 	    }
 	  out->used++;
-	  min_from = g->from;
-	  max_to = g->to;
+	  min_from = g->g.from;
+	  max_to = g->g.to;
 	  if (otfg->f.index.from < otfg->f.index.to)
 	    {
 	      /* OTFG substitutes multiple glyphs in IN.  */
-	      for (j = from + otfg->f.index.from + 1;
-		   j <= from + otfg->f.index.to; j++)
+	      for (j = otfg->f.index.from + 1; j <= otfg->f.index.to; j++)
 		{
-		  if (min_from > in->glyphs[j].from)
-		    min_from = in->glyphs[j].from;
-		  if (max_to < in->glyphs[j].to)
-		    max_to = in->glyphs[j].to;
+		  if (min_from > in_glyphs[j].g.from)
+		    min_from = in_glyphs[j].g.from;
+		  if (max_to < in_glyphs[j].g.to)
+		    max_to = in_glyphs[j].g.to;
 		}
-	      g->from = min_from;
-	      g->to = max_to;
+	      g->g.from = min_from;
+	      g->g.to = max_to;
 	    }
 	  if (feature_idx)
 	    {
 	      unsigned int tag = features[feature_idx - 1].FeatureTag;
 	      tag = PACK_OTF_TAG (tag);
-	      g->internal = (g->internal & ~0x1FFFFFFF) | tag;
+	      g->g.internal = (g->g.internal & ~0x1FFFFFFF) | tag;
 	    }
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+	  g->libotf_positioning_type
+	    = otfg->positioning_type & OTF_positioning_type_components_mask;
+#endif
 	  for (i++, otfg++; (i < otf_gstring.used
 			     && otfg->f.index.from == otfg[-1].f.index.from);
 	       i++, otfg++)
 	    {
-	      g = out->glyphs + out->used;
-	      *g = in->glyphs[from + otfg->f.index.to];
-	      if (g->code != otfg->glyph_id)
+	      g = out_glyphs + out->used;
+	      *g = in_glyphs[otfg->f.index.to];
+	      if (g->g.code != otfg->glyph_id)
 		{
-		  g->c = 0;
-		  g->code = otfg->glyph_id;
-		  g->measured = 0;
+		  g->g.c = 0;
+		  g->g.code = otfg->glyph_id;
+		  g->g.measured = 0;
 		}
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+	      feature_idx = OTF_POSITIONING_TYPE_GET_FEATURE (otfg);
+#else
 	      feature_idx = otfg->positioning_type >> 4;
+#endif
 	      if (feature_idx)
 		{
 		  unsigned int tag = features[feature_idx - 1].FeatureTag;
 		  tag = PACK_OTF_TAG (tag);
-		  g->internal = (g->internal & ~0x1FFFFFFF) | tag;
+		  g->g.internal = (g->g.internal & ~0x1FFFFFFF) | tag;
 		}
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+	      g->libotf_positioning_type
+		= otfg->positioning_type & OTF_positioning_type_components_mask;
+#endif
 	      out->used++;
 	    }
 	}
@@ -1923,23 +2131,33 @@ ftfont_drive_otf (MFLTFont *font,
   else if (gsub_features)
     {
       /* Just for checking which features will be applied.  */
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+      if (OTF_drive_gsub_features (otf, &otf_gstring, script, langsys,
+				   gsub_features) < 0)
+	goto simple_copy;
+#else
       if (OTF_drive_gsub_with_log (otf, &otf_gstring, script, langsys,
 				   gsub_features) < 0)
 	goto simple_copy;
+#endif
       features = otf->gsub->FeatureList.Feature;
       for (i = 0, otfg = otf_gstring.glyphs; i < otf_gstring.used; i++,
 	     otfg++)
 	{
-	  int feature_idx = otfg->positioning_type >> 4;
-
+	  int feature_idx;
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+	  feature_idx = OTF_POSITIONING_TYPE_GET_FEATURE (otfg);
+#else
+	  feature_idx = otfg->positioning_type >> 4;
+#endif
 	  if (feature_idx)
 	    {
 	      unsigned int tag = features[feature_idx - 1].FeatureTag;
 	      tag = PACK_OTF_TAG (tag);
 	      for (j = otfg->f.index.from; j <= otfg->f.index.to; j++)
 		{
-		  MFLTGlyph *g = in->glyphs + (from + j);
-		  g->internal = (g->internal & ~0x1FFFFFFF) | tag;
+		  MFLTGlyphFT *g = in_glyphs + j;
+		  g->g.internal = (g->g.internal & ~0x1FFFFFFF) | tag;
 		}
 	    }
 	}
@@ -1952,42 +2170,61 @@ ftfont_drive_otf (MFLTFont *font,
 	  return -2;
 	}
       for (i = 0; i < len; i++)
-	out->glyphs[out->used++] = in->glyphs[from + i];
+	out_glyphs[out->used++] = in_glyphs[i];
     }
 
   if (gpos_features && out)
     {
-      MFLTGlyph *base = NULL, *mark = NULL, *g;
+      MFLTGlyphFT *base = NULL, *mark = NULL, *g;
       int x_ppem, y_ppem, x_scale, y_scale;
 
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+      if (OTF_drive_gpos_features (otf, &otf_gstring, script, langsys,
+				   gpos_features) < 0)
+	{
+	  SAFE_FREE ();
+	  return to;
+	}
+#else
       if (OTF_drive_gpos_with_log (otf, &otf_gstring, script, langsys,
 				   gpos_features) < 0)
 	{
 	  SAFE_FREE ();
 	  return to;
 	}
+#endif
       features = otf->gpos->FeatureList.Feature;
       x_ppem = ft_face->size->metrics.x_ppem;
       y_ppem = ft_face->size->metrics.y_ppem;
       x_scale = ft_face->size->metrics.x_scale;
       y_scale = ft_face->size->metrics.y_scale;
 
-      for (i = 0, otfg = otf_gstring.glyphs, g = out->glyphs + gidx;
-	   i < otf_gstring.used; i++, otfg++, g++)
+      for (i = 0, otfg = otf_gstring.glyphs, g = out_glyphs + gidx;
+	   i < otf_gstring.used; i++, otfg++)
 	{
-	  MFLTGlyph *prev;
-	  int feature_idx = otfg->positioning_type >> 4;
+	  MFLTGlyphAdjustment *adjust = adjustment;
+	  MFLTGlyphFT *prev;
+	  int positioning_type, feature_idx;
 
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+	  positioning_type = OTF_POSITIONING_TYPE_GET_FORMAT (otfg);
+	  feature_idx = OTF_POSITIONING_TYPE_GET_FEATURE (otfg);
+#else
+	  positioning_type = otfg->positioning_type & 0xF;
+	  feature_idx = otfg->positioning_type >> 4;
+#endif
 	  if (feature_idx)
 	    {
 	      unsigned int tag = features[feature_idx - 1].FeatureTag;
 	      tag = PACK_OTF_TAG (tag);
-	      g->internal = (g->internal & ~0x1FFFFFFF) | tag;
+	      g->g.internal = (g->g.internal & ~0x1FFFFFFF) | tag;
 	    }
 
 	  if (! otfg->glyph_id)
-	    continue;
-	  switch (otfg->positioning_type & 0xF)
+	    /* This is a pseudo glyph that contains positioning
+	       information to be accumulated to a real glyph.  */
+	    adjust--;
+	  switch (positioning_type)
 	    {
 	    case 0:
 	      break;
@@ -1997,30 +2234,30 @@ ftfont_drive_otf (MFLTFont *font,
 		int format = otfg->f.f1.format;
 
 		if (format & OTF_XPlacement)
-		  adjustment[i].xoff
+		  adjust->xoff
 		    = otfg->f.f1.value->XPlacement * x_scale / 0x10000;
 		if (format & OTF_XPlaDevice)
-		  adjustment[i].xoff
+		  adjust->xoff
 		    += DEVICE_DELTA (otfg->f.f1.value->XPlaDevice, x_ppem);
 		if (format & OTF_YPlacement)
-		  adjustment[i].yoff
+		  adjust->yoff
 		    = - (otfg->f.f1.value->YPlacement * y_scale / 0x10000);
 		if (format & OTF_YPlaDevice)
-		  adjustment[i].yoff
+		  adjust->yoff
 		    -= DEVICE_DELTA (otfg->f.f1.value->YPlaDevice, y_ppem);
 		if (format & OTF_XAdvance)
-		  adjustment[i].xadv
+		  adjust->xadv
 		    += otfg->f.f1.value->XAdvance * x_scale / 0x10000;
 		if (format & OTF_XAdvDevice)
-		  adjustment[i].xadv
+		  adjust->xadv
 		    += DEVICE_DELTA (otfg->f.f1.value->XAdvDevice, x_ppem);
 		if (format & OTF_YAdvance)
-		  adjustment[i].yadv
+		  adjust->yadv
 		    += otfg->f.f1.value->YAdvance * y_scale / 0x10000;
 		if (format & OTF_YAdvDevice)
-		  adjustment[i].yadv
+		  adjust->yadv
 		    += DEVICE_DELTA (otfg->f.f1.value->YAdvDevice, y_ppem);
-		adjustment[i].set = 1;
+		adjust->set = 1;
 	      }
 	      break;
 	    case 3:		/* Cursive */
@@ -2036,6 +2273,18 @@ ftfont_drive_otf (MFLTFont *font,
 	      if (! mark)
 		break;
 	      prev = mark;
+#ifdef OTF_POSITIONING_TYPE_GET_FORMAT
+		  {
+		    int distance = OTF_POSITIONING_TYPE_GET_MARKDISTANCE (otfg);
+
+		    if (distance > 0)
+		      {
+			prev = g - distance;
+			if (prev < out_glyphs)
+			  prev = mark;
+		      }
+		  }
+#endif
 
 	    label_adjust_anchor:
 	      {
@@ -2048,39 +2297,43 @@ ftfont_drive_otf (MFLTFont *font,
 		mark_y = otfg->f.f4.mark_anchor->YCoordinate * y_scale / 0x10000;
 
 		if (otfg->f.f4.base_anchor->AnchorFormat != 1)
-		  adjust_anchor (ft_face, otfg->f.f4.base_anchor,
-				 prev->code, x_ppem, y_ppem, &base_x, &base_y);
+		  adjust_anchor (ft_face, otfg->f.f4.base_anchor, prev->g.code,
+				 x_ppem, y_ppem, &base_x, &base_y);
 		if (otfg->f.f4.mark_anchor->AnchorFormat != 1)
-		  adjust_anchor (ft_face, otfg->f.f4.mark_anchor, g->code,
+		  adjust_anchor (ft_face, otfg->f.f4.mark_anchor, g->g.code,
 				 x_ppem, y_ppem, &mark_x, &mark_y);
-		adjustment[i].xoff = (base_x - mark_x);
-		adjustment[i].yoff = - (base_y - mark_y);
-		adjustment[i].back = (g - prev);
-		adjustment[i].xadv = 0;
-		adjustment[i].advance_is_absolute = 1;
-		adjustment[i].set = 1;
-		this_from = g->from;
-		this_to = g->to;
+		adjust->xoff = (base_x - mark_x);
+		adjust->yoff = - (base_y - mark_y);
+		adjust->back = (g - prev);
+		adjust->xadv = 0;
+		adjust->advance_is_absolute = 1;
+		adjust->set = 1;
+		this_from = g->g.from;
+		this_to = g->g.to;
 		for (j = 0; prev + j < g; j++)
 		  {
-		    if (this_from > prev[j].from)
-		      this_from = prev[j].from;
-		    if (this_to < prev[j].to)
-		      this_to = prev[j].to;
+		    if (this_from > prev[j].g.from)
+		      this_from = prev[j].g.from;
+		    if (this_to < prev[j].g.to)
+		      this_to = prev[j].g.to;
 		  }
 		for (; prev <= g; prev++)
 		  {
-		    prev->from = this_from;
-		    prev->to = this_to;
+		    prev->g.from = this_from;
+		    prev->g.to = this_to;
 		  }
 	      }
 	    }
-	  if (otfg->GlyphClass == OTF_GlyphClass0)
-	    base = mark = g;
-	  else if (otfg->GlyphClass == OTF_GlyphClassMark)
-	    mark = g;
-	  else
-	    base = g;
+	  if (otfg->glyph_id)
+	    {
+	      if (otfg->GlyphClass == OTF_GlyphClass0)
+		base = mark = g;
+	      else if (otfg->GlyphClass == OTF_GlyphClassMark)
+		mark = g;
+	      else
+		base = g;
+	      g++, adjustment++;
+	    }
 	}
     }
   else if (gpos_features)
@@ -2104,8 +2357,8 @@ ftfont_drive_otf (MFLTFont *font,
 		tag = PACK_OTF_TAG (tag);
 		for (j = otfg->f.index.from; j <= otfg->f.index.to; j++)
 		  {
-		    MFLTGlyph *g = in->glyphs + (from + j);
-		    g->internal = (g->internal & ~0x1FFFFFFF) | tag;
+		    MFLTGlyphFT *g = in_glyphs + j;
+		    g->g.internal = (g->g.internal & ~0x1FFFFFFF) | tag;
 		  }
 	      }
 	  }
@@ -2120,8 +2373,7 @@ ftfont_drive_otf (MFLTFont *font,
   if (out->allocated < out->used + len)
     return -2;
   font->get_metrics (font, in, from, to);
-  memcpy (out->glyphs + out->used, in->glyphs + from,
-	  sizeof (MFLTGlyph) * len);
+  memcpy (out->glyphs + out->used, in_glyphs, sizeof (MFLTGlyphFT) * len);
   out->used += len;
   return to;
 }
@@ -2141,6 +2393,8 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
 		  MFLTGlyphString *out, MFLTGlyphAdjustment *adjustment)
 {
   struct MFLTFontFT *flt_font_ft = (struct MFLTFontFT *) font;
+  MFLTGlyphFT *in_glyphs = (MFLTGlyphFT *) (in->glyphs) + from;
+  MFLTGlyphFT *out_glyphs = out ? (MFLTGlyphFT *) (out->glyphs) : NULL;
   FT_Face ft_face = flt_font_ft->ft_face;
   OTF *otf = flt_font_ft->otf;
   int len = to - from;
@@ -2191,8 +2445,8 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
   setup_otf_gstring (len);
   for (i = 0; i < len; i++)
     {
-      otf_gstring.glyphs[i].c = in->glyphs[from + i].c;
-      otf_gstring.glyphs[i].glyph_id = in->glyphs[from + i].code;
+      otf_gstring.glyphs[i].c = in_glyphs[i].g.c;
+      otf_gstring.glyphs[i].glyph_id = in_glyphs[i].g.code;
     }
 
   OTF_drive_gdef (otf, &otf_gstring);
@@ -2210,21 +2464,21 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
 	}
       for (i = 0, otfg = otf_gstring.glyphs; i < otf_gstring.used; )
 	{
-	  MFLTGlyph *g;
+	  MFLTGlyphFT *g;
 	  int min_from, max_to;
 	  int j;
 
-	  g = out->glyphs + out->used;
-	  *g = in->glyphs[from + otfg->f.index.from];
-	  if (g->code != otfg->glyph_id)
+	  g = out_glyphs + out->used;
+	  *g = in_glyphs[otfg->f.index.from];
+	  if (g->g.code != otfg->glyph_id)
 	    {
-	      g->c = 0;
-	      g->code = otfg->glyph_id;
-	      g->measured = 0;
+	      g->g.c = 0;
+	      g->g.code = otfg->glyph_id;
+	      g->g.measured = 0;
 	    }
 	  out->used++;
-	  min_from = g->from;
-	  max_to = g->to;
+	  min_from = g->g.from;
+	  max_to = g->g.to;
 	  if (otfg->f.index.from < otfg->f.index.to)
 	    {
 	      /* OTFG substitutes multiple glyphs in IN.  */
@@ -2236,20 +2490,20 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
 		  if (max_to < in->glyphs[j].to)
 		    max_to = in->glyphs[j].to;
 		}
-	      g->from = min_from;
-	      g->to = max_to;
+	      g->g.from = min_from;
+	      g->g.to = max_to;
 	    }
 	  for (i++, otfg++; (i < otf_gstring.used
 			     && otfg->f.index.from == otfg[-1].f.index.from);
 	       i++, otfg++)
 	    {
-	      g = out->glyphs + out->used;
-	      *g = in->glyphs[from + otfg->f.index.to];
-	      if (g->code != otfg->glyph_id)
+	      g = out_glyphs + out->used;
+	      *g = in_glyphs[otfg->f.index.to];
+	      if (g->g.code != otfg->glyph_id)
 		{
-		  g->c = 0;
-		  g->code = otfg->glyph_id;
-		  g->measured = 0;
+		  g->g.c = 0;
+		  g->g.code = otfg->glyph_id;
+		  g->g.measured = 0;
 		}
 	      out->used++;
 	    }
@@ -2263,12 +2517,12 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
 	  return -2;
 	}
       for (i = 0; i < len; i++)
-	out->glyphs[out->used++] = in->glyphs[from + i];
+	out_glyphs[out->used++] = in_glyphs[i];
     }
 
   if (gpos_features)
     {
-      MFLTGlyph *base = NULL, *mark = NULL, *g;
+      MFLTGlyphFT *base = NULL, *mark = NULL, *g;
       int x_ppem, y_ppem, x_scale, y_scale;
 
       if (OTF_drive_gpos (otf, &otf_gstring, script, langsys, gpos_features)
@@ -2283,10 +2537,10 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
       x_scale = ft_face->size->metrics.x_scale;
       y_scale = ft_face->size->metrics.y_scale;
 
-      for (i = 0, otfg = otf_gstring.glyphs, g = out->glyphs + gidx;
+      for (i = 0, otfg = otf_gstring.glyphs, g = out_glyphs + gidx;
 	   i < otf_gstring.used; i++, otfg++, g++)
 	{
-	  MFLTGlyph *prev;
+	  MFLTGlyphFT *prev;
 
 	  if (! otfg->glyph_id)
 	    continue;
@@ -2351,10 +2605,10 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
 		mark_y = otfg->f.f4.mark_anchor->YCoordinate * y_scale / 0x10000;
 
 		if (otfg->f.f4.base_anchor->AnchorFormat != 1)
-		  adjust_anchor (ft_face, otfg->f.f4.base_anchor,
-				 prev->code, x_ppem, y_ppem, &base_x, &base_y);
+		  adjust_anchor (ft_face, otfg->f.f4.base_anchor, prev->g.code,
+				 x_ppem, y_ppem, &base_x, &base_y);
 		if (otfg->f.f4.mark_anchor->AnchorFormat != 1)
-		  adjust_anchor (ft_face, otfg->f.f4.mark_anchor, g->code,
+		  adjust_anchor (ft_face, otfg->f.f4.mark_anchor, g->g.code,
 				 x_ppem, y_ppem, &mark_x, &mark_y);
 		adjustment[i].xoff = (base_x - mark_x);
 		adjustment[i].yoff = - (base_y - mark_y);
@@ -2362,19 +2616,19 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
 		adjustment[i].xadv = 0;
 		adjustment[i].advance_is_absolute = 1;
 		adjustment[i].set = 1;
-		this_from = g->from;
-		this_to = g->to;
+		this_from = g->g.from;
+		this_to = g->g.to;
 		for (j = 0; prev + j < g; j++)
 		  {
-		    if (this_from > prev[j].from)
-		      this_from = prev[j].from;
-		    if (this_to < prev[j].to)
-		      this_to = prev[j].to;
+		    if (this_from > prev[j].g.from)
+		      this_from = prev[j].g.from;
+		    if (this_to < prev[j].g.to)
+		      this_to = prev[j].g.to;
 		  }
 		for (; prev <= g; prev++)
 		  {
-		    prev->from = this_from;
-		    prev->to = this_to;
+		    prev->g.from = this_from;
+		    prev->g.to = this_to;
 		  }
 	      }
 	    }
@@ -2394,8 +2648,8 @@ ftfont_drive_otf (MFLTFont *font, MFLTOtfSpec *spec, MFLTGlyphString *in,
   if (out->allocated < out->used + len)
     return -2;
   font->get_metrics (font, in, from, to);
-  memcpy (out->glyphs + out->used, in->glyphs + from,
-	  sizeof (MFLTGlyph) * len);
+  memcpy (out_glyphs + out->used, in_glyphs,
+	  sizeof (MFLTGlyphFT) * len);
   out->used += len;
   return to;
 }
@@ -2414,7 +2668,7 @@ ftfont_shape_by_flt (Lisp_Object lgstring, struct font *font,
   ptrdiff_t i;
   struct MFLTFontFT flt_font_ft;
   MFLT *flt = NULL;
-  bool with_variation_selector = 0;
+  bool with_variation_selector = false;
 
   if (! m17n_flt_initialized)
     {
@@ -2435,12 +2689,12 @@ ftfont_shape_by_flt (Lisp_Object lgstring, struct font *font,
 	break;
       c = LGLYPH_CHAR (g);
       if (CHAR_VARIATION_SELECTOR_P (c))
-	with_variation_selector = 1;
+	with_variation_selector = true;
     }
 
   len = i;
 
-  if (with_variation_selector)
+  if (otf && with_variation_selector)
     {
       setup_otf_gstring (len);
       for (i = 0; i < len; i++)
@@ -2469,37 +2723,6 @@ ftfont_shape_by_flt (Lisp_Object lgstring, struct font *font,
 	}
     }
 
-  if (INT_MAX / 2 < len)
-    memory_full (SIZE_MAX);
-
-  if (gstring.allocated == 0)
-    {
-      gstring.glyph_size = sizeof (MFLTGlyph);
-      gstring.glyphs = xnmalloc (len * 2, sizeof *gstring.glyphs);
-      gstring.allocated = len * 2;
-    }
-  else if (gstring.allocated < len * 2)
-    {
-      gstring.glyphs = xnrealloc (gstring.glyphs, len * 2,
-				  sizeof *gstring.glyphs);
-      gstring.allocated = len * 2;
-    }
-  memset (gstring.glyphs, 0, len * sizeof *gstring.glyphs);
-  for (i = 0; i < len; i++)
-    {
-      Lisp_Object g = LGSTRING_GLYPH (lgstring, i);
-
-      gstring.glyphs[i].c = LGLYPH_CHAR (g);
-      if (with_variation_selector)
-	{
-	  gstring.glyphs[i].code = LGLYPH_CODE (g);
-	  gstring.glyphs[i].encoded = 1;
-	}
-    }
-
-  gstring.used = len;
-  gstring.r2l = 0;
-
   {
     Lisp_Object family = Ffont_get (LGSTRING_FONT (lgstring), QCfamily);
 
@@ -2520,98 +2743,253 @@ ftfont_shape_by_flt (Lisp_Object lgstring, struct font *font,
   flt_font_ft.ft_face = ft_face;
   flt_font_ft.otf = otf;
   flt_font_ft.matrix = matrix->xx != 0 ? matrix : 0;
-  if (len > 1
-      && gstring.glyphs[1].c >= 0x300 && gstring.glyphs[1].c <= 0x36F)
-    /* A little bit ad hoc.  Perhaps, shaper must get script and
-       language information, and select a proper flt for them
-       here.  */
-    flt = mflt_get (msymbol ("combining"));
-  for (i = 0; i < 3; i++)
+
+  if (1 < len)
     {
-      int result = mflt_run (&gstring, 0, len, &flt_font_ft.flt_font, flt);
-      if (result != -2)
-	break;
-      if (INT_MAX / 2 < gstring.allocated)
-	memory_full (SIZE_MAX);
-      gstring.glyphs = xnrealloc (gstring.glyphs,
-				  gstring.allocated, 2 * sizeof (MFLTGlyph));
-      gstring.allocated *= 2;
+      /* A little bit ad hoc.  Perhaps, shaper must get script and
+	 language information, and select a proper flt for them
+	 here.  */
+      int c1 = LGLYPH_CHAR (LGSTRING_GLYPH (lgstring, 1));
+      /* For the combining characters in the range U+300..U+36F,
+	 "combining" is the sole FLT provided by the m17n-lib.  In
+	 addition, it is the sole FLT that can handle the other
+	 combining characters with non-OTF fonts.  */
+      if ((0x300 <= c1 && c1 <= 0x36F)
+	  || (! otf && CHAR_HAS_CATEGORY (c1, '^')))
+	flt = mflt_get (msymbol ("combining"));
     }
+  if (! flt && ! otf)
+    {
+      flt = mflt_find (LGLYPH_CHAR (LGSTRING_GLYPH (lgstring, 0)),
+		       &flt_font_ft.flt_font);
+      if (! flt)
+	return make_fixnum (0);
+    }
+
+  MFLTGlyphFT *glyphs = (MFLTGlyphFT *) gstring.glyphs;
+  ptrdiff_t allocated = gstring.allocated;
+  ptrdiff_t incr_min = len - allocated;
+
+  do
+    {
+      if (0 < incr_min)
+	{
+	  xfree (glyphs);
+	  glyphs = xpalloc (NULL, &allocated, incr_min, INT_MAX, sizeof *glyphs);
+	}
+      incr_min = 1;
+
+      for (i = 0; i < len; i++)
+	{
+	  Lisp_Object g = LGSTRING_GLYPH (lgstring, i);
+	  memset (&glyphs[i], 0, sizeof glyphs[i]);
+	  glyphs[i].g.c = LGLYPH_CHAR (g);
+	  if (with_variation_selector)
+	    {
+	      glyphs[i].g.code = LGLYPH_CODE (g);
+	      glyphs[i].g.encoded = 1;
+	    }
+	}
+
+      gstring.glyph_size = sizeof *glyphs;
+      gstring.glyphs = (MFLTGlyph *) glyphs;
+      gstring.allocated = allocated;
+      gstring.used = len;
+      gstring.r2l = 0;
+    }
+  while (mflt_run (&gstring, 0, len, &flt_font_ft.flt_font, flt) == -2);
+
   if (gstring.used > LGSTRING_GLYPH_LEN (lgstring))
     return Qnil;
   for (i = 0; i < gstring.used; i++)
     {
-      MFLTGlyph *g = gstring.glyphs + i;
+      MFLTGlyphFT *g = (MFLTGlyphFT *) (gstring.glyphs) + i;
 
-      g->from = LGLYPH_FROM (LGSTRING_GLYPH (lgstring, g->from));
-      g->to = LGLYPH_TO (LGSTRING_GLYPH (lgstring, g->to));
+      g->g.from = LGLYPH_FROM (LGSTRING_GLYPH (lgstring, g->g.from));
+      g->g.to = LGLYPH_TO (LGSTRING_GLYPH (lgstring, g->g.to));
     }
 
   for (i = 0; i < gstring.used; i++)
     {
       Lisp_Object lglyph = LGSTRING_GLYPH (lgstring, i);
-      MFLTGlyph *g = gstring.glyphs + i;
+      MFLTGlyphFT *g = (MFLTGlyphFT *) (gstring.glyphs) + i;
 
       if (NILP (lglyph))
 	{
 	  lglyph = LGLYPH_NEW ();
 	  LGSTRING_SET_GLYPH (lgstring, i, lglyph);
 	}
-      LGLYPH_SET_FROM (lglyph, g->from);
-      LGLYPH_SET_TO (lglyph, g->to);
-      LGLYPH_SET_CHAR (lglyph, g->c);
-      LGLYPH_SET_CODE (lglyph, g->code);
-      LGLYPH_SET_WIDTH (lglyph, g->xadv >> 6);
-      LGLYPH_SET_LBEARING (lglyph, g->lbearing >> 6);
-      LGLYPH_SET_RBEARING (lglyph, g->rbearing >> 6);
-      LGLYPH_SET_ASCENT (lglyph, g->ascent >> 6);
-      LGLYPH_SET_DESCENT (lglyph, g->descent >> 6);
-      if (g->adjusted)
+      LGLYPH_SET_FROM (lglyph, g->g.from);
+      LGLYPH_SET_TO (lglyph, g->g.to);
+      LGLYPH_SET_CHAR (lglyph, g->g.c);
+      LGLYPH_SET_CODE (lglyph, g->g.code);
+      LGLYPH_SET_WIDTH (lglyph, g->g.xadv >> 6);
+      LGLYPH_SET_LBEARING (lglyph, g->g.lbearing >> 6);
+      LGLYPH_SET_RBEARING (lglyph, g->g.rbearing >> 6);
+      LGLYPH_SET_ASCENT (lglyph, g->g.ascent >> 6);
+      LGLYPH_SET_DESCENT (lglyph, g->g.descent >> 6);
+      if (g->g.adjusted)
 	{
 	  Lisp_Object vec = make_uninit_vector (3);
 
-	  ASET (vec, 0, make_number (g->xoff >> 6));
-	  ASET (vec, 1, make_number (g->yoff >> 6));
-	  ASET (vec, 2, make_number (g->xadv >> 6));
+	  ASET (vec, 0, make_fixnum (g->g.xoff >> 6));
+	  ASET (vec, 1, make_fixnum (g->g.yoff >> 6));
+	  ASET (vec, 2, make_fixnum (g->g.xadv >> 6));
 	  LGLYPH_SET_ADJUSTMENT (lglyph, vec);
 	}
     }
-  return make_number (i);
+  return make_fixnum (i);
 }
 
 Lisp_Object
-ftfont_shape (Lisp_Object lgstring)
+ftfont_shape (Lisp_Object lgstring, Lisp_Object direction)
 {
-  struct font *font;
-  struct ftfont_info *ftfont_info;
-  OTF *otf;
+  struct font *font = CHECK_FONT_GET_OBJECT (LGSTRING_FONT (lgstring));
+  struct font_info *ftfont_info = (struct font_info *) font;
+  OTF *otf = ftfont_get_otf (ftfont_info);
 
-  CHECK_FONT_GET_OBJECT (LGSTRING_FONT (lgstring), font);
-  ftfont_info = (struct ftfont_info *) font;
-  otf = ftfont_get_otf (ftfont_info);
-  if (! otf)
-    return make_number (0);
   return ftfont_shape_by_flt (lgstring, font, ftfont_info->ft_size->face, otf,
 			      &ftfont_info->matrix);
 }
 
 #endif	/* HAVE_M17N_FLT */
 
-#ifdef HAVE_OTF_GET_VARIATION_GLYPHS
+#endif	/* HAVE_LIBOTF */
 
-static int
+#if defined HAVE_OTF_GET_VARIATION_GLYPHS || defined HAVE_FT_FACE_GETCHARVARIANTINDEX
+int
 ftfont_variation_glyphs (struct font *font, int c, unsigned variations[256])
 {
-  struct ftfont_info *ftfont_info = (struct ftfont_info *) font;
+  struct font_info *ftfont_info = (struct font_info *) font;
+#ifdef HAVE_OTF_GET_VARIATION_GLYPHS
   OTF *otf = ftfont_get_otf (ftfont_info);
 
   if (! otf)
     return 0;
   return OTF_get_variation_glyphs (otf, c, variations);
+#else  /* !HAVE_OTF_GET_VARIATION_GLYPHS */
+  FT_Face ft_face = ftfont_info->ft_size->face;
+  int i, n = 0;
+
+  for (i = 0; i < 16; i++)
+    {
+      variations[i] = FT_Face_GetCharVariantIndex (ft_face, c, 0xFE00 + i);
+      if (variations[i])
+	n++;
+    }
+  for (; i < 256; i++)
+    {
+      variations[i] = FT_Face_GetCharVariantIndex (ft_face, c,
+						   0xE0100 + (i - 16));
+      if (variations[i])
+	n++;
+    }
+
+  return n;
+#endif  /* !HAVE_OTF_GET_VARIATION_GLYPHS */
+}
+#endif /* HAVE_OTF_GET_VARIATION_GLYPHS || HAVE_FT_FACE_GETCHARVARIANTINDEX */
+
+#ifdef HAVE_HARFBUZZ
+
+hb_font_t *
+fthbfont_begin_hb_font (struct font *font, double *position_unit)
+{
+  struct font_info *ftfont_info = (struct font_info *) font;
+
+  *position_unit = 1.0 / (1 << 6);
+  if (! ftfont_info->hb_font)
+    ftfont_info->hb_font
+      = hb_ft_font_create_referenced (ftfont_info->ft_size->face);
+  return ftfont_info->hb_font;
 }
 
-#endif	/* HAVE_OTF_GET_VARIATION_GLYPHS */
-#endif	/* HAVE_LIBOTF */
+#ifndef HAVE_LIBOTF
+#include <hb-ot.h>
+
+static OTF *
+hbotf_open (const char *name)
+{
+  FT_Face ft_face;
+
+  if (! ft_library
+      && FT_Init_FreeType (&ft_library) != 0)
+    return NULL;
+  if (FT_New_Face (ft_library, name, 0, &ft_face)
+      != 0)
+    return NULL;
+
+  hb_face_t *face = hb_ft_face_create_referenced (ft_face);
+  FT_Done_Face (ft_face);
+
+  return face;
+}
+
+static int
+hbotf_check_features (OTF *otf, int gsubp,
+		      OTF_tag script, OTF_tag language,
+		      const OTF_tag *features, int n_features)
+{
+  hb_face_t *face = otf;
+  hb_tag_t table_tag = gsubp ? HB_OT_TAG_GSUB : HB_OT_TAG_GPOS;
+  hb_tag_t script_tag = script, language_tag = language;
+
+  unsigned int script_count
+    = hb_ot_layout_table_get_script_tags (face, table_tag, 0, NULL, NULL);
+  hb_tag_t *script_tags = xnmalloc (script_count, sizeof *script_tags);
+  hb_ot_layout_table_get_script_tags (face, table_tag, 0, &script_count,
+				      script_tags);
+  unsigned int script_index;
+  for (script_index = 0; script_index < script_count; script_index++)
+    if (script_tags[script_index] == script_tag)
+      break;
+  xfree (script_tags);
+  if (script_index == script_count)
+    return 0;
+
+  unsigned int language_index;
+  if (language_tag == 0)
+    language_index = HB_OT_LAYOUT_DEFAULT_LANGUAGE_INDEX;
+  else
+    {
+      unsigned int language_count
+	= hb_ot_layout_script_get_language_tags (face, table_tag, script_index,
+						 0, NULL, NULL);
+      hb_tag_t *language_tags = xnmalloc (language_count,
+					  sizeof *language_tags);
+      hb_ot_layout_script_get_language_tags (face, table_tag, script_index, 0,
+					     &language_count, language_tags);
+      for (language_index = 0; language_index < script_count; language_index++)
+	if (language_tags[language_index] == language_tag)
+	  break;
+      xfree (language_tags);
+      if (language_index == language_count)
+	return 0;
+    }
+
+  for (int j = 0; j < n_features; j++)
+    {
+      hb_tag_t feature_tag = features[j];
+      hb_bool_t negate = 0;
+
+      if (feature_tag == 0)
+	continue;
+      if (feature_tag & 0x80000000)
+	{
+	  feature_tag &= 0x7FFFFFFF;
+	  negate = 1;
+	}
+
+      unsigned int feature_index;
+      if (hb_ot_layout_language_find_feature (face, table_tag, script_index,
+					      language_index, feature_tag,
+					      &feature_index) == negate)
+	return 0;
+    }
+  return 1;
+}
+#endif	/* !HAVE_LIBOTF */
+#endif /* HAVE_HARFBUZZ */
 
 static const char *const ftfont_booleans [] = {
   ":antialias",
@@ -2657,23 +3035,83 @@ static const char *const ftfont_non_booleans [] = {
   NULL,
 };
 
-static void
+void
 ftfont_filter_properties (Lisp_Object font, Lisp_Object alist)
 {
   font_filter_properties (font, alist, ftfont_booleans, ftfont_non_booleans);
 }
 
 
+Lisp_Object
+ftfont_combining_capability (struct font *font)
+{
+#ifdef HAVE_M17N_FLT
+  return Qt;
+#else
+  return Qnil;
+#endif
+}
+
+static void syms_of_ftfont_for_pdumper (void);
+
+#ifndef USE_CAIRO
+
+static struct font_driver const ftfont_driver =
+  {
+  /* We can't draw a text without device dependent functions.  */
+  .type = LISPSYM_INITIALLY (Qfreetype),
+  .get_cache = ftfont_get_cache,
+  .list = ftfont_list,
+  .match = ftfont_match,
+  .list_family = ftfont_list_family,
+  .open_font = ftfont_open,
+  .close_font = ftfont_close,
+  .has_char = ftfont_has_char,
+  .encode_char = ftfont_encode_char,
+  .text_extents = ftfont_text_extents,
+  .get_bitmap = ftfont_get_bitmap,
+  .anchor_point = ftfont_anchor_point,
+#ifdef HAVE_LIBOTF
+  .otf_capability = ftfont_otf_capability,
+#endif
+#if defined HAVE_M17N_FLT && defined HAVE_LIBOTF
+  .shape = ftfont_shape,
+#endif
+#if defined HAVE_OTF_GET_VARIATION_GLYPHS || defined HAVE_FT_FACE_GETCHARVARIANTINDEX
+  .get_variation_glyphs = ftfont_variation_glyphs,
+#endif
+  .filter_properties = ftfont_filter_properties,
+  .combining_capability = ftfont_combining_capability,
+  };
+
+#endif /* !USE_CAIRO */
+
 void
 syms_of_ftfont (void)
 {
+  /* Symbolic type of this font-driver.  */
   DEFSYM (Qfreetype, "freetype");
+#ifdef HAVE_HARFBUZZ
+  DEFSYM (Qfreetypehb, "freetypehb");
+  Fput (Qfreetype, Qfont_driver_superseded_by, Qfreetypehb);
+#endif	/* HAVE_HARFBUZZ */
+
+  /* Fontconfig's generic families and their aliases.  */
   DEFSYM (Qmonospace, "monospace");
   DEFSYM (Qsans_serif, "sans-serif");
-  DEFSYM (Qserif, "serif");
-  DEFSYM (Qmono, "mono");
   DEFSYM (Qsans, "sans");
   DEFSYM (Qsans__serif, "sans serif");
+
+  /* The boolean-valued font property key specifying the use of leading.  */
+  DEFSYM (QCminspace, ":minspace");
+
+  /* Fontconfig's rendering parameters.  */
+  DEFSYM (QChinting, ":hinting");
+  DEFSYM (QCautohint, ":autohint");
+  DEFSYM (QChintstyle, ":hintstyle");
+  DEFSYM (QCrgba, ":rgba");
+  DEFSYM (QCembolden, ":embolden");
+  DEFSYM (QClcdfilter, ":lcdfilter");
 
   staticpro (&freetype_font_cache);
   freetype_font_cache = list1 (Qt);
@@ -2686,6 +3124,21 @@ syms_of_ftfont (void)
   staticpro (&ft_face_cache);
   ft_face_cache = Qnil;
 
-  ftfont_driver.type = Qfreetype;
+  pdumper_do_now_and_after_load (syms_of_ftfont_for_pdumper);
+}
+
+static void
+syms_of_ftfont_for_pdumper (void)
+{
+  PDUMPER_RESET_LV (ft_face_cache, Qnil);
   register_font_driver (&ftfont_driver, NULL);
+#ifdef HAVE_HARFBUZZ
+  fthbfont_driver = ftfont_driver;
+  fthbfont_driver.type = Qfreetypehb;
+  fthbfont_driver.otf_capability = hbfont_otf_capability;
+  fthbfont_driver.shape = hbfont_shape;
+  fthbfont_driver.combining_capability = hbfont_combining_capability;
+  fthbfont_driver.begin_hb_font = fthbfont_begin_hb_font;
+  register_font_driver (&fthbfont_driver, NULL);
+#endif	/* HAVE_HARFBUZZ */
 }

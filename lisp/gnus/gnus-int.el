@@ -1,6 +1,6 @@
 ;;; gnus-int.el --- backend interface functions for Gnus
 
-;; Copyright (C) 1996-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -18,13 +18,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
-
-(eval-when-compile (require 'cl))
 
 (require 'gnus)
 (require 'message)
@@ -65,6 +63,8 @@ server denied."
 		 (const :tag "Deny server" denied)
 		 (const :tag "Unplug Agent" offline)))
 
+;; Note: When this option is finally removed, also remove the entire
+;; `gnus-start-news-server' function.
 (defcustom gnus-nntp-server nil
   "The name of the host running the NNTP server."
   :group 'gnus-server
@@ -164,8 +164,8 @@ If CONFIRM is non-nil, the user will be asked for an NNTP server."
        (gnus-open-server gnus-select-method)
        gnus-batch-mode
        (gnus-y-or-n-p
-	(format
-	 "%s (%s) open error: '%s'.  Continue? "
+	(format-message
+	 "%s (%s) open error: `%s'.  Continue? "
 	 (car gnus-select-method) (cadr gnus-select-method)
 	 (gnus-status-message gnus-select-method)))
        (gnus-error 1 "Couldn't open server on %s"
@@ -259,7 +259,8 @@ If it is down, start it up (again)."
       (insert (format-time-string "%H:%M:%S")
 	      (format " %.2fs %s %S\n"
 		      (if (numberp gnus-backend-trace-elapsed)
-			  (- (float-time) gnus-backend-trace-elapsed)
+			  (float-time
+			   (time-since gnus-backend-trace-elapsed))
 			0)
 		      type form))
       (setq gnus-backend-trace-elapsed (float-time)))))
@@ -351,7 +352,8 @@ If it is down, start it up (again)."
   (when (stringp gnus-command-method)
     (setq gnus-command-method (gnus-server-to-method gnus-command-method)))
   (funcall (gnus-get-function gnus-command-method 'close-server)
-	   (nth 1 gnus-command-method)))
+	   (nth 1 gnus-command-method)
+	   (nthcdr 2 gnus-command-method)))
 
 (defun gnus-request-list (gnus-command-method)
   "Request the active file from GNUS-COMMAND-METHOD."
@@ -438,6 +440,14 @@ If it is down, start it up (again)."
     (when (gnus-check-backend-function func group)
       (funcall (gnus-get-function gnus-command-method func)
 	       (gnus-group-real-name group) (nth 1 gnus-command-method)))))
+
+(defun gnus-request-group-scan (group info)
+  "Request that GROUP get a complete rescan."
+  (let ((gnus-command-method (gnus-find-method-for-group group))
+	(func 'request-group-scan))
+    (when (gnus-check-backend-function func group)
+      (funcall (gnus-get-function gnus-command-method func)
+	       (gnus-group-real-name group) (nth 1 gnus-command-method) info))))
 
 (defun gnus-close-group (group)
   "Request the GROUP be closed."
@@ -547,7 +557,7 @@ the group's summary.
   (let ((saved-display
          (gnus-group-get-parameter group 'display :allow-list)))
 
-    ;; Tell gnus we really don't want any articles 
+    ;; Tell gnus we really don't want any articles
     (gnus-group-set-parameter group 'display 0)
 
     (unwind-protect
@@ -565,7 +575,7 @@ the group's summary.
   ;; Create it now and insert the message
   (let ((group-is-new (gnus-summary-setup-buffer group)))
     (condition-case err
-        (let ((article-number 
+        (let ((article-number
                (gnus-summary-insert-subject message-id)))
           (unless article-number
             (signal 'error "message-id not in group"))
@@ -717,7 +727,7 @@ If GROUP is nil, all groups on GNUS-COMMAND-METHOD are scanned."
 	       (let* ((range (if (= min 2) 1 (cons 1 (1- min))))
 		      (read (gnus-info-read info))
 		      (new-read (gnus-range-add read (list range))))
-		 (gnus-info-set-read info new-read)))
+		 (setf (gnus-info-read info) new-read)))
 	     info)))))
 
 (defun gnus-request-expire-articles (articles group &optional force)
@@ -769,8 +779,7 @@ If GROUP is nil, all groups on GNUS-COMMAND-METHOD are scanned."
       (message-options-set-recipient)
       (save-restriction
 	(message-narrow-to-head)
-	(let ((mail-parse-charset message-default-charset))
-	  (mail-encode-encoded-word-buffer)))
+	(mail-encode-encoded-word-buffer))
       (message-encode-message-body)))
   (let ((gnus-command-method (or gnus-command-method
 				 (gnus-find-method-for-group group)))
@@ -792,8 +801,7 @@ If GROUP is nil, all groups on GNUS-COMMAND-METHOD are scanned."
       (message-options-set-recipient)
       (save-restriction
 	(message-narrow-to-head)
-	(let ((mail-parse-charset message-default-charset))
-	  (mail-encode-encoded-word-buffer)))
+	(mail-encode-encoded-word-buffer))
       (message-encode-message-body)))
   (let* ((func (car (gnus-group-name-to-method group)))
          (result (funcall (intern (format "%s-request-replace-article" func))

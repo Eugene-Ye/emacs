@@ -1,14 +1,14 @@
 /* Header file for the buffer manipulation primitives.
 
-Copyright (C) 1985-1986, 1993-1995, 1997-2014 Free Software Foundation,
+Copyright (C) 1985-1986, 1993-1995, 1997-2020 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,21 +16,26 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
+
+#ifndef EMACS_BUFFER_H
+#define EMACS_BUFFER_H
 
 #include <sys/types.h>
 #include <time.h>
+
+#include "character.h"
+#include "lisp.h"
 
 INLINE_HEADER_BEGIN
 
 /* Accessing the parameters of the current buffer.  */
 
-/* These macros come in pairs, one for the char position
+/* These constants and macros come in pairs, one for the char position
    and one for the byte position.  */
 
 /* Position of beginning of buffer.  */
-#define BEG (1)
-#define BEG_BYTE (BEG)
+enum { BEG = 1, BEG_BYTE = BEG };
 
 /* Position of beginning of accessible range of buffer.  */
 #define BEGV (current_buffer->begv)
@@ -90,59 +95,7 @@ INLINE_HEADER_BEGIN
 
 /* Modification count as of last visit or save.  */
 #define SAVE_MODIFF (current_buffer->text->save_modiff)
-
-/* BUFFER_CEILING_OF (resp. BUFFER_FLOOR_OF), when applied to n, return
-   the max (resp. min) p such that
-
-   BYTE_POS_ADDR (p) - BYTE_POS_ADDR (n) == p - n       */
-
-#define BUFFER_CEILING_OF(BYTEPOS) \
-  (((BYTEPOS) < GPT_BYTE && GPT < ZV ? GPT_BYTE : ZV_BYTE) - 1)
-#define BUFFER_FLOOR_OF(BYTEPOS) \
-  (BEGV <= GPT && GPT_BYTE <= (BYTEPOS) ? GPT_BYTE : BEGV_BYTE)
 
-/* Similar macros to operate on a specified buffer.
-   Note that many of these evaluate the buffer argument more than once.  */
-
-/* Position of beginning of buffer.  */
-#define BUF_BEG(buf) (BEG)
-#define BUF_BEG_BYTE(buf) (BEG_BYTE)
-
-/* The BUF_BEGV[_BYTE], BUF_ZV[_BYTE], and BUF_PT[_BYTE] macros cannot
-   be used for assignment; use SET_BUF_* macros below for that.  */
-
-/* Position of beginning of accessible range of buffer.  */
-#define BUF_BEGV(buf)					\
-   (buf == current_buffer ? BEGV			\
-    : NILP (BVAR (buf, begv_marker)) ? buf->begv	\
-    : marker_position (BVAR (buf, begv_marker)))
-
-#define BUF_BEGV_BYTE(buf)				\
-   (buf == current_buffer ? BEGV_BYTE			\
-    : NILP (BVAR (buf, begv_marker)) ? buf->begv_byte	\
-    : marker_byte_position (BVAR (buf, begv_marker)))
-
-/* Position of point in buffer.  */
-#define BUF_PT(buf)					\
-   (buf == current_buffer ? PT				\
-    : NILP (BVAR (buf, pt_marker)) ? buf->pt		\
-    : marker_position (BVAR (buf, pt_marker)))
-
-#define BUF_PT_BYTE(buf)				\
-   (buf == current_buffer ? PT_BYTE			\
-    : NILP (BVAR (buf, pt_marker)) ? buf->pt_byte	\
-    : marker_byte_position (BVAR (buf, pt_marker)))
-
-/* Position of end of accessible range of buffer.  */
-#define BUF_ZV(buf)					\
-   (buf == current_buffer ? ZV				\
-    : NILP (BVAR (buf, zv_marker)) ? buf->zv		\
-    : marker_position (BVAR (buf, zv_marker)))
-
-#define BUF_ZV_BYTE(buf)				\
-   (buf == current_buffer ? ZV_BYTE			\
-    : NILP (BVAR (buf, zv_marker)) ? buf->zv_byte	\
-    : marker_byte_position (BVAR (buf, zv_marker)))
 
 /* Position of gap in buffer.  */
 #define BUF_GPT(buf) ((buf)->text->gpt)
@@ -154,15 +107,6 @@ INLINE_HEADER_BEGIN
 
 /* Address of beginning of buffer.  */
 #define BUF_BEG_ADDR(buf) ((buf)->text->beg)
-
-/* Address of beginning of gap of buffer.  */
-#define BUF_GPT_ADDR(buf) ((buf)->text->beg + (buf)->text->gpt_byte - BEG_BYTE)
-
-/* Address of end of buffer.  */
-#define BUF_Z_ADDR(buf) ((buf)->text->beg + (buf)->text->gap_size + (buf)->text->z_byte - BEG_BYTE)
-
-/* Address of end of gap in buffer.  */
-#define BUF_GAP_END_ADDR(buf) ((buf)->text->beg + (buf)->text->gpt_byte + (buf)->text->gap_size - BEG_BYTE)
 
 /* Size of gap.  */
 #define BUF_GAP_SIZE(buf) ((buf)->text->gap_size)
@@ -203,43 +147,8 @@ INLINE_HEADER_BEGIN
   BUF_OVERLAY_UNCHANGED_MODIFIED (current_buffer)
 #define BEG_UNCHANGED BUF_BEG_UNCHANGED (current_buffer)
 #define END_UNCHANGED BUF_END_UNCHANGED (current_buffer)
-
-/* Compute how many characters at the top and bottom of BUF are
-   unchanged when the range START..END is modified.  This computation
-   must be done each time BUF is modified.  */
-
-#define BUF_COMPUTE_UNCHANGED(buf, start, end)				\
-  do									\
-    {									\
-      if (BUF_UNCHANGED_MODIFIED (buf) == BUF_MODIFF (buf)		\
-	  && (BUF_OVERLAY_UNCHANGED_MODIFIED (buf)			\
-	      == BUF_OVERLAY_MODIFF (buf)))				\
-	{								\
-	  BUF_BEG_UNCHANGED (buf) = (start) - BUF_BEG (buf);		\
-	  BUF_END_UNCHANGED (buf) = BUF_Z (buf) - (end);		\
-	}								\
-      else								\
-	{								\
-	  if (BUF_Z (buf) - (end) < BUF_END_UNCHANGED (buf))		\
-	    BUF_END_UNCHANGED (buf) = BUF_Z (buf) - (end);		\
-	  if ((start) - BUF_BEG (buf) < BUF_BEG_UNCHANGED (buf))	\
-	    BUF_BEG_UNCHANGED (buf) = (start) - BUF_BEG (buf);		\
-	}								\
-    }									\
-  while (false)
-
 
-/* Macros to set PT in the current buffer, or another buffer.  */
-
-#define SET_PT(position) (set_point (position))
-#define TEMP_SET_PT(position) (temp_set_point (current_buffer, (position)))
-
-#define SET_PT_BOTH(position, byte) (set_point_both (position, byte))
-#define TEMP_SET_PT_BOTH(position, byte) \
-  (temp_set_point_both (current_buffer, (position), (byte)))
-
-#define BUF_TEMP_SET_PT(buffer, position) \
-  (temp_set_point ((buffer), (position)))
+/* Functions to set PT in the current buffer, or another buffer.  */
 
 extern void set_point (ptrdiff_t);
 extern void temp_set_point (struct buffer *, ptrdiff_t);
@@ -249,61 +158,32 @@ extern void temp_set_point_both (struct buffer *,
 extern void set_point_from_marker (Lisp_Object);
 extern void enlarge_buffer_text (struct buffer *, ptrdiff_t);
 
+INLINE void
+SET_PT (ptrdiff_t position)
+{
+  set_point (position);
+}
+INLINE void
+TEMP_SET_PT (ptrdiff_t position)
+{
+  temp_set_point (current_buffer, position);
+}
+INLINE void
+SET_PT_BOTH (ptrdiff_t position, ptrdiff_t byte)
+{
+  set_point_both (position, byte);
+}
+INLINE void
+TEMP_SET_PT_BOTH (ptrdiff_t position, ptrdiff_t byte)
+{
+  temp_set_point_both (current_buffer, position, byte);
+}
+INLINE void
+BUF_TEMP_SET_PT (struct buffer *buffer, ptrdiff_t position)
+{
+  temp_set_point (buffer, position);
+}
 
-/* Macros for setting the BEGV, ZV or PT of a given buffer.
-
-   The ..._BOTH macros take both a charpos and a bytepos,
-   which must correspond to each other.
-
-   The macros without ..._BOTH take just a charpos,
-   and compute the bytepos from it.  */
-
-#define SET_BUF_BEGV(buf, charpos)				 \
-  ((buf)->begv_byte = buf_charpos_to_bytepos ((buf), (charpos)), \
-   (buf)->begv = (charpos))
-
-#define SET_BUF_ZV(buf, charpos)				\
-  ((buf)->zv_byte = buf_charpos_to_bytepos ((buf), (charpos)),	\
-   (buf)->zv = (charpos))
-
-#define SET_BUF_BEGV_BOTH(buf, charpos, byte)		\
-  ((buf)->begv = (charpos),				\
-   (buf)->begv_byte = (byte))
-
-#define SET_BUF_ZV_BOTH(buf, charpos, byte)		\
-  ((buf)->zv = (charpos),				\
-   (buf)->zv_byte = (byte))
-
-#define SET_BUF_PT_BOTH(buf, charpos, byte)		\
-  ((buf)->pt = (charpos),				\
-   (buf)->pt_byte = (byte))
-
-/* Macros to access a character or byte in the current buffer,
-   or convert between a byte position and an address.
-   These macros do not check that the position is in range.  */
-
-/* Access a Lisp position value in POS,
-   and store the charpos in CHARPOS and the bytepos in BYTEPOS.  */
-
-#define DECODE_POSITION(charpos, bytepos, pos)				\
-  do									\
-    {									\
-      Lisp_Object __pos = (pos);					\
-      if (NUMBERP (__pos))						\
-	{								\
-	  charpos = __pos;						\
-	  bytepos = buf_charpos_to_bytepos (current_buffer, __pos);	\
-	}								\
-      else if (MARKERP (__pos))						\
-	{								\
-	  charpos = marker_position (__pos);				\
-	  bytepos = marker_byte_position (__pos);			\
-	}								\
-      else								\
-	wrong_type_argument (Qinteger_or_marker_p, __pos);		\
-    }									\
-  while (false)
-
 /* Maximum number of bytes in a buffer.
    A buffer cannot contain more bytes than a 1-origin fixnum can represent,
    nor can it be so large that C pointer arithmetic stops working.
@@ -314,102 +194,21 @@ extern void enlarge_buffer_text (struct buffer *, ptrdiff_t);
 /* Maximum gap size after compact_buffer, in bytes.  Also
    used in make_gap_larger to get some extra reserved space.  */
 
-#define GAP_BYTES_DFL 2000
+enum { GAP_BYTES_DFL = 2000 };
 
 /* Minimum gap size after compact_buffer, in bytes.  Also
    used in make_gap_smaller to avoid too small gap size.  */
 
-#define GAP_BYTES_MIN 20
+enum { GAP_BYTES_MIN = 20 };
 
-/* Return the address of byte position N in current buffer.  */
+/* For those very rare cases where you may have a "random" pointer into
+   the middle of a multibyte char, this moves to the next boundary.  */
+extern ptrdiff_t advance_to_char_boundary (ptrdiff_t byte_pos);
 
-#define BYTE_POS_ADDR(n) \
-  (((n) >= GPT_BYTE ? GAP_SIZE : 0) + (n) + BEG_ADDR - BEG_BYTE)
-
-/* Return the address of char position N.  */
-
-#define CHAR_POS_ADDR(n)			\
-  (((n) >= GPT ? GAP_SIZE : 0)			\
-   + buf_charpos_to_bytepos (current_buffer, n)	\
-   + BEG_ADDR - BEG_BYTE)
-
-/* Convert a character position to a byte position.  */
-
-#define CHAR_TO_BYTE(charpos)			\
-  (buf_charpos_to_bytepos (current_buffer, charpos))
-
-/* Convert a byte position to a character position.  */
-
-#define BYTE_TO_CHAR(bytepos)			\
-  (buf_bytepos_to_charpos (current_buffer, bytepos))
-
-/* Convert PTR, the address of a byte in the buffer, into a byte position.  */
-
-#define PTR_BYTE_POS(ptr) \
-((ptr) - (current_buffer)->text->beg					    \
- - (ptr - (current_buffer)->text->beg <= GPT_BYTE - BEG_BYTE ? 0 : GAP_SIZE) \
- + BEG_BYTE)
-
-/* Return character at byte position POS.  See the caveat WARNING for
-   FETCH_MULTIBYTE_CHAR below.  */
-
-#define FETCH_CHAR(pos)				      	\
-  (!NILP (BVAR (current_buffer, enable_multibyte_characters))	\
-   ? FETCH_MULTIBYTE_CHAR ((pos))		      	\
-   : FETCH_BYTE ((pos)))
-
-/* Return the byte at byte position N.  */
+/* Return the byte at byte position N.
+   Do not check that the position is in range.  */
 
 #define FETCH_BYTE(n) *(BYTE_POS_ADDR ((n)))
-
-/* Return character at byte position POS.  If the current buffer is unibyte
-   and the character is not ASCII, make the returning character
-   multibyte.  */
-
-#define FETCH_CHAR_AS_MULTIBYTE(pos)			\
-  (!NILP (BVAR (current_buffer, enable_multibyte_characters))	\
-   ? FETCH_MULTIBYTE_CHAR ((pos))			\
-   : UNIBYTE_TO_CHAR (FETCH_BYTE ((pos))))
-
-
-/* Macros for accessing a character or byte,
-   or converting between byte positions and addresses,
-   in a specified buffer.  */
-
-/* Return the address of character at byte position POS in buffer BUF.
-   Note that both arguments can be computed more than once.  */
-
-#define BUF_BYTE_ADDRESS(buf, pos) \
-((buf)->text->beg + (pos) - BEG_BYTE		\
- + ((pos) >= (buf)->text->gpt_byte ? (buf)->text->gap_size : 0))
-
-/* Return the address of character at char position POS in buffer BUF.
-   Note that both arguments can be computed more than once.  */
-
-#define BUF_CHAR_ADDRESS(buf, pos) \
-((buf)->text->beg + buf_charpos_to_bytepos ((buf), (pos)) - BEG_BYTE	\
- + ((pos) >= (buf)->text->gpt ? (buf)->text->gap_size : 0))
-
-/* Convert PTR, the address of a char in buffer BUF,
-   into a character position.  */
-
-#define BUF_PTR_BYTE_POS(buf, ptr)				\
-((ptr) - (buf)->text->beg					\
- - (ptr - (buf)->text->beg <= BUF_GPT_BYTE (buf) - BEG_BYTE	\
-    ? 0 : BUF_GAP_SIZE ((buf)))					\
- + BEG_BYTE)
-
-/* Return the character at byte position POS in buffer BUF.   */
-
-#define BUF_FETCH_CHAR(buf, pos)	      	\
-  (!NILP (buf->enable_multibyte_characters)	\
-   ? BUF_FETCH_MULTIBYTE_CHAR ((buf), (pos))    \
-   : BUF_FETCH_BYTE ((buf), (pos)))
-
-/* Return the byte at byte position N in buffer BUF.   */
-
-#define BUF_FETCH_BYTE(buf, n) \
-  *(BUF_BYTE_ADDRESS ((buf), (n)))
 
 /* Define the actual buffer data structures.  */
 
@@ -429,20 +228,20 @@ struct buffer_text
     ptrdiff_t gpt_byte;		/* Byte pos of gap in buffer.  */
     ptrdiff_t z_byte;		/* Byte pos of end of buffer.  */
     ptrdiff_t gap_size;		/* Size of buffer's gap.  */
-    EMACS_INT modiff;		/* This counts buffer-modification events
+    modiff_count modiff;	/* This counts buffer-modification events
 				   for this buffer.  It is incremented for
 				   each such event, and never otherwise
 				   changed.  */
-    EMACS_INT chars_modiff;	/* This is modified with character change
+    modiff_count chars_modiff;	/* This is modified with character change
 				   events for this buffer.  It is set to
 				   modiff for each such event, and never
 				   otherwise changed.  */
-    EMACS_INT save_modiff;	/* Previous value of modiff, as of last
+    modiff_count save_modiff;	/* Previous value of modiff, as of last
 				   time buffer visited or saved a file.  */
 
-    EMACS_INT overlay_modiff;	/* Counts modifications to overlays.  */
+    modiff_count overlay_modiff; /* Counts modifications to overlays.  */
 
-    EMACS_INT compact;		/* Set to modiff each time when compact_buffer
+    modiff_count compact;	/* Set to modiff each time when compact_buffer
 				   is called for this buffer.  */
 
     /* Minimum value of GPT - BEG since last redisplay that finished.  */
@@ -453,12 +252,12 @@ struct buffer_text
 
     /* MODIFF as of last redisplay that finished; if it matches MODIFF,
        beg_unchanged and end_unchanged contain no useful information.  */
-    EMACS_INT unchanged_modified;
+    modiff_count unchanged_modified;
 
     /* BUF_OVERLAY_MODIFF of current buffer, as of last redisplay that
        finished; if it matches BUF_OVERLAY_MODIFF, beg_unchanged and
        end_unchanged contain no useful information.  */
-    EMACS_INT overlay_unchanged_modified;
+    modiff_count overlay_unchanged_modified;
 
     /* Properties of this buffer's text.  */
     INTERVAL intervals;
@@ -483,26 +282,33 @@ struct buffer_text
 
 /* Most code should use this macro to access Lisp fields in struct buffer.  */
 
-#define BVAR(buf, field) ((buf)->INTERNAL_FIELD (field))
+#define BVAR(buf, field) ((buf)->field ## _)
+
+/* Max number of builtin per-buffer variables.  */
+enum { MAX_PER_BUFFER_VARS = 50 };
+
+/* Special values for struct buffer.modtime.  */
+enum { NONEXISTENT_MODTIME_NSECS = -1 };
+enum { UNKNOWN_MODTIME_NSECS = -2 };
 
 /* This is the structure that the buffer Lisp object points to.  */
 
 struct buffer
 {
-  struct vectorlike_header header;
+  union vectorlike_header header;
 
   /* The name of this buffer.  */
-  Lisp_Object INTERNAL_FIELD (name);
+  Lisp_Object name_;
 
   /* The name of the file visited in this buffer, or nil.  */
-  Lisp_Object INTERNAL_FIELD (filename);
+  Lisp_Object filename_;
 
   /* Directory for expanding relative file names.  */
-  Lisp_Object INTERNAL_FIELD (directory);
+  Lisp_Object directory_;
 
   /* True if this buffer has been backed up (if you write to the visited
      file and it hasn't been backed up, then a backup will be made).  */
-  Lisp_Object INTERNAL_FIELD (backed_up);
+  Lisp_Object backed_up_;
 
   /* Length of file when last read or saved.
      -1 means auto saving turned off because buffer shrank a lot.
@@ -510,132 +316,142 @@ struct buffer
        (That value is used with buffer-swap-text.)
      This is not in the  struct buffer_text
      because it's not used in indirect buffers at all.  */
-  Lisp_Object INTERNAL_FIELD (save_length);
+  Lisp_Object save_length_;
 
   /* File name used for auto-saving this buffer.
      This is not in the  struct buffer_text
      because it's not used in indirect buffers at all.  */
-  Lisp_Object INTERNAL_FIELD (auto_save_file_name);
+  Lisp_Object auto_save_file_name_;
 
   /* Non-nil if buffer read-only.  */
-  Lisp_Object INTERNAL_FIELD (read_only);
+  Lisp_Object read_only_;
 
   /* "The mark".  This is a marker which may
      point into this buffer or may point nowhere.  */
-  Lisp_Object INTERNAL_FIELD (mark);
+  Lisp_Object mark_;
 
   /* Alist of elements (SYMBOL . VALUE-IN-THIS-BUFFER) for all
      per-buffer variables of this buffer.  For locally unbound
      symbols, just the symbol appears as the element.  */
-  Lisp_Object INTERNAL_FIELD (local_var_alist);
+  Lisp_Object local_var_alist_;
 
   /* Symbol naming major mode (e.g., lisp-mode).  */
-  Lisp_Object INTERNAL_FIELD (major_mode);
+  Lisp_Object major_mode_;
 
   /* Pretty name of major mode (e.g., "Lisp"). */
-  Lisp_Object INTERNAL_FIELD (mode_name);
+  Lisp_Object mode_name_;
 
   /* Mode line element that controls format of mode line.  */
-  Lisp_Object INTERNAL_FIELD (mode_line_format);
+  Lisp_Object mode_line_format_;
 
   /* Analogous to mode_line_format for the line displayed at the top
      of windows.  Nil means don't display that line.  */
-  Lisp_Object INTERNAL_FIELD (header_line_format);
+  Lisp_Object header_line_format_;
+
+  /* Analogous to mode_line_format for the line displayed at the top
+     of windows.  Nil means don't display that line.  */
+  Lisp_Object tab_line_format_;
 
   /* Keys that are bound local to this buffer.  */
-  Lisp_Object INTERNAL_FIELD (keymap);
+  Lisp_Object keymap_;
 
   /* This buffer's local abbrev table.  */
-  Lisp_Object INTERNAL_FIELD (abbrev_table);
+  Lisp_Object abbrev_table_;
 
   /* This buffer's syntax table.  */
-  Lisp_Object INTERNAL_FIELD (syntax_table);
+  Lisp_Object syntax_table_;
 
   /* This buffer's category table.  */
-  Lisp_Object INTERNAL_FIELD (category_table);
+  Lisp_Object category_table_;
 
   /* Values of several buffer-local variables.  */
   /* tab-width is buffer-local so that redisplay can find it
      in buffers that are not current.  */
-  Lisp_Object INTERNAL_FIELD (case_fold_search);
-  Lisp_Object INTERNAL_FIELD (tab_width);
-  Lisp_Object INTERNAL_FIELD (fill_column);
-  Lisp_Object INTERNAL_FIELD (left_margin);
+  Lisp_Object case_fold_search_;
+  Lisp_Object tab_width_;
+  Lisp_Object fill_column_;
+  Lisp_Object left_margin_;
 
   /* Function to call when insert space past fill column.  */
-  Lisp_Object INTERNAL_FIELD (auto_fill_function);
+  Lisp_Object auto_fill_function_;
 
   /* Case table for case-conversion in this buffer.
      This char-table maps each char into its lower-case version.  */
-  Lisp_Object INTERNAL_FIELD (downcase_table);
+  Lisp_Object downcase_table_;
 
   /* Char-table mapping each char to its upper-case version.  */
-  Lisp_Object INTERNAL_FIELD (upcase_table);
+  Lisp_Object upcase_table_;
 
   /* Char-table for conversion for case-folding search.  */
-  Lisp_Object INTERNAL_FIELD (case_canon_table);
+  Lisp_Object case_canon_table_;
 
   /* Char-table of equivalences for case-folding search.  */
-  Lisp_Object INTERNAL_FIELD (case_eqv_table);
+  Lisp_Object case_eqv_table_;
 
   /* Non-nil means do not display continuation lines.  */
-  Lisp_Object INTERNAL_FIELD (truncate_lines);
+  Lisp_Object truncate_lines_;
 
   /* Non-nil means to use word wrapping when displaying continuation lines.  */
-  Lisp_Object INTERNAL_FIELD (word_wrap);
+  Lisp_Object word_wrap_;
 
   /* Non-nil means display ctl chars with uparrow.  */
-  Lisp_Object INTERNAL_FIELD (ctl_arrow);
+  Lisp_Object ctl_arrow_;
 
   /* Non-nil means reorder bidirectional text for display in the
      visual order.  */
-  Lisp_Object INTERNAL_FIELD (bidi_display_reordering);
+  Lisp_Object bidi_display_reordering_;
 
   /* If non-nil, specifies which direction of text to force in all the
      paragraphs of the buffer.  Nil means determine paragraph
      direction dynamically for each paragraph.  */
-  Lisp_Object INTERNAL_FIELD (bidi_paragraph_direction);
+  Lisp_Object bidi_paragraph_direction_;
+
+  /* If non-nil, a regular expression for bidi paragraph separator.  */
+  Lisp_Object bidi_paragraph_separate_re_;
+
+  /* If non-nil, a regular expression for bidi paragraph start.  */
+  Lisp_Object bidi_paragraph_start_re_;
 
   /* Non-nil means do selective display;
      see doc string in syms_of_buffer (buffer.c) for details.  */
-  Lisp_Object INTERNAL_FIELD (selective_display);
+  Lisp_Object selective_display_;
 
   /* Non-nil means show ... at end of line followed by invisible lines.  */
-  Lisp_Object INTERNAL_FIELD (selective_display_ellipses);
+  Lisp_Object selective_display_ellipses_;
 
   /* Alist of (FUNCTION . STRING) for each minor mode enabled in buffer.  */
-  Lisp_Object INTERNAL_FIELD (minor_modes);
+  Lisp_Object minor_modes_;
 
   /* t if "self-insertion" should overwrite; `binary' if it should also
      overwrite newlines and tabs - for editing executables and the like.  */
-  Lisp_Object INTERNAL_FIELD (overwrite_mode);
+  Lisp_Object overwrite_mode_;
 
   /* Non-nil means abbrev mode is on.  Expand abbrevs automatically.  */
-  Lisp_Object INTERNAL_FIELD (abbrev_mode);
+  Lisp_Object abbrev_mode_;
 
   /* Display table to use for text in this buffer.  */
-  Lisp_Object INTERNAL_FIELD (display_table);
+  Lisp_Object display_table_;
 
   /* t means the mark and region are currently active.  */
-  Lisp_Object INTERNAL_FIELD (mark_active);
+  Lisp_Object mark_active_;
 
   /* Non-nil means the buffer contents are regarded as multi-byte
      form of characters, not a binary code.  */
-  Lisp_Object INTERNAL_FIELD (enable_multibyte_characters);
+  Lisp_Object enable_multibyte_characters_;
 
   /* Coding system to be used for encoding the buffer contents on
      saving.  */
-  Lisp_Object INTERNAL_FIELD (buffer_file_coding_system);
+  Lisp_Object buffer_file_coding_system_;
 
   /* List of symbols naming the file format used for visited file.  */
-  Lisp_Object INTERNAL_FIELD (file_format);
+  Lisp_Object file_format_;
 
   /* List of symbols naming the file format used for auto-save file.  */
-  Lisp_Object INTERNAL_FIELD (auto_save_file_format);
+  Lisp_Object auto_save_file_format_;
 
   /* True if the newline position cache, width run cache and BIDI paragraph
      cache are enabled.  See search.c, indent.c and bidi.c for details.  */
-  Lisp_Object INTERNAL_FIELD (cache_long_scans);
+  Lisp_Object cache_long_scans_;
 
   /* If the width run cache is enabled, this table contains the
      character widths width_run_cache (see above) assumes.  When we
@@ -643,107 +459,107 @@ struct buffer
      current display table to see whether the display table has
      affected the widths of any characters.  If it has, we
      invalidate the width run cache, and re-initialize width_table.  */
-  Lisp_Object INTERNAL_FIELD (width_table);
+  Lisp_Object width_table_;
 
   /* In an indirect buffer, or a buffer that is the base of an
      indirect buffer, this holds a marker that records
      PT for this buffer when the buffer is not current.  */
-  Lisp_Object INTERNAL_FIELD (pt_marker);
+  Lisp_Object pt_marker_;
 
   /* In an indirect buffer, or a buffer that is the base of an
      indirect buffer, this holds a marker that records
      BEGV for this buffer when the buffer is not current.  */
-  Lisp_Object INTERNAL_FIELD (begv_marker);
+  Lisp_Object begv_marker_;
 
   /* In an indirect buffer, or a buffer that is the base of an
      indirect buffer, this holds a marker that records
      ZV for this buffer when the buffer is not current.  */
-  Lisp_Object INTERNAL_FIELD (zv_marker);
+  Lisp_Object zv_marker_;
 
   /* This holds the point value before the last scroll operation.
      Explicitly setting point sets this to nil.  */
-  Lisp_Object INTERNAL_FIELD (point_before_scroll);
+  Lisp_Object point_before_scroll_;
 
   /* Truename of the visited file, or nil.  */
-  Lisp_Object INTERNAL_FIELD (file_truename);
+  Lisp_Object file_truename_;
 
   /* Invisibility spec of this buffer.
      t => any non-nil `invisible' property means invisible.
      A list => `invisible' property means invisible
      if it is memq in that list.  */
-  Lisp_Object INTERNAL_FIELD (invisibility_spec);
+  Lisp_Object invisibility_spec_;
 
   /* This is the last window that was selected with this buffer in it,
      or nil if that window no longer displays this buffer.  */
-  Lisp_Object INTERNAL_FIELD (last_selected_window);
+  Lisp_Object last_selected_window_;
 
   /* Incremented each time the buffer is displayed in a window.  */
-  Lisp_Object INTERNAL_FIELD (display_count);
+  Lisp_Object display_count_;
 
   /* Widths of left and right marginal areas for windows displaying
      this buffer.  */
-  Lisp_Object INTERNAL_FIELD (left_margin_cols);
-  Lisp_Object INTERNAL_FIELD (right_margin_cols);
+  Lisp_Object left_margin_cols_;
+  Lisp_Object right_margin_cols_;
 
   /* Widths of left and right fringe areas for windows displaying
      this buffer.  */
-  Lisp_Object INTERNAL_FIELD (left_fringe_width);
-  Lisp_Object INTERNAL_FIELD (right_fringe_width);
+  Lisp_Object left_fringe_width_;
+  Lisp_Object right_fringe_width_;
 
   /* Non-nil means fringes are drawn outside display margins;
      othersize draw them between margin areas and text.  */
-  Lisp_Object INTERNAL_FIELD (fringes_outside_margins);
+  Lisp_Object fringes_outside_margins_;
 
   /* Width, height and types of scroll bar areas for windows displaying
      this buffer.  */
-  Lisp_Object INTERNAL_FIELD (scroll_bar_width);
-  Lisp_Object INTERNAL_FIELD (scroll_bar_height);
-  Lisp_Object INTERNAL_FIELD (vertical_scroll_bar_type);
-  Lisp_Object INTERNAL_FIELD (horizontal_scroll_bar_type);
+  Lisp_Object scroll_bar_width_;
+  Lisp_Object scroll_bar_height_;
+  Lisp_Object vertical_scroll_bar_type_;
+  Lisp_Object horizontal_scroll_bar_type_;
 
   /* Non-nil means indicate lines not displaying text (in a style
      like vi).  */
-  Lisp_Object INTERNAL_FIELD (indicate_empty_lines);
+  Lisp_Object indicate_empty_lines_;
 
   /* Non-nil means indicate buffer boundaries and scrolling.  */
-  Lisp_Object INTERNAL_FIELD (indicate_buffer_boundaries);
+  Lisp_Object indicate_buffer_boundaries_;
 
   /* Logical to physical fringe bitmap mappings.  */
-  Lisp_Object INTERNAL_FIELD (fringe_indicator_alist);
+  Lisp_Object fringe_indicator_alist_;
 
   /* Logical to physical cursor bitmap mappings.  */
-  Lisp_Object INTERNAL_FIELD (fringe_cursor_alist);
+  Lisp_Object fringe_cursor_alist_;
 
   /* Time stamp updated each time this buffer is displayed in a window.  */
-  Lisp_Object INTERNAL_FIELD (display_time);
+  Lisp_Object display_time_;
 
   /* If scrolling the display because point is below the bottom of a
      window showing this buffer, try to choose a window start so
      that point ends up this number of lines from the top of the
      window.  Nil means that scrolling method isn't used.  */
-  Lisp_Object INTERNAL_FIELD (scroll_up_aggressively);
+  Lisp_Object scroll_up_aggressively_;
 
   /* If scrolling the display because point is above the top of a
      window showing this buffer, try to choose a window start so
      that point ends up this number of lines from the bottom of the
      window.  Nil means that scrolling method isn't used.  */
-  Lisp_Object INTERNAL_FIELD (scroll_down_aggressively);
+  Lisp_Object scroll_down_aggressively_;
 
   /* Desired cursor type in this buffer.  See the doc string of
      per-buffer variable `cursor-type'.  */
-  Lisp_Object INTERNAL_FIELD (cursor_type);
+  Lisp_Object cursor_type_;
 
   /* An integer > 0 means put that number of pixels below text lines
      in the display of this buffer.  */
-  Lisp_Object INTERNAL_FIELD (extra_line_spacing);
+  Lisp_Object extra_line_spacing_;
 
   /* Cursor type to display in non-selected windows.
      t means to use hollow box cursor.
      See `cursor-type' for other values.  */
-  Lisp_Object INTERNAL_FIELD (cursor_in_non_selected_windows);
+  Lisp_Object cursor_in_non_selected_windows_;
 
-  /* No more Lisp_Object beyond this point.  Except undo_list,
-     which is handled specially in Fgarbage_collect.  */
+  /* No more Lisp_Object beyond cursor_in_non_selected_windows_.
+     Except undo_list, which is handled specially in Fgarbage_collect.  */
 
   /* This structure holds the coordinates of the buffer contents
      in ordinary buffers.  In indirect buffers, this is not used.  */
@@ -793,7 +609,6 @@ struct buffer
      for a buffer-local variable is stored in that variable's slot
      in buffer_local_flags as a Lisp integer.  If the index is -1,
      this means the variable is always local in all buffers.  */
-#define MAX_PER_BUFFER_VARS 50
   char local_flags[MAX_PER_BUFFER_VARS];
 
   /* Set to the modtime of the visited file when read or written.
@@ -801,8 +616,6 @@ struct buffer
      visited file was nonexistent.  modtime.tv_nsec ==
      UNKNOWN_MODTIME_NSECS means visited file modtime unknown;
      in no case complain about any mismatch on next save attempt.  */
-#define NONEXISTENT_MODTIME_NSECS (-1)
-#define UNKNOWN_MODTIME_NSECS (-2)
   struct timespec modtime;
 
   /* Size of the file when modtime was set.  This is used to detect the
@@ -813,11 +626,11 @@ struct buffer
   off_t modtime_size;
 
   /* The value of text->modiff at the last auto-save.  */
-  EMACS_INT auto_save_modified;
+  modiff_count auto_save_modified;
 
   /* The value of text->modiff at the last display error.
      Redisplay of this buffer is inhibited until it changes again.  */
-  EMACS_INT display_error_modiff;
+  modiff_count display_error_modiff;
 
   /* The time at which we detected a failure to auto-save,
      Or 0 if we didn't have a failure.  */
@@ -856,6 +669,13 @@ struct buffer
   /* Non-zero whenever the narrowing is changed in this buffer.  */
   bool_bf clip_changed : 1;
 
+  /* Non-zero for internally used temporary buffers that don't need to
+     run hooks kill-buffer-hook, buffer-list-update-hook, and
+     kill-buffer-query-functions.  This is used in coding.c to avoid
+     slowing down en/decoding when there are a lot of these hooks
+     defined.  */
+  bool_bf inhibit_buffer_hooks : 1;
+
   /* List of overlays that end at or before the current center,
      in order of end-position.  */
   struct Lisp_Overlay *overlays_before;
@@ -872,8 +692,27 @@ struct buffer
      buffer of an indirect buffer.  But we can't store it in the
      struct buffer_text because local variables have to be right in
      the struct buffer. So we copy it around in set_buffer_internal.  */
-  Lisp_Object INTERNAL_FIELD (undo_list);
+  Lisp_Object undo_list_;
 };
+
+INLINE bool
+BUFFERP (Lisp_Object a)
+{
+  return PSEUDOVECTORP (a, PVEC_BUFFER);
+}
+
+INLINE void
+CHECK_BUFFER (Lisp_Object x)
+{
+  CHECK_TYPE (BUFFERP (x), Qbufferp, x);
+}
+
+INLINE struct buffer *
+XBUFFER (Lisp_Object a)
+{
+  eassert (BUFFERP (a));
+  return XUNTAG (a, Lisp_Vectorlike, struct buffer);
+}
 
 /* Most code should use these functions to set Lisp fields in struct
    buffer.  (Some setters that are private to a single .c file are
@@ -881,149 +720,389 @@ struct buffer
 INLINE void
 bset_bidi_paragraph_direction (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (bidi_paragraph_direction) = val;
+  b->bidi_paragraph_direction_ = val;
 }
 INLINE void
 bset_cache_long_scans (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (cache_long_scans) = val;
+  b->cache_long_scans_ = val;
 }
 INLINE void
 bset_case_canon_table (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (case_canon_table) = val;
+  b->case_canon_table_ = val;
 }
 INLINE void
 bset_case_eqv_table (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (case_eqv_table) = val;
+  b->case_eqv_table_ = val;
 }
 INLINE void
 bset_directory (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (directory) = val;
+  b->directory_ = val;
 }
 INLINE void
 bset_display_count (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (display_count) = val;
+  b->display_count_ = val;
+}
+INLINE void
+bset_left_margin_cols (struct buffer *b, Lisp_Object val)
+{
+  b->left_margin_cols_ = val;
+}
+INLINE void
+bset_right_margin_cols (struct buffer *b, Lisp_Object val)
+{
+  b->right_margin_cols_ = val;
 }
 INLINE void
 bset_display_time (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (display_time) = val;
+  b->display_time_ = val;
 }
 INLINE void
 bset_downcase_table (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (downcase_table) = val;
+  b->downcase_table_ = val;
 }
 INLINE void
 bset_enable_multibyte_characters (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (enable_multibyte_characters) = val;
+  b->enable_multibyte_characters_ = val;
 }
 INLINE void
 bset_filename (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (filename) = val;
+  b->filename_ = val;
 }
 INLINE void
 bset_keymap (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (keymap) = val;
+  b->keymap_ = val;
 }
 INLINE void
 bset_last_selected_window (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (last_selected_window) = val;
+  b->last_selected_window_ = val;
 }
 INLINE void
 bset_local_var_alist (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (local_var_alist) = val;
+  b->local_var_alist_ = val;
 }
 INLINE void
 bset_mark_active (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (mark_active) = val;
+  b->mark_active_ = val;
 }
 INLINE void
 bset_point_before_scroll (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (point_before_scroll) = val;
+  b->point_before_scroll_ = val;
 }
 INLINE void
 bset_read_only (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (read_only) = val;
+  b->read_only_ = val;
 }
 INLINE void
 bset_truncate_lines (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (truncate_lines) = val;
+  b->truncate_lines_ = val;
 }
 INLINE void
 bset_undo_list (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (undo_list) = val;
+  b->undo_list_ = val;
 }
 INLINE void
 bset_upcase_table (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (upcase_table) = val;
+  b->upcase_table_ = val;
 }
 INLINE void
 bset_width_table (struct buffer *b, Lisp_Object val)
 {
-  b->INTERNAL_FIELD (width_table) = val;
+  b->width_table_ = val;
+}
+
+/* BUFFER_CEILING_OF (resp. BUFFER_FLOOR_OF), when applied to n, return
+   the max (resp. min) p such that
+
+   BYTE_POS_ADDR (p) - BYTE_POS_ADDR (n) == p - n       */
+
+INLINE ptrdiff_t
+BUFFER_CEILING_OF (ptrdiff_t bytepos)
+{
+  return (bytepos < GPT_BYTE && GPT < ZV ? GPT_BYTE : ZV_BYTE) - 1;
+}
+
+INLINE ptrdiff_t
+BUFFER_FLOOR_OF (ptrdiff_t bytepos)
+{
+  return BEGV <= GPT && GPT_BYTE <= bytepos ? GPT_BYTE : BEGV_BYTE;
+}
+
+/* The BUF_BEGV[_BYTE], BUF_ZV[_BYTE], and BUF_PT[_BYTE] functions cannot
+   be used for assignment; use SET_BUF_* functions below for that.  */
+
+/* Position of beginning of accessible range of buffer.  */
+INLINE ptrdiff_t
+BUF_BEGV (struct buffer *buf)
+{
+  return (buf == current_buffer ? BEGV
+	  : NILP (BVAR (buf, begv_marker)) ? buf->begv
+	  : marker_position (BVAR (buf, begv_marker)));
+}
+
+INLINE ptrdiff_t
+BUF_BEGV_BYTE (struct buffer *buf)
+{
+  return (buf == current_buffer ? BEGV_BYTE
+	  : NILP (BVAR (buf, begv_marker)) ? buf->begv_byte
+	  : marker_byte_position (BVAR (buf, begv_marker)));
+}
+
+/* Position of point in buffer.  */
+INLINE ptrdiff_t
+BUF_PT (struct buffer *buf)
+{
+  return (buf == current_buffer ? PT
+	  : NILP (BVAR (buf, pt_marker)) ? buf->pt
+	  : marker_position (BVAR (buf, pt_marker)));
+}
+
+INLINE ptrdiff_t
+BUF_PT_BYTE (struct buffer *buf)
+{
+  return (buf == current_buffer ? PT_BYTE
+	  : NILP (BVAR (buf, pt_marker)) ? buf->pt_byte
+	  : marker_byte_position (BVAR (buf, pt_marker)));
+}
+
+/* Position of end of accessible range of buffer.  */
+INLINE ptrdiff_t
+BUF_ZV (struct buffer *buf)
+{
+  return (buf == current_buffer ? ZV
+	  : NILP (BVAR (buf, zv_marker)) ? buf->zv
+	  : marker_position (BVAR (buf, zv_marker)));
+}
+
+INLINE ptrdiff_t
+BUF_ZV_BYTE (struct buffer *buf)
+{
+  return (buf == current_buffer ? ZV_BYTE
+	  : NILP (BVAR (buf, zv_marker)) ? buf->zv_byte
+	  : marker_byte_position (BVAR (buf, zv_marker)));
+}
+
+/* Similar functions to operate on a specified buffer.  */
+
+/* Position of beginning of buffer.  */
+INLINE ptrdiff_t
+BUF_BEG (struct buffer *buf)
+{
+  return BEG;
+}
+
+INLINE ptrdiff_t
+BUF_BEG_BYTE (struct buffer *buf)
+{
+  return BEG_BYTE;
+}
+
+/* Address of beginning of gap of buffer.  */
+INLINE unsigned char *
+BUF_GPT_ADDR (struct buffer *buf)
+{
+  return buf->text->beg + buf->text->gpt_byte - BEG_BYTE;
+}
+
+/* Address of end of buffer.  */
+INLINE unsigned char *
+BUF_Z_ADDR (struct buffer *buf)
+{
+  return buf->text->beg + buf->text->gap_size + buf->text->z_byte - BEG_BYTE;
+}
+
+/* Address of end of gap in buffer.  */
+INLINE unsigned char *
+BUF_GAP_END_ADDR (struct buffer *buf)
+{
+  return buf->text->beg + buf->text->gpt_byte + buf->text->gap_size - BEG_BYTE;
+}
+
+/* Compute how many characters at the top and bottom of BUF are
+   unchanged when the range START..END is modified.  This computation
+   must be done each time BUF is modified.  */
+
+INLINE void
+BUF_COMPUTE_UNCHANGED (struct buffer *buf, ptrdiff_t start, ptrdiff_t end)
+{
+  if (BUF_UNCHANGED_MODIFIED (buf) == BUF_MODIFF (buf)
+      && (BUF_OVERLAY_UNCHANGED_MODIFIED (buf)
+	  == BUF_OVERLAY_MODIFF (buf)))
+    {
+      buf->text->beg_unchanged = start - BUF_BEG (buf);
+      buf->text->end_unchanged = BUF_Z (buf) - (end);
+    }
+  else
+    {
+      if (BUF_Z (buf) - end < BUF_END_UNCHANGED (buf))
+	buf->text->end_unchanged = BUF_Z (buf) - end;
+      if (start - BUF_BEG (buf) < BUF_BEG_UNCHANGED (buf))
+	buf->text->beg_unchanged = start - BUF_BEG (buf);
+    }
+}
+
+/* Functions for setting the BEGV, ZV or PT of a given buffer.
+
+   The ..._BOTH functions take both a charpos and a bytepos,
+   which must correspond to each other.
+
+   The functions without ..._BOTH take just a charpos,
+   and compute the bytepos from it.  */
+
+INLINE void
+SET_BUF_BEGV (struct buffer *buf, ptrdiff_t charpos)
+{
+  buf->begv_byte = buf_charpos_to_bytepos (buf, charpos);
+  buf->begv = charpos;
+}
+
+INLINE void
+SET_BUF_ZV (struct buffer *buf, ptrdiff_t charpos)
+{
+  buf->zv_byte = buf_charpos_to_bytepos (buf, charpos);
+  buf->zv = charpos;
+}
+
+INLINE void
+SET_BUF_BEGV_BOTH (struct buffer *buf, ptrdiff_t charpos, ptrdiff_t byte)
+{
+  buf->begv = charpos;
+  buf->begv_byte = byte;
+}
+
+INLINE void
+SET_BUF_ZV_BOTH (struct buffer *buf, ptrdiff_t charpos, ptrdiff_t byte)
+{
+  buf->zv = charpos;
+  buf->zv_byte = byte;
+}
+
+INLINE void
+SET_BUF_PT_BOTH (struct buffer *buf, ptrdiff_t charpos, ptrdiff_t byte)
+{
+  buf->pt = charpos;
+  buf->pt_byte = byte;
+}
+
+/* Functions to access a character or byte in the current buffer,
+   or convert between a byte position and an address.
+   These functions do not check that the position is in range.  */
+
+/* Return the address of byte position N in current buffer.  */
+
+INLINE unsigned char *
+BYTE_POS_ADDR (ptrdiff_t n)
+{
+  return (n < GPT_BYTE ? 0 : GAP_SIZE) + n + BEG_ADDR - BEG_BYTE;
+}
+
+/* Return the address of char position N.  */
+
+INLINE unsigned char *
+CHAR_POS_ADDR (ptrdiff_t n)
+{
+  return ((n < GPT ? 0 : GAP_SIZE)
+	  + buf_charpos_to_bytepos (current_buffer, n)
+	  + BEG_ADDR - BEG_BYTE);
+}
+
+/* Convert a character position to a byte position.  */
+
+INLINE ptrdiff_t
+CHAR_TO_BYTE (ptrdiff_t charpos)
+{
+  return buf_charpos_to_bytepos (current_buffer, charpos);
+}
+
+/* Convert a byte position to a character position.  */
+
+INLINE ptrdiff_t
+BYTE_TO_CHAR (ptrdiff_t bytepos)
+{
+  return buf_bytepos_to_charpos (current_buffer, bytepos);
+}
+
+/* Convert PTR, the address of a byte in the buffer, into a byte position.  */
+
+INLINE ptrdiff_t
+PTR_BYTE_POS (unsigned char const *ptr)
+{
+  ptrdiff_t byte = ptr - current_buffer->text->beg;
+  return byte - (byte <= GPT_BYTE - BEG_BYTE ? 0 : GAP_SIZE) + BEG_BYTE;
 }
 
 /* Number of Lisp_Objects at the beginning of struct buffer.
    If you add, remove, or reorder Lisp_Objects within buffer
    structure, make sure that this is still correct.  */
 
-#define BUFFER_LISP_SIZE						\
-  ((offsetof (struct buffer, own_text) - header_size) / word_size)
+enum { BUFFER_LISP_SIZE = PSEUDOVECSIZE (struct buffer,
+					 cursor_in_non_selected_windows_) };
 
-/* Size of the struct buffer part beyond leading Lisp_Objects, in word_size
-   units.  Rounding is needed for --with-wide-int configuration.  */
+/* Allocated size of the struct buffer part beyond leading
+   Lisp_Objects, in word_size units.  */
 
-#define BUFFER_REST_SIZE						\
-  ((((sizeof (struct buffer) - offsetof (struct buffer, own_text))	\
-     + (word_size - 1)) & ~(word_size - 1)) / word_size)
+enum { BUFFER_REST_SIZE = VECSIZE (struct buffer) - BUFFER_LISP_SIZE };
 
 /* Initialize the pseudovector header of buffer object.  BUFFER_LISP_SIZE
    is required for GC, but BUFFER_REST_SIZE is set up just to be consistent
    with other pseudovectors.  */
 
-#define BUFFER_PVEC_INIT(b)                                    \
-  XSETPVECTYPESIZE (b, PVEC_BUFFER, BUFFER_LISP_SIZE, BUFFER_REST_SIZE)
+INLINE void
+BUFFER_PVEC_INIT (struct buffer *b)
+{
+  XSETPVECTYPESIZE (b, PVEC_BUFFER, BUFFER_LISP_SIZE, BUFFER_REST_SIZE);
+}
 
 /* Convenient check whether buffer B is live.  */
 
-#define BUFFER_LIVE_P(b) (!NILP (BVAR (b, name)))
+INLINE bool
+BUFFER_LIVE_P (struct buffer *b)
+{
+  return !NILP (BVAR (b, name));
+}
 
 /* Convenient check whether buffer B is hidden (i.e. its name
    starts with a space).  Caller must ensure that B is live.  */
 
-#define BUFFER_HIDDEN_P(b) (SREF (BVAR (b, name), 0) == ' ')
+INLINE bool
+BUFFER_HIDDEN_P (struct buffer *b)
+{
+  return SREF (BVAR (b, name), 0) == ' ';
+}
 
 /* Verify indirection counters.  */
 
-#define BUFFER_CHECK_INDIRECTION(b)			\
-  do {							\
-    if (BUFFER_LIVE_P (b))				\
-      {							\
-	if (b->base_buffer)				\
-	  {						\
-	    eassert (b->indirections == -1);		\
-	    eassert (b->base_buffer->indirections > 0);	\
-	  }						\
-	else						\
-	  eassert (b->indirections >= 0);		\
-      }							\
-  } while (false)
+INLINE void
+BUFFER_CHECK_INDIRECTION (struct buffer *b)
+{
+  if (BUFFER_LIVE_P (b))
+    {
+      if (b->base_buffer)
+	{
+	  eassert (b->indirections == -1);
+	  eassert (b->base_buffer->indirections > 0);
+	}
+      else
+	eassert (b->indirections >= 0);
+    }
+}
 
 /* Chain of all buffers, including killed ones.  */
 
@@ -1033,10 +1112,6 @@ extern struct buffer *all_buffers;
 
 #define FOR_EACH_BUFFER(b) \
   for ((b) = all_buffers; (b); (b) = (b)->next)
-
-/* This points to the current buffer.  */
-
-extern struct buffer *current_buffer;
 
 /* This structure holds the default values of the buffer-local variables
    that have special slots in each buffer.
@@ -1068,6 +1143,12 @@ extern struct buffer buffer_local_flags;
    that don't have such names.  */
 
 extern struct buffer buffer_local_symbols;
+
+/* verify_interval_modification saves insertion hooks here
+   to be run later by report_interval_modification.  */
+extern Lisp_Object interval_insert_behind_hooks;
+extern Lisp_Object interval_insert_in_front_hooks;
+
 
 extern void delete_all_overlays (struct buffer *);
 extern void reset_buffer (struct buffer *);
@@ -1080,6 +1161,7 @@ extern void recenter_overlay_lists (struct buffer *, ptrdiff_t);
 extern ptrdiff_t overlay_strings (ptrdiff_t, struct window *, unsigned char **);
 extern void validate_region (Lisp_Object *, Lisp_Object *);
 extern void set_buffer_internal_1 (struct buffer *);
+extern void set_buffer_internal_2 (struct buffer *);
 extern void set_buffer_temp (struct buffer *);
 extern Lisp_Object buffer_local_value (Lisp_Object, Lisp_Object);
 extern void record_buffer (Lisp_Object);
@@ -1123,7 +1205,9 @@ record_unwind_current_buffer (void)
 
 /* Get overlays at POSN into array OVERLAYS with NOVERLAYS elements.
    If NEXTP is non-NULL, return next overlay there.
-   See overlay_at arg CHANGE_REQ for meaning of CHRQ arg.  */
+   See overlay_at arg CHANGE_REQ for meaning of CHRQ arg.
+   This macro might evaluate its args multiple times,
+   and it treat some args as lvalues.  */
 
 #define GET_OVERLAYS_AT(posn, overlays, noverlays, nextp, chrq)		\
   do {									\
@@ -1141,12 +1225,6 @@ record_unwind_current_buffer (void)
   } while (false)
 
 extern Lisp_Object Vbuffer_alist;
-extern Lisp_Object Qbefore_change_functions;
-extern Lisp_Object Qafter_change_functions;
-extern Lisp_Object Qfirst_change_hook;
-extern Lisp_Object Qpriority, Qbefore_string, Qafter_string;
-extern Lisp_Object Qchoice, Qrange, Qleft, Qright;
-extern Lisp_Object Qvertical_scroll_bar, Qhorizontal_scroll_bar;
 
 /* FOR_EACH_LIVE_BUFFER (LIST_VAR, BUF_VAR) followed by a statement is
    a `for' loop which iterates over the buffers from Vbuffer_alist.  */
@@ -1179,26 +1257,19 @@ buffer_has_overlays (void)
 {
   return current_buffer->overlays_before || current_buffer->overlays_after;
 }
+
+/* Functions for accessing a character or byte,
+   or converting between byte positions and addresses,
+   in a specified buffer.  */
 
 /* Return character code of multi-byte form at byte position POS.  If POS
    doesn't point the head of valid multi-byte form, only the byte at
-   POS is returned.  No range checking.
-
-   WARNING: The character returned by this macro could be "unified"
-   inside STRING_CHAR, if the original character in the buffer belongs
-   to one of the Private Use Areas (PUAs) of codepoints that Emacs
-   uses to support non-unified CJK characters.  If that happens,
-   CHAR_BYTES will return a value that is different from the length of
-   the original multibyte sequence stored in the buffer.  Therefore,
-   do _not_ use FETCH_MULTIBYTE_CHAR if you need to advance through
-   the buffer to the next character after fetching this one.  Instead,
-   use either FETCH_CHAR_ADVANCE or STRING_CHAR_AND_LENGTH.  */
+   POS is returned.  No range checking.  */
 
 INLINE int
 FETCH_MULTIBYTE_CHAR (ptrdiff_t pos)
 {
-  unsigned char *p = ((pos >= GPT_BYTE ? GAP_SIZE : 0)
-		      + pos + BEG_ADDR - BEG_BYTE);
+  unsigned char *p = BYTE_POS_ADDR (pos);
   return STRING_CHAR (p);
 }
 
@@ -1213,6 +1284,80 @@ BUF_FETCH_MULTIBYTE_CHAR (struct buffer *buf, ptrdiff_t pos)
     = ((pos >= BUF_GPT_BYTE (buf) ? BUF_GAP_SIZE (buf) : 0)
        + pos + BUF_BEG_ADDR (buf) - BEG_BYTE);
   return STRING_CHAR (p);
+}
+
+/* Return character at byte position POS.
+   If the current buffer is unibyte and the character is not ASCII,
+   make the returning character multibyte.  */
+
+INLINE int
+FETCH_CHAR_AS_MULTIBYTE (ptrdiff_t pos)
+{
+  return (!NILP (BVAR (current_buffer, enable_multibyte_characters))
+	  ? FETCH_MULTIBYTE_CHAR (pos)
+	  : UNIBYTE_TO_CHAR (FETCH_BYTE (pos)));
+}
+
+/* Return character at byte position POS.
+   See the caveat WARNING for FETCH_MULTIBYTE_CHAR above.  */
+
+INLINE int
+FETCH_CHAR (ptrdiff_t pos)
+{
+  return (!NILP (BVAR (current_buffer, enable_multibyte_characters))
+	  ? FETCH_MULTIBYTE_CHAR (pos)
+	  : FETCH_BYTE (pos));
+}
+
+/* Return the address of character at byte position POS in buffer BUF.
+   Note that both arguments can be computed more than once.  */
+
+INLINE unsigned char *
+BUF_BYTE_ADDRESS (struct buffer *buf, ptrdiff_t pos)
+{
+  return (buf->text->beg + pos - BEG_BYTE
+	  + (pos < buf->text->gpt_byte ? 0 : buf->text->gap_size));
+}
+
+/* Return the address of character at char position POS in buffer BUF.
+   Note that both arguments can be computed more than once.  */
+
+INLINE unsigned char *
+BUF_CHAR_ADDRESS (struct buffer *buf, ptrdiff_t pos)
+{
+  return (buf->text->beg + buf_charpos_to_bytepos (buf, pos) - BEG_BYTE
+	  + (pos < buf->text->gpt ? 0 : buf->text->gap_size));
+}
+
+/* Convert PTR, the address of a char in buffer BUF,
+   into a character position.  */
+
+INLINE ptrdiff_t
+BUF_PTR_BYTE_POS (struct buffer *buf, unsigned char *ptr)
+{
+  ptrdiff_t byte = ptr - buf->text->beg;
+  return (byte - (byte <= BUF_GPT_BYTE (buf) - BEG_BYTE ? 0 : BUF_GAP_SIZE (buf))
+	  + BEG_BYTE);
+}
+
+/* Return the byte at byte position N in buffer BUF.   */
+
+INLINE unsigned char
+BUF_FETCH_BYTE (struct buffer *buf, ptrdiff_t n)
+{
+  return *BUF_BYTE_ADDRESS (buf, n);
+}
+
+/* Return character at byte position POS in buffer BUF.  If BUF is
+   unibyte and the character is not ASCII, make the returning
+   character multibyte.  */
+
+INLINE int
+BUF_FETCH_CHAR_AS_MULTIBYTE (struct buffer *buf, ptrdiff_t pos)
+{
+  return (! NILP (BVAR (buf, enable_multibyte_characters))
+	  ? BUF_FETCH_MULTIBYTE_CHAR (buf, pos)
+	  : UNIBYTE_TO_CHAR (BUF_FETCH_BYTE (buf, pos)));
 }
 
 /* Return number of windows showing B.  */
@@ -1243,23 +1388,22 @@ buffer_window_count (struct buffer *b)
 /* Return the actual buffer position for the marker P.
    We assume you know which buffer it's pointing into.  */
 
-#define OVERLAY_POSITION(P) \
- (MARKERP (P) ? marker_position (P) : (emacs_abort (), 0))
+INLINE ptrdiff_t
+OVERLAY_POSITION (Lisp_Object p)
+{
+  return marker_position (p);
+}
 
 
 /***********************************************************************
 			Buffer-local Variables
  ***********************************************************************/
 
-/* Number of per-buffer variables used.  */
-
-extern int last_per_buffer_idx;
-
 /* Return the offset in bytes of member VAR of struct buffer
    from the start of a buffer structure.  */
 
 #define PER_BUFFER_VAR_OFFSET(VAR) \
-  offsetof (struct buffer, INTERNAL_FIELD (VAR))
+  offsetof (struct buffer, VAR ## _)
 
 /* Used to iterate over normal Lisp_Object fields of struct buffer (all
    Lisp_Objects except undo_list).  If you add, remove, or reorder
@@ -1279,23 +1423,27 @@ extern int last_per_buffer_idx;
 #define PER_BUFFER_VAR_IDX(VAR) \
     PER_BUFFER_IDX (PER_BUFFER_VAR_OFFSET (VAR))
 
+extern bool valid_per_buffer_idx (int);
+
 /* Value is true if the variable with index IDX has a local value
    in buffer B.  */
 
-#define PER_BUFFER_VALUE_P(B, IDX)		\
-    (((IDX) < 0 || IDX >= last_per_buffer_idx)	\
-     ? (emacs_abort (), false)			\
-     : ((B)->local_flags[IDX] != 0))
+INLINE bool
+PER_BUFFER_VALUE_P (struct buffer *b, int idx)
+{
+  eassert (valid_per_buffer_idx (idx));
+  return b->local_flags[idx];
+}
 
 /* Set whether per-buffer variable with index IDX has a buffer-local
    value in buffer B.  VAL zero means it hasn't.  */
 
-#define SET_PER_BUFFER_VALUE_P(B, IDX, VAL)	\
-     do {						\
-       if ((IDX) < 0 || (IDX) >= last_per_buffer_idx)	\
-	 emacs_abort ();				\
-       (B)->local_flags[IDX] = (VAL);			\
-     } while (false)
+INLINE void
+SET_PER_BUFFER_VALUE_P (struct buffer *b, int idx, bool val)
+{
+  eassert (valid_per_buffer_idx (idx));
+  b->local_flags[idx] = val;
+}
 
 /* Return the index value of the per-buffer variable at offset OFFSET
    in the buffer structure.
@@ -1315,11 +1463,13 @@ extern int last_per_buffer_idx;
    new buffer.
 
    If a slot in this structure corresponding to a DEFVAR_PER_BUFFER is
-   zero, that is a bug */
+   zero, that is a bug.  */
 
-
-#define PER_BUFFER_IDX(OFFSET) \
-      XINT (*(Lisp_Object *)((OFFSET) + (char *) &buffer_local_flags))
+INLINE int
+PER_BUFFER_IDX (ptrdiff_t offset)
+{
+  return XFIXNUM (*(Lisp_Object *) (offset + (char *) &buffer_local_flags));
+}
 
 /* Functions to get and set default value of the per-buffer
    variable at offset OFFSET in the buffer structure.  */
@@ -1357,29 +1507,32 @@ downcase (int c)
 {
   Lisp_Object downcase_table = BVAR (current_buffer, downcase_table);
   Lisp_Object down = CHAR_TABLE_REF (downcase_table, c);
-  return NATNUMP (down) ? XFASTINT (down) : c;
+  return FIXNATP (down) ? XFIXNAT (down) : c;
 }
 
-/* True if C is upper case.  */
-INLINE bool uppercasep (int c) { return downcase (c) != c; }
-
-/* Upcase a character C known to be not upper case.  */
+/* Upcase a character C, or make no change if that cannot be done. */
 INLINE int
-upcase1 (int c)
+upcase (int c)
 {
   Lisp_Object upcase_table = BVAR (current_buffer, upcase_table);
   Lisp_Object up = CHAR_TABLE_REF (upcase_table, c);
-  return NATNUMP (up) ? XFASTINT (up) : c;
+  return FIXNATP (up) ? XFIXNAT (up) : c;
+}
+
+/* True if C is upper case.  */
+INLINE bool
+uppercasep (int c)
+{
+  return downcase (c) != c;
 }
 
 /* True if C is lower case.  */
 INLINE bool
 lowercasep (int c)
 {
-  return !uppercasep (c) && upcase1 (c) != c;
+  return !uppercasep (c) && upcase (c) != c;
 }
 
-/* Upcase a character C, or make no change if that cannot be done.  */
-INLINE int upcase (int c) { return uppercasep (c) ? c : upcase1 (c); }
-
 INLINE_HEADER_END
+
+#endif /* EMACS_BUFFER_H */

@@ -1,6 +1,6 @@
 ;;; two-column.el --- minor mode for editing of two-column text
 
-;; Copyright (C) 1992-1995, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992-1995, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Daniel Pfeiffer <occitan@esperanto.org>
 ;; Adapted-By: ESR, Daniel Pfeiffer
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -373,9 +373,8 @@ First column's text    sSs  Second column's text
 \(See  \\[describe-mode] .)"
   (interactive "*p")
   (and (2C-other)
-       (if (y-or-n-p (concat "Overwrite associated buffer `"
-			     (buffer-name (2C-other))
-			     "'? "))
+       (if (y-or-n-p (format-message "Overwrite associated buffer `%s'? "
+				     (buffer-name (2C-other))))
 	   (with-current-buffer (2C-other)
 	     (erase-buffer))
 	 (signal 'quit nil)))

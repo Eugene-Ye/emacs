@@ -1,6 +1,6 @@
 @c -*-texinfo-*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1997-2014 Free Software Foundation, Inc.
+@c Copyright (C) 1997--2020 Free Software Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Customization
 @chapter Customization Settings
@@ -66,9 +66,12 @@ cause confusion.}
 
 @kindex group@r{, customization keyword}
 @item :group @var{group}
-Put this customization item in group @var{group}.  When you use
-@code{:group} in a @code{defgroup}, it makes the new group a subgroup of
-@var{group}.
+Put this customization item in group @var{group}.  If this keyword is
+missing from a customization item, it'll be placed in the same group
+that was last defined (in the current file).
+
+When you use @code{:group} in a @code{defgroup}, it makes the new
+group a subgroup of @var{group}.
 
 If you use this keyword more than once, you can put a single item into
 more than one group.  Displaying any of those groups will show this
@@ -254,6 +257,13 @@ customizable variable @code{custom-unlispify-remove-prefixes} is
 non-@code{nil}, the item's tag will omit @var{prefix}.  A group can
 have any number of prefixes.
 @end table
+
+@cindex @code{custom-group} property
+The variables and subgroups of a group are stored in the
+@code{custom-group} property of the group's symbol.  @xref{Symbol
+Plists}.  The value of that property is a list of pairs whose
+@code{car} is the variable or subgroup symbol and the @code{cdr} is
+either @code{custom-variable} or @code{custom-group}.
 @end defmac
 
 @defopt custom-unlispify-remove-prefixes
@@ -311,6 +321,7 @@ If a @code{defcustom} does not specify any @code{:group}, the last group
 defined with @code{defgroup} in the same file will be used.  This way, most
 @code{defcustom} do not need an explicit @code{:group}.
 
+@cindex @code{eval-defun}, and @code{defcustom} forms
 When you evaluate a @code{defcustom} form with @kbd{C-M-x} in Emacs Lisp
 mode (@code{eval-defun}), a special feature of @code{eval-defun}
 arranges to set the variable unconditionally, without testing whether
@@ -334,7 +345,8 @@ macro accepts the following keywords:
 @item :type @var{type}
 Use @var{type} as the data type for this option.  It specifies which
 values are legitimate, and how to display the value
-(@pxref{Customization Types}).
+(@pxref{Customization Types}).  Every @code{defcustom} should specify
+a value for this keyword.
 
 @item :options @var{value-list}
 @kindex options@r{, @code{defcustom} keyword}
@@ -365,7 +377,7 @@ should describe how to do the same job in hand-written Lisp code.
 Specify @var{getfunction} as the way to extract the value of this
 option.  The function @var{getfunction} should take one argument, a
 symbol, and should return whatever customize should use as the
-``current value'' for that symbol (which need not be the symbol's Lisp
+current value for that symbol (which need not be the symbol's Lisp
 value).  The default is @code{default-value}.
 
 You have to really understand the workings of Custom to use
@@ -405,21 +417,21 @@ Use the @code{:set} function to initialize the variable, if it is
 already set or has been customized; otherwise, just use
 @code{set-default}.
 
-@item custom-initialize-safe-set
-@itemx custom-initialize-safe-default
-These functions behave like @code{custom-initialize-set}
-(@code{custom-initialize-default}, respectively), but catch errors.
-If an error occurs during initialization, they set the variable to
-@code{nil} using @code{set-default}, and signal no error.
-
-These functions are meant for options defined in pre-loaded files,
-where the @var{standard} expression may signal an error because some
-required variable or function is not yet defined.  The value normally
-gets updated in @file{startup.el}, ignoring the value computed by
-@code{defcustom}.  After startup, if one unsets the value and
-reevaluates the @code{defcustom}, the @var{standard} expression can be
-evaluated without error.
+@item custom-initialize-delay
+This function behaves like @code{custom-initialize-set}, but it
+delays the actual initialization to the next Emacs start.  This should
+be used in files that are preloaded (or for autoloaded variables), so
+that the initialization is done in the run-time context rather than
+the build-time context.  This also has the side-effect that the
+(delayed) initialization is performed with the @code{:set} function.
+@xref{Building Emacs}.
 @end table
+
+@item :local @var{value}
+@kindex local@r{, @code{defcustom} keyword}
+If the @var{value} is @code{t}, mark @var{option} as automatically
+buffer-local; if the value is @code{permanent}, also set @var{option}s
+@code{permanent-local} property to @code{t}.  @xref{Creating Buffer-Local}.
 
 @item :risky @var{value}
 @kindex risky@r{, @code{defcustom} keyword}
@@ -441,17 +453,16 @@ those other variables already have their intended values.
 @end table
 
   It is useful to specify the @code{:require} keyword for an option
-that ``turns on'' a certain feature.  This causes Emacs to load the
+that turns on a certain feature.  This causes Emacs to load the
 feature, if it is not already loaded, whenever the option is set.
-@xref{Common Keywords}.  Here is an example, from the library
-@file{saveplace.el}:
+@xref{Common Keywords}.  Here is an example:
 
 @example
-(defcustom save-place nil
-  "Non-nil means automatically save place in each file..."
+(defcustom frobnicate-automatically nil
+  "Non-nil means automatically frobnicate all buffers."
   :type 'boolean
-  :require 'saveplace
-  :group 'save-place)
+  :require 'frobnicate-mode
+  :group 'frobnicate)
 @end example
 
 If a customization item has a type such as @code{hook} or
@@ -481,8 +492,10 @@ Internally, @code{defcustom} uses the symbol property
 @code{saved-value} to record the value saved by the user with the
 customization buffer, and @code{customized-value} to record the value
 set by the user with the customization buffer, but not saved.
-@xref{Symbol Properties}.  These properties are lists, the car of
-which is an expression that evaluates to the value.
+@xref{Symbol Properties}.  In addition, there's @code{themed-value},
+which is used to record the value set by a theme (@pxref{Custom
+Themes}).  These properties are lists, the car of which is an
+expression that evaluates to the value.
 
 @defun custom-reevaluate-setting symbol
 This function re-evaluates the standard value of @var{symbol}, which
@@ -595,7 +608,7 @@ The value must be a file name for an existing file.  The widget
 provides completion.
 
 @item directory
-The value must be a directory name.  The widget provides completion.
+The value must be a directory.  The widget provides completion.
 
 @item hook
 The value must be a list of functions.  This customization type is
@@ -723,7 +736,7 @@ simply atoms, which stand for themselves.  For example:
 @end example
 
 @noindent
-specifies that there are three ``known'' keys, namely @code{"foo"},
+specifies that there are three known keys, namely @code{"foo"},
 @code{"bar"} and @code{"baz"}, which will always be shown first.
 
 You may want to restrict the value type for specific keys, for
@@ -840,9 +853,10 @@ most general last.  Here's an example of proper usage:
 This way, the special value @code{nil} is not treated like other
 symbols, and symbols are not treated like other Lisp expressions.
 
+@cindex radio, customization types
 @item (radio @var{element-types}@dots{})
 This is similar to @code{choice}, except that the choices are displayed
-using `radio buttons' rather than a menu.  This has the advantage of
+using radio buttons rather than a menu.  This has the advantage of
 displaying documentation for the choices when applicable and so is often
 a good choice for a choice between constant functions
 (@code{function-item} customization types).
@@ -935,6 +949,7 @@ The value must be a list and each element of the list must fit the type
 list of elements, with @samp{[INS]} and @samp{[DEL]} buttons for adding
 more elements or removing elements.
 
+@cindex restricted-sexp, customization types
 @item (restricted-sexp :match-alternatives @var{criteria})
 This is the most general composite type construct.  The value may be
 any Lisp object that satisfies one of @var{criteria}.  @var{criteria}
@@ -943,10 +958,10 @@ possibilities:
 
 @itemize @bullet
 @item
-A predicate---that is, a function of one argument that has no side
-effects, and returns either @code{nil} or non-@code{nil} according to
-the argument.  Using a predicate in the list says that objects for which
-the predicate returns non-@code{nil} are acceptable.
+A predicate---that is, a function of one argument that returns either
+@code{nil} or non-@code{nil} according to the argument.  Using a
+predicate in the list says that objects for which the predicate
+returns non-@code{nil} are acceptable.
 
 @item
 A quoted constant---that is, @code{'@var{object}}.  This sort of element
@@ -1019,6 +1034,7 @@ and whose remaining arguments should be zero or more of @code{foo} and
 This matches values such as @code{(baz)}, @code{(baz foo)}, @code{(baz bar)}
 and @code{(baz foo bar)}.
 
+@cindex choice, customization types
   When the element-type is a @code{choice}, you use @code{:inline} not
 in the @code{choice} itself, but in (some of) the alternatives of the
 @code{choice}.  For example, to match a list which must start with a
@@ -1036,6 +1052,9 @@ If the user chooses the first alternative in the choice, then the
 overall list has two elements and the second element is @code{t}.  If
 the user chooses the second alternative, then the overall list has three
 elements and the second and third must be strings.
+
+  The widgets can specify predicates to say whether an inline value
+matches the widget with the @code{:match-inline} element.
 
 @node Type Keywords
 @subsection Type Keywords
@@ -1155,6 +1174,14 @@ corresponding value, @var{function}, should be a function that accepts
 two arguments, a widget and a value; it should return non-@code{nil} if
 the value is acceptable.
 
+@item :match-inline @var{function}
+@kindex match-inline@r{, customization keyword}
+Specify how to decide whether an inline value matches the type.  The
+corresponding value, @var{function}, should be a function that accepts
+two arguments, a widget and an inline value; it should return
+non-@code{nil} if the value is acceptable.  See @ref{Splicing into
+Lists} for more information about inline values.
+
 @item :validate @var{function}
 Specify a validation function for input.  @var{function} takes a
 widget as an argument, and should return @code{nil} if the widget's
@@ -1227,6 +1254,8 @@ arguments, which will be used when creating the @code{radio-button} or
 
 @node Defining New Types
 @subsection Defining New Types
+@cindex customization types, define new
+@cindex define new customization types
 
 In the previous sections we have described how to construct elaborate
 type specifications for @code{defcustom}.  In some cases you may want
@@ -1296,6 +1325,7 @@ its @code{:type} argument only when needed.
 
 @node Applying Customizations
 @section Applying Customizations
+@cindex applying customizations
 
 The following functions are responsible for installing the user's
 customization settings for variables and faces, respectively.  When
@@ -1353,6 +1383,7 @@ evaluated.  @var{comment} is a string describing the customization.
 @node Custom Themes
 @section Custom Themes
 
+@cindex custom themes
   @dfn{Custom themes} are collections of settings that can be enabled
 or disabled as a unit.  @xref{Custom Themes,,, emacs, The GNU Emacs
 Manual}.  Each Custom theme is defined by an Emacs Lisp source file,
@@ -1374,8 +1405,8 @@ the theme; this is the description shown when the user invokes the
 Themes*} buffer.
 
 Two special theme names are disallowed (using them causes an error):
-@code{user} is a ``dummy'' theme that stores the user's direct
-customization settings, and @code{changed} is a ``dummy'' theme that
+@code{user} is a dummy theme that stores the user's direct
+customization settings, and @code{changed} is a dummy theme that
 stores changes made outside of the Customize system.
 @end defmac
 
@@ -1418,10 +1449,12 @@ where the list entries have the same meanings as in
 @end defun
 
   In theory, a theme file can also contain other Lisp forms, which
-would be evaluated when loading the theme, but that is ``bad form''.
+would be evaluated when loading the theme, but that is bad form.
 To protect against loading themes containing malicious code, Emacs
 displays the source file and asks for confirmation from the user
-before loading any non-built-in theme for the first time.
+before loading any non-built-in theme for the first time.  As
+such, themes are not ordinarily byte-compiled, and source files
+always take precedence when Emacs is looking for a theme to load.
 
   The following functions are useful for programmatically enabling and
 disabling themes:
@@ -1436,7 +1469,7 @@ it returns @code{nil}.
 @defvar custom-known-themes
 The value of this variable is a list of themes loaded into Emacs.
 Each theme is represented by a Lisp symbol (the theme name).  The
-default value of this variable is a list containing two ``dummy''
+default value of this variable is a list containing two dummy
 themes: @code{(user changed)}.  The @code{changed} theme stores
 settings made before any Custom themes are applied (e.g., variables
 set outside of Customize).  The @code{user} theme stores settings the

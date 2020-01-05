@@ -1,6 +1,6 @@
-;;; morse.el --- convert text to morse code and back             -*- coding: utf-8 -*-
+;;; morse.el --- convert text to morse code and back  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1995, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Rick Farnbach <rick_farnbach@MENTORG.COM>
 ;; Keywords: games
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -144,7 +144,7 @@
 			(")" . "Close")
 			("@" . "At"))
   "NATO phonetic alphabet.
-See ''International Code of Signals'' (INTERCO), United States
+See “International Code of Signals” (INTERCO), United States
 Edition, 1969 Edition (Revised 2003) available from National
 Geospatial-Intelligence Agency at URL `http://www.nga.mil/'")
 

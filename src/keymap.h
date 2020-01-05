@@ -1,12 +1,12 @@
 /* Functions to manipulate keymaps.
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,10 +14,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #ifndef KEYMAP_H
 #define KEYMAP_H
+
+#include "lisp.h"
 
 /* The maximum byte size consumed by push_key_description.
    All callers should assure that at least this size of memory is
@@ -30,9 +32,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #define KEY_DESCRIPTION_SIZE ((2 * 6) + 1 + (CHARACTERBITS / 3) + 1 + 1)
 
 #define KEYMAPP(m) (!NILP (get_keymap (m, false, false)))
-extern Lisp_Object Qkeymap, Qmenu_bar;
-extern Lisp_Object Qremap;
-extern Lisp_Object Qmenu_item;
 extern Lisp_Object current_global_map;
 extern char *push_key_description (EMACS_INT, char *);
 extern Lisp_Object access_keymap (Lisp_Object, Lisp_Object, bool, bool, bool);

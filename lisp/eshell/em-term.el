@@ -1,6 +1,6 @@
 ;;; em-term.el --- running visual commands  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -40,7 +40,7 @@
 ;;;###autoload
 (progn
 (defgroup eshell-term nil
-  "This module causes visual commands (e.g., 'vi') to be executed by
+  "This module causes visual commands (e.g., `vi') to be executed by
 the `term' package, which comes with Emacs.  This package handles most
 of the ANSI control codes, allowing curses-based applications to run
 within an Emacs window.  The variable `eshell-visual-commands' defines
@@ -53,22 +53,21 @@ which commands are considered visual in nature."
 (defcustom eshell-term-load-hook nil
   "A list of functions to call when loading `eshell-term'."
   :version "24.1"			; removed eshell-term-initialize
-  :type 'hook
-  :group 'eshell-term)
+  :type 'hook)
 
 (defcustom eshell-visual-commands
   '("vi"                                ; what is going on??
-    "screen" "top"                      ; ok, a valid program...
+    "screen" "tmux" "top" "htop"        ; ok, a valid program...
     "less" "more"                       ; M-x view-file
-    "lynx" "ncftp"                      ; w3.el, ange-ftp
-    "pine" "tin" "trn" "elm")           ; GNUS!!
+    "lynx" "links" "ncftp"              ; eww, ange-ftp
+    "mutt" "pine" "tin" "trn" "elm")    ; GNUS!!
   "A list of commands that present their output in a visual fashion.
 
 Commands listed here are run in a term buffer.
 
 See also `eshell-visual-subcommands' and `eshell-visual-options'."
   :type '(repeat string)
-  :group 'eshell-term)
+  :version "27.1")
 
 (defcustom eshell-visual-subcommands
   nil
@@ -89,8 +88,7 @@ because git shows logs and diffs using a pager by default.
 See also `eshell-visual-commands' and `eshell-visual-options'."
   :type '(repeat (cons (string :tag "Command")
 		       (repeat (string :tag "Subcommand"))))
-  :version "24.4"
-  :group 'eshell-term)
+  :version "24.4")
 
 (defcustom eshell-visual-options
   nil
@@ -102,16 +100,16 @@ See also `eshell-visual-commands' and `eshell-visual-options'."
 of commands with options that present their output in a visual
 fashion.  For example, a sensible entry would be
 
-  (\"git\" \"--help\")
+  (\"git\" \"--help\" \"--paginate\")
 
 because \"git <command> --help\" shows the command's
-documentation with a pager.
+documentation with a pager and \"git --paginate <command>\"
+always uses a pager for output.
 
 See also `eshell-visual-commands' and `eshell-visual-subcommands'."
   :type '(repeat (cons (string :tag "Command")
 		       (repeat (string :tag "Option"))))
-  :version "24.4"
-  :group 'eshell-term)
+  :version "24.4")
 
 ;; If you change this from term-term-name, you need to ensure that the
 ;; value you choose exists in the system's terminfo database.  (Bug#12485)
@@ -120,8 +118,7 @@ See also `eshell-visual-commands' and `eshell-visual-subcommands'."
 See `term-term-name' in term.el for more information on how this is
 used."
   :version "24.3"	       ; eterm -> term-term-name = eterm-color
-  :type 'string
-  :group 'eshell-term)
+  :type 'string)
 
 (defcustom eshell-escape-control-x t
   "If non-nil, allow <C-x> to be handled by Emacs key in visual buffers.
@@ -129,8 +126,14 @@ See the variables `eshell-visual-commands',
 `eshell-visual-subcommands', and `eshell-visual-options'.  If
 this variable is set to nil, <C-x> will send that control
 character to the invoked process."
-  :type 'boolean
-  :group 'eshell-term)
+  :type 'boolean)
+
+(defcustom eshell-destroy-buffer-when-process-dies nil
+  "If non-nil, term buffers are destroyed after their processes die.
+WARNING: Setting this to non-nil may result in unexpected
+behavior for short-lived processes, see bug#18108."
+  :version "25.1"
+  :type 'boolean)
 
 ;;; Internal Variables:
 
@@ -138,7 +141,7 @@ character to the invoked process."
 
 ;;; Functions:
 
-(defun eshell-term-initialize ()
+(defun eshell-term-initialize ()    ;Called from `eshell-mode' via intern-soft!
   "Initialize the `term' interface code."
   (make-local-variable 'eshell-interpreter-alist)
   (setq eshell-interpreter-alist
@@ -147,7 +150,7 @@ character to the invoked process."
 	      eshell-interpreter-alist)))
 
 (defun eshell-visual-command-p (command args)
-  "Returns non-nil when given a visual command.
+  "Return non-nil when given a visual command.
 If either COMMAND or a subcommand in ARGS (e.g. git log) is a
 visual command, returns non-nil."
   (let ((command (file-name-nondirectory command)))
@@ -166,7 +169,7 @@ allowed."
   (let* (eshell-interpreter-alist
 	 (interp (eshell-find-interpreter (car args) (cdr args)))
 	 (program (car interp))
-	 (args (eshell-flatten-list
+	 (args (flatten-tree
 		(eshell-stringify-list (append (cdr interp)
 					       (cdr args)))))
 	 (term-buf
@@ -182,7 +185,7 @@ allowed."
       (term-exec term-buf program program nil args)
       (let ((proc (get-buffer-process term-buf)))
 	(if (and proc (eq 'run (process-status proc)))
-	    (set-process-sentinel proc 'eshell-term-sentinel)
+	    (set-process-sentinel proc #'eshell-term-sentinel)
 	  (error "Failed to invoke visual command")))
       (term-char-mode)
       (if eshell-escape-control-x
@@ -190,20 +193,24 @@ allowed."
   nil)
 
 ;; Process sentinels receive two arguments.
-(defun eshell-term-sentinel (proc _string)
-  "Destroy the buffer visiting PROC."
-  (let ((proc-buf (process-buffer proc)))
-    (when (and proc-buf (buffer-live-p proc-buf)
-	       (not (eq 'run (process-status proc)))
-	       (= (process-exit-status proc) 0))
-      (if (eq (current-buffer) proc-buf)
-	  (let ((buf (and (boundp 'eshell-parent-buffer)
-			  eshell-parent-buffer
-			  (buffer-live-p eshell-parent-buffer)
-			  eshell-parent-buffer)))
-	    (if buf
-		(switch-to-buffer buf))))
-      (kill-buffer proc-buf))))
+(defun eshell-term-sentinel (proc msg)
+  "Clean up the buffer visiting PROC.
+If `eshell-destroy-buffer-when-process-dies' is non-nil, destroy
+the buffer."
+  (term-sentinel proc msg) ;; First call the normal term sentinel.
+  (when eshell-destroy-buffer-when-process-dies
+    (let ((proc-buf (process-buffer proc)))
+      (when (and proc-buf (buffer-live-p proc-buf)
+                 (not (eq 'run (process-status proc)))
+                 (= (process-exit-status proc) 0))
+        (if (eq (current-buffer) proc-buf)
+            (let ((buf (and (boundp 'eshell-parent-buffer)
+                            eshell-parent-buffer
+                            (buffer-live-p eshell-parent-buffer)
+                            eshell-parent-buffer)))
+              (if buf
+                  (switch-to-buffer buf))))
+        (kill-buffer proc-buf)))))
 
 ;; jww (1999-09-17): The code below will allow Eshell to send input
 ;; characters directly to the currently running interactive process.
@@ -251,17 +258,13 @@ allowed."
 ; (defun eshell-term-mouse-paste (click arg)
 ;   "Insert the last stretch of killed text at the position clicked on."
 ;   (interactive "e\nP")
-;   (if (boundp 'xemacs-logo)
-;       (eshell-term-send-raw-string
-;        (or (condition-case () (x-get-selection) (error ()))
-;	   (error "No selection available")))
-;     ;; Give temporary modes such as isearch a chance to turn off.
-;     (run-hooks 'mouse-leave-buffer-hook)
-;     (setq this-command 'yank)
-;     (eshell-term-send-raw-string
-;      (current-kill (cond ((listp arg) 0)
-;			 ((eq arg '-) -1)
-;			 (t (1- arg)))))))
+;   ;; Give temporary modes such as isearch a chance to turn off.
+;   (run-hooks 'mouse-leave-buffer-hook)
+;   (setq this-command 'yank)
+;   (eshell-term-send-raw-string
+;    (current-kill (cond ((listp arg) 0)
+; 		       ((eq arg '-) -1)
+; 		       (t (1- arg))))))
 
 ; ;; Which would be better:  "\e[A" or "\eOA"? readline accepts either.
 ; ;; For my configuration it's definitely better \eOA but YMMV. -mm
@@ -309,9 +312,7 @@ allowed."
 ;	(setq eshell-term-raw-map map)
 ;	(setq eshell-term-raw-escape-map
 ;	      (copy-keymap (lookup-key (current-global-map) "\C-x")))
-;	(if (boundp 'xemacs-logo)
-;	    (define-key eshell-term-raw-map [button2] 'eshell-term-mouse-paste)
-;	  (define-key eshell-term-raw-map [mouse-2] 'eshell-term-mouse-paste))
+;	(define-key eshell-term-raw-map [mouse-2] 'eshell-term-mouse-paste)
 ;	(define-key eshell-term-raw-map [up] 'eshell-term-send-up)
 ;	(define-key eshell-term-raw-map [down] 'eshell-term-send-down)
 ;	(define-key eshell-term-raw-map [right] 'eshell-term-send-right)

@@ -1,8 +1,8 @@
 ;;; ede/emacs.el --- Special project for Emacs
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -33,15 +33,13 @@
 ;; * Add website
 
 (require 'ede)
-(declare-function semanticdb-file-table-object "semantic/db")
-(declare-function semanticdb-needs-refresh-p "semantic/db")
-(declare-function semanticdb-refresh-table "semantic/db")
+(require 'semantic/db)
 
 ;;; Code:
 
 ;; @TODO - get rid of this.  Stuck in loaddefs right now.
 
-(defun ede-emacs-project-root (&optional dir)
+(defun ede-emacs-project-root (&optional _dir)
   "Get the root directory for DIR."
   nil)
 
@@ -99,7 +97,7 @@ m4_define(\\[SXEM4CS_BETA_VERSION\\], \\[\\([0-9]+\\)\\])")
   "Project Type for the Emacs source code."
   :method-invocation-order :depth-first)
 
-(defun ede-emacs-load (dir &optional rootproj)
+(defun ede-emacs-load (dir &optional _rootproj)
   "Return an Emacs Project object if there is a match.
 Return nil if there isn't one.
 Argument DIR is the directory it is created for.
@@ -116,14 +114,14 @@ ROOTPROJ is nil, since there is only one project."
 
 ;;;###autoload
 (ede-add-project-autoload
- (ede-project-autoload "emacs"
-		       :name "EMACS ROOT"
-		       :file 'ede/emacs
-		       :proj-file "src/emacs.c"
-		       :load-type 'ede-emacs-load
-		       :class-sym 'ede-emacs-project
-		       :new-p nil
-		       :safe-p t)
+ (make-instance 'ede-project-autoload
+                :name "EMACS ROOT"
+                :file 'ede/emacs
+                :proj-file "src/emacs.c"
+                :load-type 'ede-emacs-load
+                :class-sym 'ede-emacs-project
+                :new-p nil
+                :safe-p t)
  'unique)
 
 (defclass ede-emacs-target-c (ede-target)
@@ -141,26 +139,26 @@ All directories need at least one target.")
   "EDE Emacs Project target for Misc files.
 All directories need at least one target.")
 
-(defmethod initialize-instance ((this ede-emacs-project)
-				&rest fields)
+(cl-defmethod initialize-instance ((this ede-emacs-project)
+                                   &rest _fields)
   "Make sure the targets slot is bound."
-  (call-next-method)
+  (cl-call-next-method)
   (unless (slot-boundp this 'targets)
     (oset this :targets nil)))
 
 ;;; File Stuff
 ;;
-(defmethod ede-project-root-directory ((this ede-emacs-project)
-				       &optional file)
+(cl-defmethod ede-project-root-directory ((this ede-emacs-project)
+                                          &optional _file)
   "Return the root for THIS Emacs project with file."
   (ede-up-directory (file-name-directory (oref this file))))
 
-(defmethod ede-project-root ((this ede-emacs-project))
+(cl-defmethod ede-project-root ((this ede-emacs-project))
   "Return my root."
   this)
 
-(defmethod ede-find-subproject-for-directory ((proj ede-emacs-project)
-					      dir)
+(cl-defmethod ede-find-subproject-for-directory ((proj ede-emacs-project)
+                                                 _dir)
   "Return PROJ, for handling all subdirs below DIR."
   proj)
 
@@ -171,12 +169,12 @@ All directories need at least one target.")
   (let ((match nil))
     (dolist (T targets)
       (when (and (object-of-class-p T class)
-		 (string= (oref T :path) dir))
+		 (string= (oref T path) dir))
 	(setq match T)
       ))
     match))
 
-(defmethod ede-find-target ((proj ede-emacs-project) buffer)
+(cl-defmethod ede-find-target ((proj ede-emacs-project) buffer)
   "Find an EDE target in PROJ for BUFFER.
 If one doesn't exist, create a new one for this directory."
   (let* ((ext (file-name-extension (buffer-file-name buffer)))
@@ -204,7 +202,7 @@ If one doesn't exist, create a new one for this directory."
 
 ;;; UTILITIES SUPPORT.
 ;;
-(defmethod ede-preprocessor-map ((this ede-emacs-target-c))
+(cl-defmethod ede-preprocessor-map ((this ede-emacs-target-c))
   "Get the pre-processor map for Emacs C code.
 All files need the macros from lisp.h!"
   (require 'semantic/db)
@@ -253,7 +251,7 @@ All files need the macros from lisp.h!"
 	(setq dirs (cdr dirs))))
     ans))
 
-(defmethod ede-expand-filename-impl ((proj ede-emacs-project) name)
+(cl-defmethod ede-expand-filename-impl ((proj ede-emacs-project) name)
   "Within this project PROJ, find the file NAME.
 Knows about how the Emacs source tree is organized."
   (let* ((ext (file-name-extension name))
@@ -269,13 +267,13 @@ Knows about how the Emacs source tree is organized."
 		 '("doc"))
 		(t nil)))
 	 )
-    (if (not dirs) (call-next-method)
+    (if (not dirs) (cl-call-next-method)
       (ede-emacs-find-in-directories name dir dirs))
     ))
 
 ;;; Command Support
 ;;
-(defmethod project-rescan ((this ede-emacs-project))
+(cl-defmethod project-rescan ((this ede-emacs-project))
   "Rescan this Emacs project from the sources."
   (let ((ver (ede-emacs-version (ede-project-root-directory this))))
     (oset this name (car ver))

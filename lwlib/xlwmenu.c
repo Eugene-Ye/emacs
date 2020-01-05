@@ -1,7 +1,7 @@
 /* Implements a lightweight menubar widget.
 
 Copyright (C) 1992 Lucid, Inc.
-Copyright (C) 1994-1995, 1997, 1999-2014 Free Software Foundation, Inc.
+Copyright (C) 1994-1995, 1997, 1999-2020 Free Software Foundation, Inc.
 
 This file is part of the Lucid Widget Library.
 
@@ -16,7 +16,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Created by devin@lucid.com */
 
@@ -28,13 +28,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <stdio.h>
 
 #include <sys/types.h>
-#if (defined __sun) && !(defined SUNOS41)
-#define SUNOS41
 #include <X11/Xos.h>
-#undef SUNOS41
-#else
-#include <X11/Xos.h>
-#endif
 #include <X11/IntrinsicP.h>
 #include <X11/ObjectP.h>
 #include <X11/StringDefs.h>
@@ -105,7 +99,7 @@ xlwMenuTranslations [] =
 
 /* FIXME: F10 should enter the menu, the first one in the menu-bar.  */
 
-#define offset(field) XtOffset(XlwMenuWidget, field)
+#define offset(field) offsetof (XlwMenuRec, field)
 static XtResource
 xlwMenuResources[] =
 {
@@ -113,7 +107,7 @@ xlwMenuResources[] =
   {XtNfontSet,  XtCFontSet, XtRFontSet, sizeof(XFontSet),
      offset(menu.fontSet), XtRFontSet, NULL},
 #endif
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 #define DEFAULT_FONTNAME "Sans-10"
 #else
 #define DEFAULT_FONTNAME "XtDefaultFont"
@@ -273,7 +267,7 @@ abort_gracefully (Widget w)
   if (XtIsShell (XtParent (w)))
     XtRemoveGrab (w);
   ungrab_all (w, CurrentTime);
-  abort ();
+  emacs_abort ();
 }
 
 static void
@@ -331,14 +325,14 @@ string_width (XlwMenuWidget mw, char *s)
 {
   XCharStruct xcs;
   int drop;
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (mw->menu.xft_font)
     {
       XGlyphInfo gi;
       XftTextExtentsUtf8 (XtDisplay (mw), mw->menu.xft_font,
                           (FcChar8 *) s,
                           strlen (s), &gi);
-      return gi.width;
+      return gi.xOff;
     }
 #endif
 #ifdef HAVE_X_I18N
@@ -355,7 +349,7 @@ string_width (XlwMenuWidget mw, char *s)
 
 }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 #define MENU_FONT_HEIGHT(mw)                                    \
   ((mw)->menu.xft_font != NULL                                  \
    ? (mw)->menu.xft_font->height                                \
@@ -439,10 +433,9 @@ resource_widget_value (XlwMenuWidget mw, widget_value *val)
 	  int complete_length =
 	    strlen (resourced_name) + strlen (val->value) + 2;
 	  complete_name = XtMalloc (complete_length);
-	  *complete_name = 0;
-	  strcat (complete_name, resourced_name);
-	  strcat (complete_name, " ");
-	  strcat (complete_name, val->value);
+	  char *z = stpcpy (complete_name, resourced_name);
+	  *z++ = ' ';
+	  strcpy (z, val->value);
 	}
 
       val->toolkit_data = complete_name;
@@ -904,7 +897,7 @@ draw_separator (XlwMenuWidget mw,
       break;
 
     default:
-      abort ();
+      emacs_abort ();
     }
 }
 
@@ -940,7 +933,7 @@ separator_height (enum menu_separator separator)
       return 5;
 
     default:
-      abort ();
+      emacs_abort ();
     }
 }
 
@@ -972,7 +965,7 @@ display_menu_item (XlwMenuWidget mw,
   int width;
   enum menu_separator separator;
   int separator_p = lw_separator_p (val->name, &separator, 0);
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   XftColor *xftfg;
 #endif
 
@@ -1012,7 +1005,7 @@ display_menu_item (XlwMenuWidget mw,
       else
 	text_gc = mw->menu.disabled_gc;
       deco_gc = mw->menu.foreground_gc;
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
       xftfg = val->enabled ? &mw->menu.xft_fg : &mw->menu.xft_disabled_fg;
 #endif
 
@@ -1039,10 +1032,13 @@ display_menu_item (XlwMenuWidget mw,
 	    x_offset += ws->button_width;
 
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
           if (ws->xft_draw)
             {
               int draw_y = y + v_spacing + shadow;
+#ifdef USE_CAIRO
+	      cairo_surface_mark_dirty (cairo_get_target (ws->xft_draw));
+#endif
               XftDrawStringUtf8 (ws->xft_draw, xftfg,
                                  mw->menu.xft_font,
                                  x_offset, draw_y + font_ascent,
@@ -1085,7 +1081,7 @@ display_menu_item (XlwMenuWidget mw,
 		}
 	      else if (val->key)
 		{
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
                   if (ws->xft_draw)
                     {
                       int draw_x = ws->width - ws->max_rest_width
@@ -1126,6 +1122,10 @@ display_menu_item (XlwMenuWidget mw,
 	      draw_shadow_rectangle (mw, ws->pixmap, x, y, width, height,
 				     True, False);
 	    }
+#ifdef USE_CAIRO
+	  if (ws->xft_draw)
+	    cairo_surface_flush (cairo_get_target (ws->xft_draw));
+#endif
 
 	  if (highlighted_p)
 	    draw_shadow_rectangle (mw, ws->pixmap, x, y, width, height, False,
@@ -1327,7 +1327,7 @@ make_windows_if_needed (XlwMenuWidget mw, int n)
      XtAddEventHandler (windows [i].w, ExposureMask, False, expose_cb, mw);
      windows [i].window = XtWindow (windows [i].w);
      windows [i].pixmap = None;
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
      windows [i].xft_draw = 0;
 #endif
      set_window_type (windows [i].w, mw);
@@ -1418,7 +1418,7 @@ create_pixmap_for_menu (window_state* ws, XlwMenuWidget mw)
   ws->pixmap = XCreatePixmap (XtDisplay (ws->w), ws->window,
                               ws->width, ws->height,
                               DefaultDepthOfScreen (XtScreen (ws->w)));
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (ws->xft_draw)
     XftDrawDestroy (ws->xft_draw);
   if (mw->menu.xft_font)
@@ -1511,17 +1511,21 @@ remap_menubar (XlwMenuWidget mw)
       if (mw->menu.horizontal && i == 1)
 	ws->y += mw->menu.margin;
 
+      /* WMs like Gnome 3 ignores requests to move windows.  So we
+         must destroy the current one and create a new to get it to move.  */
+      XtUnrealizeWidget (ws->w);
+      XtRealizeWidget (ws->w);
+      ws->window = XtWindow (ws->w);
+
       size_menu (mw, i);
 
       fit_to_screen (mw, ws, previous_ws, mw->menu.horizontal && i == 1);
 
       create_pixmap_for_menu (ws, mw);
-      XtMoveWidget (ws->w, ws->x, ws->y);
-      XtPopup (ws->w, XtGrabNone);
-      XtResizeWidget (ws->w, ws->width, ws->height,
-                      mw->core.border_width);
-      XtResizeWindow (ws->w);
+      XtConfigureWidget (ws->w, ws->x, ws->y, ws->width, ws->height,
+			 ws->w->core.border_width);
       display_menu (mw, i, False, &selection_position, NULL, NULL);
+      XtPopup (ws->w, XtGrabNone);
     }
 
   /* unmap the menus that popped down */
@@ -1716,7 +1720,7 @@ make_shadow_gcs (XlwMenuWidget mw)
 					    1.2, 0x8000))
 #else
       XQueryColor (dpy, cmap, &topc);
-      /* don't overflow/wrap! */
+      /* Don't overflow/wrap!  */
       topc.red   = MINL (65535, topc.red   * 1.2);
       topc.green = MINL (65535, topc.green * 1.2);
       topc.blue  = MINL (65535, topc.blue  * 1.2);
@@ -1777,8 +1781,8 @@ make_shadow_gcs (XlwMenuWidget mw)
 	}
     }
 
-  if (!mw->menu.top_shadow_pixmap &&
-      mw->menu.top_shadow_color == mw->core.background_pixel)
+  if (!mw->menu.top_shadow_pixmap
+      && mw->menu.top_shadow_color == mw->core.background_pixel)
     {
       mw->menu.top_shadow_pixmap = mw->menu.gray_pixmap;
       if (mw->menu.free_top_shadow_color_p)
@@ -1788,8 +1792,8 @@ make_shadow_gcs (XlwMenuWidget mw)
 	}
       mw->menu.top_shadow_color = mw->menu.foreground;
     }
-  if (!mw->menu.bottom_shadow_pixmap &&
-      mw->menu.bottom_shadow_color == mw->core.background_pixel)
+  if (!mw->menu.bottom_shadow_pixmap
+      && mw->menu.bottom_shadow_color == mw->core.background_pixel)
     {
       mw->menu.bottom_shadow_pixmap = mw->menu.gray_pixmap;
       if (mw->menu.free_bottom_shadow_color_p)
@@ -1834,7 +1838,7 @@ release_shadow_gcs (XlwMenuWidget mw)
   XtReleaseGC ((Widget) mw, mw->menu.shadow_bottom_gc);
 }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 static XftFont *
 getDefaultXftFont (XlwMenuWidget mw)
 {
@@ -1853,7 +1857,7 @@ openXftFont (XlwMenuWidget mw)
   if (fname && strcmp (fname, "none") != 0)
     {
       int screen = XScreenNumberOfScreen (mw->core.screen);
-      int len = strlen (fname), i = len-1;
+      int len = strlen (fname), i = len - 1;
       /* Try to convert Gtk-syntax (Sans 9) to Xft syntax Sans-9.  */
       while (i > 0 && '0' <= fname[i] && fname[i] <= '9')
         --i;
@@ -1877,7 +1881,7 @@ openXftFont (XlwMenuWidget mw)
 static void
 XlwMenuInitialize (Widget request, Widget w, ArgList args, Cardinal *num_args)
 {
-  /* Get the GCs and the widget size */
+  /* Get the GCs and the widget size.  */
   XlwMenuWidget mw = (XlwMenuWidget) w;
   Window window = RootWindowOfScreen (DefaultScreenOfDisplay (XtDisplay (mw)));
   Display* display = XtDisplay (mw);
@@ -1890,7 +1894,7 @@ XlwMenuInitialize (Widget request, Widget w, ArgList args, Cardinal *num_args)
 				   gray_width, gray_height,
 				   (unsigned long)1, (unsigned long)0, 1);
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (openXftFont (mw))
     ;
   else
@@ -1903,7 +1907,7 @@ XlwMenuInitialize (Widget request, Widget w, ArgList args, Cardinal *num_args)
           if (!mw->menu.font)
             {
               fprintf (stderr, "Menu font fixed not found, can't continue.\n");
-              abort ();
+              emacs_abort ();
             }
         }
     }
@@ -1936,7 +1940,7 @@ XlwMenuInitialize (Widget request, Widget w, ArgList args, Cardinal *num_args)
   mw->menu.windows [0].height = 0;
   mw->menu.windows [0].max_rest_width = 0;
   mw->menu.windows [0].pixmap = None;
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   mw->menu.windows [0].xft_draw = 0;
 #endif
   size_menu (mw, 0);
@@ -1984,7 +1988,7 @@ XlwMenuRealize (Widget w, Mask *valueMask, XSetWindowAttributes *attributes)
   set_window_type (mw->menu.windows [0].w, mw);
   create_pixmap_for_menu (&mw->menu.windows [0], mw);
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (mw->menu.xft_font)
     {
       XColor colors[3];
@@ -2011,7 +2015,7 @@ XlwMenuRealize (Widget w, Mask *valueMask, XSetWindowAttributes *attributes)
 
 /* Only the toplevel menubar/popup is a widget so it's the only one that
    receives expose events through Xt.  So we repaint all the other panes
-   when receiving an Expose event. */
+   when receiving an Expose event.  */
 static void
 XlwMenuRedisplay (Widget w, XEvent *ev, Region region)
 {
@@ -2053,14 +2057,14 @@ XlwMenuDestroy (Widget w)
   release_drawing_gcs (mw);
   release_shadow_gcs (mw);
 
-  /* this doesn't come from the resource db but is created explicitly
-     so we must free it ourselves. */
+  /* This doesn't come from the resource db but is created explicitly
+     so we must free it ourselves.  */
   XFreePixmap (XtDisplay (mw), mw->menu.gray_pixmap);
   mw->menu.gray_pixmap = (Pixmap) -1;
 
   /* Don't free mw->menu.contents because that comes from our creator.
      The `*_stack' elements are just pointers into `contents' so leave
-     that alone too.  But free the stacks themselves. */
+     that alone too.  But free the stacks themselves.  */
   if (mw->menu.old_stack) XtFree ((char *) mw->menu.old_stack);
   if (mw->menu.new_stack) XtFree ((char *) mw->menu.new_stack);
 
@@ -2081,7 +2085,7 @@ XlwMenuDestroy (Widget w)
   if (mw->menu.font)
     XFreeFont (XtDisplay (mw), mw->menu.font);
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (mw->menu.windows [0].xft_draw)
     XftDrawDestroy (mw->menu.windows [0].xft_draw);
   if (mw->menu.xft_font)
@@ -2090,12 +2094,12 @@ XlwMenuDestroy (Widget w)
 
   if (mw->menu.windows [0].pixmap != None)
     XFreePixmap (XtDisplay (mw), mw->menu.windows [0].pixmap);
-  /* start from 1 because the one in slot 0 is w->core.window */
+  /* Start from 1 because the one in slot 0 is w->core.window.  */
   for (i = 1; i < mw->menu.windows_length; i++)
     {
       if (mw->menu.windows [i].pixmap != None)
         XFreePixmap (XtDisplay (mw), mw->menu.windows [i].pixmap);
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
       if (mw->menu.windows [i].xft_draw)
         XftDrawDestroy (mw->menu.windows [i].xft_draw);
 #endif
@@ -2105,7 +2109,7 @@ XlwMenuDestroy (Widget w)
     XtFree ((char *) mw->menu.windows);
 }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 static int
 fontname_changed (XlwMenuWidget newmw,
                   XlwMenuWidget oldmw)
@@ -2137,7 +2141,7 @@ XlwMenuSetValues (Widget current, Widget request, Widget new,
 
   if (newmw->core.background_pixel != oldmw->core.background_pixel
       || newmw->menu.foreground != oldmw->menu.foreground
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
       || fontname_changed (newmw, oldmw)
 #endif
 #ifdef HAVE_X_I18N
@@ -2167,13 +2171,13 @@ XlwMenuSetValues (Widget current, Widget request, Widget new,
 	    XSetWindowBackground (XtDisplay (oldmw),
 				  oldmw->menu.windows [i].window,
 				  newmw->core.background_pixel);
-	    /* clear windows and generate expose events */
+	    /* Clear windows and generate expose events.  */
 	    XClearArea (XtDisplay (oldmw), oldmw->menu.windows[i].window,
 			0, 0, 0, 0, True);
 	  }
     }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (fontname_changed (newmw, oldmw))
     {
       int i;
@@ -2241,7 +2245,7 @@ handle_single_motion_event (XlwMenuWidget mw, XMotionEvent *ev)
     set_new_state (mw, val, level);
   remap_menubar (mw);
 
-  /* Sync with the display.  Makes it feel better on X terms. */
+  /* Sync with the display.  Makes it feel better on X terms.  */
   XSync (XtDisplay (mw), False);
 }
 
@@ -2253,7 +2257,7 @@ handle_motion_event (XlwMenuWidget mw, XMotionEvent *ev)
   int state = ev->state;
   XMotionEvent oldev = *ev;
 
-  /* allow motion events to be generated again */
+  /* Allow motion events to be generated again.  */
   if (ev->is_hint
       && XQueryPointer (XtDisplay (mw), ev->window,
 			&ev->root, &ev->subwindow,
@@ -2290,11 +2294,11 @@ Start (Widget w, XEvent *ev, String *params, Cardinal *num_params)
 	 releasing the button should always pop the menu down.  */
       next_release_must_exit = 1;
 
-      /* notes the absolute position of the menubar window */
+      /* Notes the absolute position of the menubar window.  */
       mw->menu.windows [0].x = ev->xmotion.x_root - ev->xmotion.x;
       mw->menu.windows [0].y = ev->xmotion.y_root - ev->xmotion.y;
 
-      /* handles the down like a move, slots are compatible */
+      /* Handles the down like a move, slots are compatible.  */
       ev->xmotion.is_hint = 0;
       handle_motion_event (mw, &ev->xmotion);
     }
@@ -2324,7 +2328,7 @@ find_first_selectable (XlwMenuWidget mw, widget_value *item, int skip_titles)
   while (lw_separator_p (current->name, &separator, 0) || !current->enabled
          || (skip_titles && !current->call_data && !current->contents))
     if (current->next)
-      current=current->next;
+      current = current->next;
     else
       return NULL;
 
@@ -2337,9 +2341,9 @@ find_next_selectable (XlwMenuWidget mw, widget_value *item, int skip_titles)
   widget_value *current = item;
   enum menu_separator separator;
 
-  while (current->next && (current=current->next) &&
-	 (lw_separator_p (current->name, &separator, 0) || !current->enabled
-          || (skip_titles && !current->call_data && !current->contents)))
+  while (current->next && (current = current->next)
+	 && (lw_separator_p (current->name, &separator, 0) || !current->enabled
+	     || (skip_titles && !current->call_data && !current->contents)))
     ;
 
   if (current == item)
@@ -2354,7 +2358,7 @@ find_next_selectable (XlwMenuWidget mw, widget_value *item, int skip_titles)
                  && !current->contents))
 	{
 	  if (current->next)
-	    current=current->next;
+	    current = current->next;
 
 	  if (current == item)
 	    break;
@@ -2371,12 +2375,12 @@ find_prev_selectable (XlwMenuWidget mw, widget_value *item, int skip_titles)
   widget_value *current = item;
   widget_value *prev = item;
 
-  while ((current=find_next_selectable (mw, current, skip_titles))
+  while ((current = find_next_selectable (mw, current, skip_titles))
          != item)
     {
       if (prev == current)
 	break;
-      prev=current;
+      prev = current;
     }
 
   return prev;
@@ -2557,7 +2561,7 @@ Select (Widget w, XEvent *ev, String *params, Cardinal *num_params)
 	  < XtGetMultiClickTime (XtDisplay (w))))
     return;
 
-  /* pop down everything.  */
+  /* Pop down everything.  */
   mw->menu.new_depth = 1;
   remap_menubar (mw);
 
@@ -2579,7 +2583,7 @@ Select (Widget w, XEvent *ev, String *params, Cardinal *num_params)
 }
 
 
-/* Special code to pop-up a menu */
+/* Special code to pop-up a menu.  */
 static void
 pop_up_menu (XlwMenuWidget mw, XButtonPressedEvent *event)
 {
@@ -2616,13 +2620,14 @@ pop_up_menu (XlwMenuWidget mw, XButtonPressedEvent *event)
   mw->menu.popped_up = True;
   if (XtIsShell (XtParent ((Widget)mw)))
     {
+      /* fprintf (stderr, "Config %d %d\n", x, y); */
       XtConfigureWidget (XtParent ((Widget)mw), x, y, w, h,
 			 XtParent ((Widget)mw)->core.border_width);
       XtPopup (XtParent ((Widget)mw), XtGrabExclusive);
       display_menu (mw, 0, False, NULL, NULL, NULL);
       mw->menu.windows [0].x = x + borderwidth;
       mw->menu.windows [0].y = y + borderwidth;
-      mw->menu.top_depth = 1;  /* Popup menus don't have a bar so top is 1  */
+      mw->menu.top_depth = 1;  /* Popup menus don't have a bar so top is 1.  */
     }
   else
     {
@@ -2630,7 +2635,7 @@ pop_up_menu (XlwMenuWidget mw, XButtonPressedEvent *event)
 
       XtAddGrab ((Widget) mw, True, True);
 
-      /* notes the absolute position of the menubar window */
+      /* Notes the absolute position of the menubar window.  */
       mw->menu.windows [0].x = ev->xmotion.x_root - ev->xmotion.x;
       mw->menu.windows [0].y = ev->xmotion.y_root - ev->xmotion.y;
       mw->menu.top_depth = 2;

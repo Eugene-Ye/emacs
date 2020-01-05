@@ -1,10 +1,9 @@
 ;;; nadvice.el --- Light-weight advice primitives for Elisp functions  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2012-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2020 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: extensions, lisp, tools
-;; Package: emacs
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -17,7 +16,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -36,18 +35,23 @@
 
 ;;; Code:
 
+;; The autoloads.el mechanism which adds package--builtin-versions
+;; maintenance to loaddefs.el doesn't work for preloaded packages (such
+;; as this one), so we have to do it by hand!
+(push (purecopy '(nadvice 1 0)) package--builtin-versions)
+
 ;;;; Lightweight advice/hook
 (defvar advice--where-alist
   '((:around "\300\301\302\003#\207" 5)
     (:before "\300\301\002\"\210\300\302\002\"\207" 4)
     (:after "\300\302\002\"\300\301\003\"\210\207" 5)
-    (:override "\300\301\"\207" 4)
+    (:override "\300\301\002\"\207" 4)
     (:after-until "\300\302\002\"\206\013\000\300\301\002\"\207" 4)
     (:after-while "\300\302\002\"\205\013\000\300\301\002\"\207" 4)
     (:before-until "\300\301\002\"\206\013\000\300\302\002\"\207" 4)
     (:before-while "\300\301\002\"\205\013\000\300\302\002\"\207" 4)
-    (:filter-args "\300\302\301!\"\207" 5)
-    (:filter-return "\301\300\302\"!\207" 5))
+    (:filter-args "\300\302\301\003!\"\207" 5)
+    (:filter-return "\301\300\302\003\"!\207" 5))
   "List of descriptions of how to add a function.
 Each element has the form (WHERE BYTECODE STACK) where:
   WHERE is a keyword indicating where the function is added.
@@ -72,30 +76,36 @@ Each element has the form (WHERE BYTECODE STACK) where:
     (setq f (advice--cdr f)))
   f)
 
+(defun advice--where (f)
+  (let ((bytecode (aref f 1))
+        (where nil))
+    (dolist (elem advice--where-alist)
+      (if (eq bytecode (cadr elem)) (setq where (car elem))))
+    where))
+
 (defun advice--make-docstring (function)
   "Build the raw docstring for FUNCTION, presumably advised."
   (let* ((flist (indirect-function function))
          (docfun nil)
+         (macrop (eq 'macro (car-safe flist)))
          (docstring nil))
-    (if (eq 'macro (car-safe flist)) (setq flist (cdr flist)))
+    (if macrop (setq flist (cdr flist)))
     (while (advice--p flist)
-      (let ((bytecode (aref flist 1))
-            (doc (aref flist 4))
-            (where nil))
+      (let ((doc (aref flist 4))
+            (where (advice--where flist)))
         ;; Hack attack!  For advices installed before calling
         ;; Snarf-documentation, the integer offset into the DOC file will not
         ;; be installed in the "core unadvised function" but in the advice
         ;; object instead!  So here we try to undo the damage.
         (if (integerp doc) (setq docfun flist))
-        (dolist (elem advice--where-alist)
-          (if (eq bytecode (cadr elem)) (setq where (car elem))))
         (setq docstring
               (concat
                docstring
-               (propertize (format "%s advice: " where)
-                           'face 'warning)
+               (format "This %s has %s advice: "
+                       (if macrop "macro" "function")
+                       where)
                (let ((fun (advice--car flist)))
-                 (if (symbolp fun) (format "`%S'" fun)
+                 (if (symbolp fun) (format-message "`%S'." fun)
                    (let* ((name (cdr (assq 'name (advice--props flist))))
                           (doc (documentation fun t))
                           (usage (help-split-fundoc doc function)))
@@ -114,7 +124,10 @@ Each element has the form (WHERE BYTECODE STACK) where:
            (usage (help-split-fundoc origdoc function)))
       (setq usage (if (null usage)
                       (let ((arglist (help-function-arglist flist)))
-                        (format "%S" (help-make-usage function arglist)))
+                        ;; "[Arg list not available until function
+                        ;; definition is loaded]", bug#21299
+                        (if (stringp arglist) t
+                          (help--make-usage-docstring function arglist)))
                     (setq origdoc (cdr usage)) (car usage)))
       (help-add-fundoc-usage (concat docstring origdoc) usage))))
 
@@ -234,6 +247,8 @@ different, but `function-equal' will hopefully ignore those differences.")
   (if (local-variable-p var) (symbol-value var)
     (setq advice--buffer-local-function-sample
           ;; This function acts like the t special value in buffer-local hooks.
+          ;; FIXME: Provide an `advice-bottom' function that's like
+          ;; `advice-cd*r' but also follows through this proxy.
           (lambda (&rest args) (apply (default-value var) args)))))
 
 (eval-and-compile
@@ -279,8 +294,11 @@ a special meaning:
   whereas a depth of -100 means that the advice should be outermost.
 
 If PLACE is a symbol, its `default-value' will be affected.
-Use (local 'SYMBOL) if you want to apply FUNCTION to SYMBOL buffer-locally.
+Use (local \\='SYMBOL) if you want to apply FUNCTION to SYMBOL buffer-locally.
 Use (var VAR) if you want to apply FUNCTION to the (lexical) VAR.
+If you are trying to modify an existing named function rather
+than a function value, you probably want to use `advice-add'
+instead (see Info node `(elisp) Advising Named Functions').
 
 If one of FUNCTION or OLDFUN is interactive, then the resulting function
 is also interactive.  There are 3 cases:
@@ -289,7 +307,10 @@ is also interactive.  There are 3 cases:
   argument (the interactive spec of OLDFUN, which it can pass to
   `advice-eval-interactive-spec') and return the list of arguments to use.
 - Else, use the interactive spec of FUNCTION and ignore the one of OLDFUN."
-  (declare (debug t)) ;;(indent 2)
+  (declare
+   ;;(indent 2)
+   (debug (form [&or symbolp ("local" form) ("var" sexp) gv-place]
+           form &optional form)))
   `(advice--add-function ,where (gv-ref ,(advice--normalize-place place))
                          ,function ,props))
 
@@ -311,7 +332,8 @@ is also interactive.  There are 3 cases:
 If FUNCTION was not added to PLACE, do nothing.
 Instead of FUNCTION being the actual function, it can also be the `name'
 of the piece of advice."
-  (declare (debug t))
+  (declare (debug ([&or symbolp ("local" form) ("var" sexp) gv-place]
+                   form)))
   (gv-letplace (getter setter) (advice--normalize-place place)
     (macroexp-let2 nil new `(advice--remove-function ,getter ,function)
       `(unless (eq ,new ,getter) ,(funcall setter new)))))
@@ -374,6 +396,18 @@ of the piece of advice."
 
 (defun advice--defalias-fset (fsetfun symbol newdef)
   (unless fsetfun (setq fsetfun #'fset))
+  ;; `newdef' shouldn't include advice wrappers, since that's what *we* manage!
+  ;; So if `newdef' includes advice wrappers, it's usually because someone
+  ;; naively took (symbol-function F) and then passed that back to `defalias':
+  ;; let's strip them away.
+  (cond
+   ((advice--p newdef) (setq newdef (advice--cd*r newdef)))
+   ((and (eq 'macro (car-safe newdef))
+         (advice--p (cdr newdef)))
+    (setq newdef `(macro . ,(advice--cd*r (cdr newdef))))))
+  ;; The saved-rewrite is specific to the current value, so since we are about
+  ;; to overwrite that current value with new value, the old saved-rewrite is
+  ;; not relevant any more.
   (when (get symbol 'advice--saved-rewrite)
     (put symbol 'advice--saved-rewrite nil))
   (setq newdef (advice--normalize symbol newdef))
@@ -495,6 +529,10 @@ of the piece of advice."
             (setq frame2 (backtrace-frame i #'called-interactively-p))
             ;; (message "Advice Frame %d = %S" i frame2)
             (setq i (1+ i)))))
+    ;; FIXME: Adjust this for the new :filter advices, since they use `funcall'
+    ;; rather than `apply'.
+    ;; FIXME: Somehow this doesn't work on (advice-add :before
+    ;; 'call-interactively #'ignore), see bug#3984.
     (when (and (eq (nth 1 frame2) 'apply)
                (progn
                  (funcall get-next-frame)
@@ -522,8 +560,9 @@ of the piece of advice."
             (while
                 (progn
                   (funcall get-next-frame)
-                  (not (and (eq (nth 1 frame2) 'apply)
-                            (eq (nth 3 frame2) inneradvice)))))
+                  (and frame2
+                       (not (and (eq (nth 1 frame2) 'apply)
+                                 (eq (nth 3 frame2) inneradvice))))))
             (funcall get-next-frame)
             (funcall get-next-frame))))
       (- i origi 1))))

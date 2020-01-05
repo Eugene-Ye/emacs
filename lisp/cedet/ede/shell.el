@@ -1,8 +1,8 @@
 ;;; ede/shell.el --- A shell controlled by EDE.
 ;;
-;; Copyright (C) 2009-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2020 Free Software Foundation, Inc.
 ;;
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -33,12 +33,12 @@
 
 (declare-function comint-send-input "comint")
 
-(defmethod ede-shell-run-something ((target ede-target) command)
+(cl-defmethod ede-shell-run-something ((target ede-target) command)
   "Create a shell to run stuff for TARGET.
 COMMAND is a text string representing the thing to be run."
   (let* ((buff (ede-shell-buffer target))
 	 (cp (ede-target-parent target))
-	 (dd (oref cp :directory)))
+	 (dd (oref cp directory)))
     ;; Show the new buffer.
     (when (not (get-buffer-window buff))
       (switch-to-buffer-other-window buff t))
@@ -72,7 +72,7 @@ COMMAND is a text string representing the thing to be run."
   (comint-send-input)
   )
 
-(defmethod ede-shell-buffer ((target ede-target))
+(cl-defmethod ede-shell-buffer ((target ede-target))
   "Get the buffer for running shell commands for TARGET."
   (let ((name (ede-name target)))
     (get-buffer-create (format "*EDE Shell %s*" name))))

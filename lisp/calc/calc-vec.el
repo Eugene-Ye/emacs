@@ -1,9 +1,8 @@
 ;;; calc-vec.el --- vector functions for Calc
 
-;; Copyright (C) 1990-1993, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
-;; Maintainer: Jay Belanger <jay.p.belanger@gmail.com>
 
 ;; This file is part of GNU Emacs.
 
@@ -18,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -243,7 +242,7 @@
 	   (cdr item)))
 	((> mode 0)
 	 (let ((dims nil)
-	       type new row)
+	       type new)
 	   (setq item (list item))
 	   (while (> mode 0)
 	     (setq type (calc-unpack-type (car item))
@@ -1107,7 +1106,7 @@
       (cons 'vec (nreverse (sort (copy-sequence (cdr vec)) 'math-beforep)))
     (math-reject-arg vec 'vectorp)))
 
-;; The variable math-grade-vec is local to calcFunc-grade and 
+;; The variable math-grade-vec is local to calcFunc-grade and
 ;; calcFunc-rgrade, but is used by math-grade-beforep, which is called
 ;; by calcFunc-grade and calcFunc-rgrade.
 (defvar math-grade-vec)
@@ -1149,7 +1148,7 @@
                  (setq bin (math-floor bin)))
             (and (natnump bin)
                  (< bin n)
-                 (aset res bin 
+                 (aset res bin
                        (math-add (aref res bin)
                                  (if wvec (car (setq wp (cdr wp))) wts)))))
            (cons 'vec (append res nil))))
@@ -1167,7 +1166,7 @@
                (while (and tbds (Math-lessp (car tbds) num))
                  (setq i (1+ i))
                  (setq tbds (cdr tbds)))
-               (aset res i 
+               (aset res i
                      (math-add (aref res i)
                                (if wvec (car (setq wp (cdr wp))) wts))))
              (setq vp (cdr vp)))
@@ -1376,9 +1375,7 @@
 	 (aa (if neg (math-sub -1 a) a))
 	 (str (if (eq aa 0)
 		  ""
-		(if (consp aa)
-		    (math-format-bignum-binary (cdr aa))
-		  (math-format-binary aa))))
+		(math-format-binary aa)))
 	 (zero (if neg ?1 ?0))
 	 (one (if neg ?0 ?1))
 	 (len (length str))
@@ -1468,7 +1465,7 @@
   a)
 
 (defun math-clean-set (a &optional always-vec)
-  (let ((p a) res)
+  (let ((p a))
     (while (cdr p)
       (if (and (eq (car-safe (nth 1 p)) 'intv)
 	       (Math-equal (nth 2 (nth 1 p)) (nth 3 (nth 1 p))))
@@ -1550,7 +1547,7 @@ of two matrices is a matrix."
 ;; indirectly) by math-read-brackets.
 (defvar math-rb-close)
 
-;; The next few variables are local to math-read-exprs in calc-aent.el 
+;; The next few variables are local to math-read-exprs in calc-aent.el
 ;; and math-read-expr in calc-ext.el, but are set in functions they call.
 (defvar math-exp-pos)
 (defvar math-exp-str)

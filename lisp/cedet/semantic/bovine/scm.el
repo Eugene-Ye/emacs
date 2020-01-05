@@ -1,6 +1,6 @@
 ;;; semantic/bovine/scm.el --- Semantic details for Scheme (guile)
 
-;;; Copyright (C) 2001-2004, 2008-2014 Free Software Foundation, Inc.
+;;; Copyright (C) 2001-2004, 2008-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -70,7 +70,7 @@ Attempts a simple prototype for calling or using TAG."
 (define-lex-regex-analyzer semantic-lex-scheme-symbol
   "Detect and create symbol and keyword tokens."
   "\\(\\sw\\([:]\\|\\sw\\|\\s_\\)*\\)"
-  ;; (message (format "symbol: %s" (match-string 0)))
+  ;; (message "symbol: %s" (match-string 0))
   (semantic-lex-push-token
    (semantic-lex-token
     (or (semantic-lex-keyword-p (match-string 0)) 'symbol)

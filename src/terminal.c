@@ -1,12 +1,12 @@
 /* Functions related to terminal devices.
-   Copyright (C) 2005-2014 Free Software Foundation, Inc.
+   Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,19 +14,22 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
-#include <stdio.h>
-
 #include "lisp.h"
+#include "character.h"
 #include "frame.h"
 #include "termchar.h"
 #include "termhooks.h"
-#include "charset.h"
-#include "coding.h"
 #include "keyboard.h"
+
+#if HAVE_STRUCT_UNIPAIR_UNICODE
+# include <errno.h>
+# include <linux/kd.h>
+# include <sys/ioctl.h>
+#endif
 
 /* Chain of all terminals currently in use.  */
 struct terminal *terminal_list;
@@ -36,10 +39,6 @@ static int next_terminal_id;
 
 /* The initial terminal device, created by initial_term_init.  */
 struct terminal *initial_terminal;
-
-Lisp_Object Qrun_hook_with_args;
-static Lisp_Object Qterminal_live_p;
-static Lisp_Object Qdelete_terminal_functions;
 
 static void delete_initial_terminal (struct terminal *);
 
@@ -258,6 +257,15 @@ get_named_terminal (const char *name)
   return NULL;
 }
 
+/* Allocate basically initialized terminal.  */
+
+static struct terminal *
+allocate_terminal (void)
+{
+  return ALLOCATE_ZEROED_PSEUDOVECTOR (struct terminal, glyph_code_table,
+				       PVEC_TERMINAL);
+}
+
 /* Create a new terminal object of TYPE and add it to the terminal list.  RIF
    may be NULL if this terminal type doesn't support window-based redisplay.  */
 
@@ -304,7 +312,6 @@ create_terminal (enum output_method type, struct redisplay_interface *rif)
 void
 delete_terminal (struct terminal *terminal)
 {
-  struct terminal **tp;
   Lisp_Object tail, frame;
 
   /* Protect against recursive calls.  delete_frame calls the
@@ -324,6 +331,14 @@ delete_terminal (struct terminal *terminal)
           delete_frame (frame, Qnoelisp);
         }
     }
+
+  delete_terminal_internal (terminal);
+}
+
+void
+delete_terminal_internal (struct terminal *terminal)
+{
+  struct terminal **tp;
 
   for (tp = &terminal_list; *tp != terminal; tp = &(*tp)->next_terminal)
     if (! *tp)
@@ -473,7 +488,7 @@ static Lisp_Object
 store_terminal_param (struct terminal *t, Lisp_Object parameter, Lisp_Object value)
 {
   Lisp_Object old_alist_elt = Fassq (parameter, t->param_alist);
-  if (EQ (old_alist_elt, Qnil))
+  if (NILP (old_alist_elt))
     {
       tset_param_alist (t, Fcons (Fcons (parameter, value), t->param_alist));
       return Qnil;
@@ -521,6 +536,68 @@ selected frame's terminal).  */)
   return store_terminal_param (decode_live_terminal (terminal), parameter, value);
 }
 
+#if HAVE_STRUCT_UNIPAIR_UNICODE
+
+/* Compute the glyph code table for T.  */
+
+static void
+calculate_glyph_code_table (struct terminal *t)
+{
+  Lisp_Object glyphtab = Qt;
+  enum { initial_unipairs = 1000 };
+  int entry_ct = initial_unipairs;
+  struct unipair unipair_buffer[initial_unipairs];
+  struct unipair *entries = unipair_buffer;
+  struct unipair *alloced = 0;
+
+  while (true)
+    {
+      int fd = fileno (t->display_info.tty->output);
+      struct unimapdesc unimapdesc = { entry_ct, entries };
+      if (ioctl (fd, GIO_UNIMAP, &unimapdesc) == 0)
+	{
+	  glyphtab = Fmake_char_table (Qnil, make_fixnum (-1));
+	  for (int i = 0; i < unimapdesc.entry_ct; i++)
+	    char_table_set (glyphtab, entries[i].unicode,
+			    make_fixnum (entries[i].fontpos));
+	  break;
+	}
+      if (errno != ENOMEM)
+	break;
+      entry_ct = unimapdesc.entry_ct;
+      entries = alloced = xrealloc (alloced, entry_ct * sizeof *alloced);
+    }
+
+  xfree (alloced);
+  t->glyph_code_table = glyphtab;
+}
+#endif
+
+/* Return the glyph code in T of character CH, or -1 if CH does not
+   have a font position in T, or nil if T does not report glyph codes.  */
+
+Lisp_Object
+terminal_glyph_code (struct terminal *t, int ch)
+{
+#if HAVE_STRUCT_UNIPAIR_UNICODE
+  /* Heuristically assume that a terminal supporting glyph codes is in
+     UTF-8 mode if and only if its coding system is UTF-8 (Bug#26396).  */
+  if (t->type == output_termcap
+      && t->terminal_coding->encoder == encode_coding_utf_8)
+    {
+      /* As a hack, recompute the table when CH is the maximum
+	 character.  */
+      if (NILP (t->glyph_code_table) || ch == MAX_CHAR)
+	calculate_glyph_code_table (t);
+
+      if (! EQ (t->glyph_code_table, Qt))
+	return char_table_ref (t->glyph_code_table, ch);
+    }
+#endif
+
+  return Qnil;
+}
+
 /* Initial frame has no device-dependent output data, but has
    face cache which should be freed when the frame is deleted.  */
 
@@ -545,6 +622,7 @@ init_initial_terminal (void)
   initial_terminal->kboard = initial_kboard;
   initial_terminal->delete_terminal_hook = &delete_initial_terminal;
   initial_terminal->delete_frame_hook = &initial_free_frame_resources;
+  initial_terminal->defined_color_hook = &tty_defined_color; /* xfaces.c */
   /* Other hooks are NULL by default.  */
 
   return initial_terminal;

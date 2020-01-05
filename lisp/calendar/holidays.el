@@ -1,10 +1,10 @@
-;;; holidays.el --- holiday functions for the calendar package
+;;; holidays.el --- holiday functions for the calendar package  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1989-1990, 1992-1994, 1997, 2001-2014
-;;   Free Software Foundation, Inc.
+;; Copyright (C) 1989-1990, 1992-1994, 1997, 2001-2020 Free Software
+;; Foundation, Inc.
 
 ;; Author: Edward M. Reingold <reingold@cs.uiuc.edu>
-;; Maintainer: Glenn Morris <rgm@gnu.org>
+;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: holidays, calendar
 ;; Package: calendar
 
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -64,8 +64,7 @@
     (holiday-float 11 4 4 "Thanksgiving")))
   "General holidays.  Default value is for the United States.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-general-holidays 'risky-local-variable t)
 
@@ -86,8 +85,7 @@ See the documentation for `calendar-holidays' for details."
   "Oriental holidays.
 See the documentation for `calendar-holidays' for details."
   :version "23.1"                       ; added more holidays
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-oriental-holidays 'risky-local-variable t)
 
@@ -95,8 +93,7 @@ See the documentation for `calendar-holidays' for details."
 (defcustom holiday-local-holidays nil
   "Local holidays.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-local-holidays 'risky-local-variable t)
 
@@ -104,8 +101,7 @@ See the documentation for `calendar-holidays' for details."
 (defcustom holiday-other-holidays nil
   "User defined holidays.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-other-holidays 'risky-local-variable t)
 
@@ -122,8 +118,8 @@ See the documentation for `calendar-holidays' for details."
   "Jewish holidays.
 See the documentation for `calendar-holidays' for details."
   :type 'sexp
-  :version "23.1"            ; removed dependency on hebrew-holidays-N
-  :group 'holidays)
+  :version "23.1")            ; removed dependency on hebrew-holidays-N
+
 ;;;###autoload
 (put 'holiday-hebrew-holidays 'risky-local-variable t)
 
@@ -141,8 +137,7 @@ See the documentation for `calendar-holidays' for details."
          (holiday-advent 0 "Advent")))))
   "Christian holidays.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-christian-holidays 'risky-local-variable t)
 
@@ -162,8 +157,7 @@ See the documentation for `calendar-holidays' for details."
          (holiday-islamic 12 10 "Id-al-Adha")))))
   "Islamic holidays.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-islamic-holidays 'risky-local-variable t)
 
@@ -173,18 +167,17 @@ See the documentation for `calendar-holidays' for details."
   '((holiday-bahai-new-year)
     (holiday-bahai-ridvan)      ; respects calendar-bahai-all-holidays-flag
     (holiday-fixed  5 23 "Declaration of the Báb")
-    (holiday-fixed  5 29 "Ascension of Bahá'u'lláh")
+    (holiday-fixed  5 29 "Ascension of Bahá’u’lláh")
     (holiday-fixed  7  9 "Martyrdom of the Báb")
     (holiday-fixed 10 20 "Birth of the Báb")
-    (holiday-fixed 11 12 "Birth of Bahá'u'lláh")
+    (holiday-fixed 11 12 "Birth of Bahá’u’lláh")
     (if calendar-bahai-all-holidays-flag
         (append
          (holiday-fixed 11 26 "Day of the Covenant")
-         (holiday-fixed 11 28 "Ascension of `Abdu'l-Bahá")))))
-  "Bahá'í holidays.
+         (holiday-fixed 11 28 "Ascension of `Abdu’l-Bahá")))))
+  "Bahá’í holidays.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-bahai-holidays 'risky-local-variable t)
 
@@ -204,8 +197,7 @@ See the documentation for `calendar-holidays' for details."
                            calendar-daylight-time-zone-name)))))
   "Sun-related holidays.
 See the documentation for `calendar-holidays' for details."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'holiday-solar-holidays 'risky-local-variable t)
 
@@ -254,7 +246,7 @@ Several basic functions are provided for this purpose:
                                K>0, and MONTH's last day otherwise.
     (holiday-hebrew MONTH DAY STRING)  a fixed date on the Hebrew calendar
     (holiday-islamic MONTH DAY STRING) a fixed date on the Islamic calendar
-    (holiday-bahai MONTH DAY STRING)   a fixed date on the Bahá'í calendar
+    (holiday-bahai MONTH DAY STRING)   a fixed date on the Bahá’í calendar
     (holiday-julian MONTH DAY STRING)  a fixed date on the Julian calendar
     (holiday-sexp SEXP STRING) SEXP is a Gregorian-date-valued expression
                                in the variable `year'; if it evaluates to
@@ -267,9 +259,9 @@ For example, to add Bastille Day, celebrated in France on July 14, add
      (holiday-fixed 7 14 \"Bastille Day\")
 
 to the list.  To add Hurricane Supplication Day, celebrated in the Virgin
-Islands on the fourth Monday in August, add
+Islands on the fourth Monday in July, add
 
-     (holiday-float 8 1 4 \"Hurricane Supplication Day\")
+     (holiday-float 7 1 4 \"Hurricane Supplication Day\")
 
 to the list (the last Monday would be specified with `-1' instead of `4').
 To add the last day of Hanukkah to the list, use
@@ -282,11 +274,11 @@ To add the Islamic feast celebrating Mohammed's birthday, use
      (holiday-islamic 3 12 \"Mohammed's Birthday\")
 
 since the Islamic months are numbered from 1 starting with Muharram.
-To add an entry for the Bahá'í festival of Ridvan, use
+To add an entry for the Bahá’í festival of Ridvan, use
 
      (holiday-bahai 2 13 \"Festival of Ridvan\")
 
-since the Bahá'í months are numbered from 1 starting with Bahá.
+since the Bahá’í months are numbered from 1 starting with Bahá.
 To add Thomas Jefferson's birthday, April 2, 1743 (Julian), use
 
      (holiday-julian 4 2 \"Jefferson's Birthday\")
@@ -296,7 +288,7 @@ example, to include American presidential elections, which occur on the first
 Tuesday after the first Monday in November of years divisible by 4, add
 
      (holiday-sexp
-       '(if (zerop (% year 4))
+       \\='(if (zerop (% year 4))
            (calendar-gregorian-from-absolute
              (1+ (calendar-dayname-on-or-before
                    1 (+ 6 (calendar-absolute-from-gregorian
@@ -323,8 +315,7 @@ you've written to return a (possibly empty) list of the relevant VISIBLE dates
 with descriptive strings such as
 
      (((2 6 1989) \"New Moon\") ((2 12 1989) \"First Quarter Moon\") ... )."
-  :type 'sexp
-  :group 'holidays)
+  :type 'sexp)
 ;;;###autoload
 (put 'calendar-holidays 'risky-local-variable t)
 
@@ -336,19 +327,20 @@ with descriptive strings such as
 (defun calendar-holiday-list ()
   "Form the list of holidays that occur on dates in the calendar window.
 The holidays are those in the list `calendar-holidays'."
-  (let (res h err)
+  (let (res h)
     (sort
      (dolist (p calendar-holidays res)
        (if (setq h (if calendar-debug-sexp
                        (let ((debug-on-error t))
-                         (eval p))
+                         (eval p t))
                      (condition-case err
-                         (eval p)
+                         (eval p t)
                        (error
                         (display-warning
-                         :error
+                         'holidays
                          (format "Bad holiday list item: %s\nError: %s\n"
-                                 p err))
+                                 p err)
+                         :error)
                         nil))))
            (setq res (append h res))))
      'calendar-date-compare)))
@@ -398,7 +390,7 @@ use instead of point."
 (defun holidays (&optional arg)
   "Display the holidays for last month, this month, and next month.
 If called with an optional prefix argument ARG, prompts for month and year.
-This function is suitable for execution in a init file."
+This function is suitable for execution in an init file."
   (interactive "P")
   (save-excursion
     (let* ((completion-ignore-case t)
@@ -460,7 +452,7 @@ The optional LABEL is used to label the buffer created."
             (if holiday-islamic-holidays
                 (cons "Islamic" holiday-islamic-holidays))
             (if holiday-bahai-holidays
-                (cons "Bahá'í" holiday-bahai-holidays))
+                (cons "Bahá’í" holiday-bahai-holidays))
             (if holiday-oriental-holidays
                 (cons "Oriental" holiday-oriental-holidays))
             (if holiday-solar-holidays
@@ -469,7 +461,7 @@ The optional LABEL is used to label the buffer created."
           (choice (capitalize
                    (completing-read "List (TAB for choices): " lists nil t)))
           (which (if (string-equal choice "Ask")
-                     (eval (read-variable "Enter list name: "))
+                     (symbol-value (read-variable "Enter list name: "))
                    (cdr (assoc choice lists))))
           (name (if (string-equal choice "Equinoxes/Solstices")
                     choice
@@ -521,7 +513,6 @@ strings describing those holidays that apply on DATE, or nil if none do."
           (setq holiday-list (append holiday-list (cdr h)))))))
 
 
-;; Formerly cal-tex-list-holidays.
 (defun holiday-in-range (d1 d2)
   "Generate a list of all holidays in range from absolute date D1 to D2."
   (let* ((start (calendar-gregorian-from-absolute d1))
@@ -536,7 +527,7 @@ strings describing those holidays that apply on DATE, or nil if none do."
                  3)))
          holidays in-range a)
     (calendar-increment-month displayed-month displayed-year 1)
-    (dotimes (_idummy number-of-intervals)
+    (dotimes (_ number-of-intervals)
       (setq holidays (append holidays (calendar-holiday-list)))
       (calendar-increment-month displayed-month displayed-year 3))
     (dolist (hol holidays)
@@ -690,19 +681,19 @@ the holiday description of `date'.  If `date' is visible in the
 calendar window, the holiday STRING is on that date.  If date is
 nil, or if the date is not visible, there is no holiday."
   (let ((m displayed-month)
-        (y displayed-year)
-        year date)
+        (y displayed-year))
     (calendar-increment-month m y -1)
     (holiday-filter-visible-calendar
-     (list
-      (progn
-        (setq year y
-              date (eval sexp))
-        (list date (if date (eval string))))
-      (progn
-        (setq year (1+ y)
-              date (eval sexp))
-        (list date (if date (eval string))))))))
+     (calendar-dlet* (year date)
+       (list
+        (progn
+          (setq year y
+                date (eval sexp t))
+          (list date (if date (eval string t))))
+        (progn
+          (setq year (1+ y)
+                date (eval sexp t))
+          (list date (if date (eval string t)))))))))
 
 
 (defun holiday-advent (&optional n string)
@@ -791,8 +782,16 @@ is non-nil)."
 ;; Prior call to calendar-julian-from-absolute will autoload cal-julian.
 (declare-function calendar-julian-to-absolute "cal-julian" (date))
 
-(defun holiday-greek-orthodox-easter ()
-  "Date of Easter according to the rule of the Council of Nicaea."
+(defun holiday-greek-orthodox-easter (&optional n string)
+  "Date of Nth day after Easter (named STRING), if visible in calendar window.
+It is calculated according to the rule of the Council of Nicaea.
+Negative values of N are interpreted as days before Easter.
+STRING is used purely for display purposes.  The return value has
+the form ((MONTH DAY YEAR) STRING), where the date is that of the
+Nth day before or after Easter.
+
+For backwards compatibility, if this function is called with no
+arguments, it returns the date of Pascha (Greek Orthodox Easter)."
   (let* ((m displayed-month)
          (y displayed-year)
          (julian-year (progn
@@ -808,16 +807,11 @@ is non-nil)."
          (paschal-moon      ; day after full moon on or after March 21
           (- (calendar-julian-to-absolute (list 4 19 julian-year))
              shifted-epact))
-         (nicaean-easter           ; Sunday following the Paschal moon
-          (calendar-gregorian-from-absolute
-           (calendar-dayname-on-or-before 0 (+ paschal-moon 7)))))
-    (if (calendar-date-is-visible-p nicaean-easter)
-        (list (list nicaean-easter "Pascha (Greek Orthodox Easter)")))))
+	 (abs-easter (calendar-dayname-on-or-before 0 (+ paschal-moon 7)))
+	 (greg (calendar-gregorian-from-absolute (+ abs-easter (or n 0)))))
+    (if (calendar-date-is-visible-p greg)
+	(list (list greg (or string "Pascha (Greek Orthodox Easter)"))))))
 
 (provide 'holidays)
-
-;; Local Variables:
-;; coding: utf-8
-;; End:
 
 ;;; holidays.el ends here

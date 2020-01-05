@@ -1,6 +1,6 @@
 ;;; em-ls.el --- implementation of ls in Lisp  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -29,7 +29,8 @@
 (require 'cl-lib)
 (require 'esh-util)
 (require 'esh-opt)
-(eval-when-compile (require 'eshell))
+(require 'esh-proc)
+(require 'esh-cmd)
 
 ;;;###autoload
 (progn
@@ -47,7 +48,7 @@ properties to colorize its output based on the setting of
 (defcustom eshell-ls-date-format "%Y-%m-%d"
   "How to display time information in `eshell-ls-file'.
 This is passed to `format-time-string' as a format string.
-To display the date using the current locale, use \"%b \%e\"."
+To display the date using the current locale, use \"%b \ %e\"."
   :version "24.1"
   :type 'string)
 
@@ -65,17 +66,19 @@ This is useful for enabling human-readable format (-h), for example."
   "If non-nil, use `eshell-ls' to read directories in Dired.
 Changing this without using customize has no effect."
   :set (lambda (symbol value)
-	 (if value
-             (advice-add 'insert-directory :around
-                         #'eshell-ls--insert-directory)
-           (advice-remove 'insert-directory
-                          #'eshell-ls--insert-directory))
+	 (cond (value
+                (require 'dired)
+                (advice-add 'insert-directory :around
+                            #'eshell-ls--insert-directory)
+                (advice-add 'dired :around #'eshell-ls--dired))
+               (t
+                (advice-remove 'insert-directory
+                               #'eshell-ls--insert-directory)
+                (advice-remove 'dired #'eshell-ls--dired)))
          (set symbol value))
   :type 'boolean
   :require 'em-ls)
-(add-hook 'eshell-ls-unload-hook
-          (lambda () (advice-remove 'insert-directory
-                               #'eshell-ls--insert-directory)))
+(add-hook 'eshell-ls-unload-hook #'eshell-ls-unload-function)
 
 
 (defcustom eshell-ls-default-blocksize 1024
@@ -101,46 +104,36 @@ faster and conserves more memory."
     (((class color) (background dark)) (:foreground "SkyBlue" :weight bold))
     (t (:weight bold)))
   "The face used for highlighting directories.")
-(define-obsolete-face-alias 'eshell-ls-directory-face
-  'eshell-ls-directory "22.1")
 
 (defface eshell-ls-symlink
   '((((class color) (background light)) (:foreground "Dark Cyan" :weight bold))
     (((class color) (background dark)) (:foreground "Cyan" :weight bold)))
   "The face used for highlighting symbolic links.")
-(define-obsolete-face-alias 'eshell-ls-symlink-face 'eshell-ls-symlink "22.1")
 
 (defface eshell-ls-executable
   '((((class color) (background light)) (:foreground "ForestGreen" :weight bold))
     (((class color) (background dark)) (:foreground "Green" :weight bold)))
   "The face used for highlighting executables (not directories, though).")
-(define-obsolete-face-alias 'eshell-ls-executable-face
-  'eshell-ls-executable "22.1")
 
 (defface eshell-ls-readonly
   '((((class color) (background light)) (:foreground "Brown"))
     (((class color) (background dark)) (:foreground "Pink")))
   "The face used for highlighting read-only files.")
-(define-obsolete-face-alias 'eshell-ls-readonly-face 'eshell-ls-readonly "22.1")
 
 (defface eshell-ls-unreadable
   '((((class color) (background light)) (:foreground "Grey30"))
     (((class color) (background dark)) (:foreground "DarkGrey")))
   "The face used for highlighting unreadable files.")
-(define-obsolete-face-alias 'eshell-ls-unreadable-face
-  'eshell-ls-unreadable "22.1")
 
 (defface eshell-ls-special
   '((((class color) (background light)) (:foreground "Magenta" :weight bold))
     (((class color) (background dark)) (:foreground "Magenta" :weight bold)))
   "The face used for highlighting non-regular files.")
-(define-obsolete-face-alias 'eshell-ls-special-face 'eshell-ls-special "22.1")
 
 (defface eshell-ls-missing
   '((((class color) (background light)) (:foreground "Red" :weight bold))
     (((class color) (background dark)) (:foreground "Red" :weight bold)))
   "The face used for highlighting non-existent file names.")
-(define-obsolete-face-alias 'eshell-ls-missing-face 'eshell-ls-missing "22.1")
 
 (defcustom eshell-ls-archive-regexp
   (concat "\\.\\(t\\(a[rz]\\|gz\\)\\|arj\\|lzh\\|"
@@ -155,7 +148,6 @@ files."
   '((((class color) (background light)) (:foreground "Orchid" :weight bold))
     (((class color) (background dark)) (:foreground "Orchid" :weight bold)))
   "The face used for highlighting archived and compressed file names.")
-(define-obsolete-face-alias 'eshell-ls-archive-face 'eshell-ls-archive "22.1")
 
 (defcustom eshell-ls-backup-regexp
   "\\(\\`\\.?#\\|\\(\\.bak\\|~\\)\\'\\)"
@@ -166,7 +158,6 @@ files."
   '((((class color) (background light)) (:foreground "OrangeRed"))
     (((class color) (background dark)) (:foreground "LightSalmon")))
   "The face used for highlighting backup file names.")
-(define-obsolete-face-alias 'eshell-ls-backup-face 'eshell-ls-backup "22.1")
 
 (defcustom eshell-ls-product-regexp
   "\\.\\(elc\\|o\\(bj\\)?\\|a\\|lib\\|res\\)\\'"
@@ -179,7 +170,6 @@ ought to be recreatable if they are deleted."
   '((((class color) (background light)) (:foreground "OrangeRed"))
     (((class color) (background dark)) (:foreground "LightSalmon")))
   "The face used for highlighting files that are build products.")
-(define-obsolete-face-alias 'eshell-ls-product-face 'eshell-ls-product "22.1")
 
 (defcustom eshell-ls-clutter-regexp
   "\\(^texput\\.log\\|^core\\)\\'"
@@ -192,12 +182,11 @@ really need to stick around for very long."
   '((((class color) (background light)) (:foreground "OrangeRed" :weight bold))
     (((class color) (background dark)) (:foreground "OrangeRed" :weight bold)))
   "The face used for highlighting junk file names.")
-(define-obsolete-face-alias 'eshell-ls-clutter-face 'eshell-ls-clutter "22.1")
 
 (defsubst eshell-ls-filetype-p (attrs type)
-  "Test whether ATTRS specifies a directory."
-  (if (nth 8 attrs)
-      (eq (aref (nth 8 attrs) 0) type)))
+  "Test whether ATTRS specifies a file of type TYPE."
+  (if (file-attribute-modes attrs)
+      (eq (aref (file-attribute-modes attrs) 0) type)))
 
 (defmacro eshell-ls-applicable (attrs index func file)
   "Test whether, for ATTRS, the user can do what corresponds to INDEX.
@@ -205,8 +194,8 @@ ATTRS is a string of file modes.  See `file-attributes'.
 If we cannot determine the answer using ATTRS (e.g., if we need
 to know what group the user is in), compute the return value by
 calling FUNC with FILE as an argument."
-  `(let ((owner (nth 2 ,attrs))
-	 (modes (nth 8 ,attrs)))
+  `(let ((owner (file-attribute-user-id ,attrs))
+	 (modes (file-attribute-modes ,attrs)))
      (cond ((cond ((numberp owner)
 		   (= owner (user-uid)))
 		  ((stringp owner)
@@ -255,6 +244,9 @@ scope during the evaluation of TEST-SEXP."
 
 ;;; Functions:
 
+(declare-function eshell-extended-glob "em-glob" (glob))
+(defvar eshell-error-if-no-glob)
+
 (defun eshell-ls--insert-directory
   (orig-fun file switches &optional wildcard full-directory-p)
   "Insert directory listing for FILE, formatted according to SWITCHES.
@@ -287,11 +279,53 @@ instead."
                 (set 'font-lock-buffers
                      (delq (current-buffer)
                            (symbol-value 'font-lock-buffers)))))
-          (let ((insert-func 'insert)
-                (error-func 'insert)
-                (flush-func 'ignore)
-                eshell-ls-dired-initial-args)
-            (eshell-do-ls (append switches (list file)))))))))
+          (require 'em-glob)
+          (let* ((insert-func 'insert)
+                 (error-func 'insert)
+                 (flush-func 'ignore)
+                 (eshell-error-if-no-glob t)
+                 (target ; Expand the shell wildcards if any.
+                  (if (and (atom file)
+                           (string-match "[[?*]" file)
+                           (not (file-exists-p file)))
+                      (mapcar #'file-relative-name (eshell-extended-glob file))
+                    (file-relative-name file)))
+                 (switches
+                  (append eshell-ls-dired-initial-args
+                          (and (or (consp dired-directory) wildcard) (list "-d"))
+                          switches)))
+            (eshell-do-ls (nconc switches (list target)))))))))
+
+
+(declare-function eshell-extended-glob "em-glob" (glob))
+(declare-function dired-read-dir-and-switches "dired" (str))
+(declare-function dired-goto-next-file "dired" ())
+
+(defun eshell-ls--dired (orig-fun dir-or-list &optional switches)
+  (interactive (dired-read-dir-and-switches ""))
+  (require 'em-glob)
+  (if (consp dir-or-list)
+      (funcall orig-fun dir-or-list switches)
+    (let ((dir-wildcard (insert-directory-wildcard-in-dir-p
+                         (expand-file-name dir-or-list))))
+      (if (not dir-wildcard)
+          (funcall orig-fun dir-or-list switches)
+        (let* ((default-directory (car dir-wildcard))
+               (files (eshell-extended-glob (cdr dir-wildcard)))
+               (dir (car dir-wildcard)))
+          (if files
+              (let ((inhibit-read-only t)
+                    (buf
+                     (apply orig-fun
+                            (nconc (list dir) files)
+                            (and switches (list switches)))))
+                (with-current-buffer buf
+                  (save-excursion
+                    (goto-char (point-min))
+                    (dired-goto-next-file)
+                    (forward-line 0)
+                    (insert "  wildcard " (cdr dir-wildcard) "\n"))))
+            (user-error "No files matching regexp")))))))
 
 (defsubst eshell/ls (&rest args)
   "An alias version of `eshell-do-ls'."
@@ -301,6 +335,7 @@ instead."
     (apply 'eshell-do-ls args)))
 
 (put 'eshell/ls 'eshell-no-numeric-conversions t)
+(put 'eshell/ls 'eshell-filename-arguments t)
 
 (declare-function eshell-glob-regexp "em-glob" (pattern))
 
@@ -312,7 +347,7 @@ instead."
    "ls" (if eshell-ls-initial-args
 	    (list eshell-ls-initial-args args)
 	  args)
-   `((?a "all" nil show-all
+   '((?a "all" nil show-all
 	 "do not ignore entries starting with .")
      (?A "almost-all" nil show-almost-all
 	 "do not list implied . and ..")
@@ -403,7 +438,7 @@ Sort entries alphabetically across.")
 
 (defsubst eshell-ls-size-string (attrs size-width)
   "Return the size string for ATTRS length, using SIZE-WIDTH."
-  (let* ((str (eshell-ls-printable-size (nth 7 attrs) t))
+  (let* ((str (eshell-ls-printable-size (file-attribute-size attrs) t))
 	 (len (length str)))
     (if (< len size-width)
 	(concat (make-string (- size-width len) ? ) str)
@@ -469,19 +504,19 @@ whose cdr is the list of file attributes."
 		 (if numeric-uid-gid
 		     "%s%4d %-8s %-8s "
 		   "%s%4d %-14s %-8s ")
-		 (or (nth 8 attrs) "??????????")
-		 (or (nth 1 attrs) 0)
-		 (or (let ((user (nth 2 attrs)))
+		 (or (file-attribute-modes attrs) "??????????")
+		 (or (file-attribute-link-number attrs) 0)
+		 (or (let ((user (file-attribute-user-id attrs)))
 		       (and (stringp user)
 			    (eshell-substring user 14)))
-		     (nth 2 attrs)
+		     (file-attribute-user-id attrs)
 		     "")
-		 (or (let ((group (nth 3 attrs)))
+		 (or (let ((group (file-attribute-group-id attrs)))
 		       (and (stringp group)
 			    (eshell-substring group 8)))
-		     (nth 3 attrs)
+		     (file-attribute-group-id attrs)
 		     ""))
-		(let* ((str (eshell-ls-printable-size (nth 7 attrs)))
+		(let* ((str (eshell-ls-printable-size (file-attribute-size attrs)))
 		       (len (length str)))
 		  ;; Let file sizes shorter than 9 align neatly.
 		  (if (< len (or size-width 8))
@@ -490,12 +525,14 @@ whose cdr is the list of file attributes."
 		" " (format-time-string
 		     (concat
 		      eshell-ls-date-format " "
-		      (if (= (nth 5 (decode-time))
-			     (nth 5 (decode-time
-				     (nth (cond
-					   ((eq sort-method 'by-atime) 4)
-					   ((eq sort-method 'by-ctime) 6)
-					   (t 5)) attrs))))
+		      (if (= (decoded-time-year (decode-time))
+			     (decoded-time-year
+                              (decode-time
+			       (nth (cond
+				     ((eq sort-method 'by-atime) 4)
+				     ((eq sort-method 'by-ctime) 6)
+				     (t 5))
+                                    attrs))))
 			  "%H:%M"
 			" %Y")) (nth (cond
 			((eq sort-method 'by-atime) 4)
@@ -551,12 +588,12 @@ relative to that directory."
 	    (let ((total 0.0))
 	      (setq size-width 0)
 	      (dolist (e entries)
-		(if (nth 7 (cdr e))
-		    (setq total (+ total (nth 7 (cdr e)))
+		(if (file-attribute-size (cdr e))
+		    (setq total (+ total (file-attribute-size (cdr e)))
 			  size-width
 			  (max size-width
 			       (length (eshell-ls-printable-size
-					(nth 7 (cdr e))
+					(file-attribute-size (cdr e))
 					(not
 					 ;; If we are under -l, count length
 					 ;; of sizes in bytes, not in blocks.
@@ -666,7 +703,7 @@ Each member of FILES is either a string or a cons cell of the form
       (if (not show-size)
 	  (setq display-files (mapcar 'eshell-ls-annotate files))
 	(dolist (file files)
-	  (let* ((str (eshell-ls-printable-size (nth 7 (cdr file)) t))
+	  (let* ((str (eshell-ls-printable-size (file-attribute-size (cdr file)) t))
 		 (len (length str)))
 	    (if (< len size-width)
 		(setq str (concat (make-string (- size-width len) ? ) str)))
@@ -732,14 +769,14 @@ need to be printed."
 		    (if show-size
 			(max size-width
 			     (length (eshell-ls-printable-size
-				      (nth 7 (cdr entry)) t))))))
+				      (file-attribute-size (cdr entry)) t))))))
 	    (setq dirs (cons entry dirs)))
 	(setq files (cons entry files)
 	      size-width
 	      (if show-size
 		  (max size-width
 		       (length (eshell-ls-printable-size
-				(nth 7 (cdr entry)) t)))))))
+				(file-attribute-size (cdr entry)) t)))))))
     (when files
       (eshell-ls-files (eshell-ls-sort-entries files)
 		       size-width show-recursive)
@@ -922,6 +959,11 @@ to use, and each member of which is the width of that column
 				 (list 'font-lock-face face)
 				 (car file)))))
   (car file))
+
+(defun eshell-ls-unload-function ()
+  (advice-remove 'insert-directory #'eshell-ls--insert-directory)
+  (advice-remove 'dired #'eshell-ls--dired)
+  nil)
 
 (provide 'em-ls)
 

@@ -1,13 +1,13 @@
 /* Functions for handling font and other changes dynamically.
 
-Copyright (C) 2009-2014 Free Software Foundation, Inc.
+Copyright (C) 2009-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 
@@ -32,6 +32,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "keyboard.h"
 #include "blockinput.h"
 #include "termhooks.h"
+#include "pdumper.h"
 
 #include <X11/Xproto.h>
 
@@ -44,18 +45,20 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <gconf/gconf-client.h>
 #endif
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
+#ifdef USE_CAIRO
+#include <fontconfig/fontconfig.h>
+#else  /* HAVE_XFT */
 #include <X11/Xft/Xft.h>
+#endif
 #endif
 
 static char *current_mono_font;
 static char *current_font;
 static struct x_display_info *first_dpyinfo;
-static Lisp_Object Qmonospace_font_name, Qfont_name, Qfont_render,
-  Qtool_bar_style;
 static Lisp_Object current_tool_bar_style;
 
-/* Store an config changed event in to the event queue.  */
+/* Store a config changed event in to the event queue.  */
 
 static void
 store_config_changed_event (Lisp_Object arg, Lisp_Object display_name)
@@ -68,11 +71,11 @@ store_config_changed_event (Lisp_Object arg, Lisp_Object display_name)
   kbd_buffer_store_event (&event);
 }
 
-/* Return non-zero if DPYINFO is still valid.  */
-static int
+/* Return true if DPYINFO is still valid.  */
+static bool
 dpyinfo_valid (struct x_display_info *dpyinfo)
 {
-  int found = 0;
+  bool found = false;
   if (dpyinfo != NULL)
     {
       struct x_display_info *d;
@@ -84,7 +87,7 @@ dpyinfo_valid (struct x_display_info *dpyinfo)
 
 /* Store a monospace font change event if the monospaced font changed.  */
 
-#if defined HAVE_XFT && (defined HAVE_GSETTINGS || defined HAVE_GCONF)
+#if (defined USE_CAIRO || defined HAVE_XFT) && (defined HAVE_GSETTINGS || defined HAVE_GCONF)
 static void
 store_monospaced_changed (const char *newfont)
 {
@@ -103,7 +106,7 @@ store_monospaced_changed (const char *newfont)
 
 /* Store a font name change event if the font name changed.  */
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 static void
 store_font_name_changed (const char *newfont)
 {
@@ -118,7 +121,7 @@ store_font_name_changed (const char *newfont)
                                   XCAR (first_dpyinfo->name_list_element));
     }
 }
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
 
 /* Map TOOL_BAR_STYLE from a string to its corresponding Lisp value.
    Return Qnil if TOOL_BAR_STYLE is not known.  */
@@ -158,7 +161,7 @@ store_tool_bar_style_changed (const char *newstyle,
                                 XCAR (dpyinfo->name_list_element));
 }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 #define XSETTINGS_FONT_NAME       "Gtk/FontName"
 #endif
 #define XSETTINGS_TOOL_BAR_STYLE  "Gtk/ToolbarStyle"
@@ -175,7 +178,7 @@ enum {
 };
 struct xsettings
 {
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   FcBool aa, hinting;
   int rgba, lcdfilter, hintstyle;
   double dpi;
@@ -192,7 +195,7 @@ struct xsettings
 #define GSETTINGS_SCHEMA         "org.gnome.desktop.interface"
 #define GSETTINGS_TOOL_BAR_STYLE "toolbar-style"
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 #define GSETTINGS_MONO_FONT  "monospace-font-name"
 #define GSETTINGS_FONT_NAME  "font-name"
 #endif
@@ -225,7 +228,7 @@ something_changed_gsettingsCB (GSettings *settings,
           g_variant_unref (val);
         }
     }
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   else if (strcmp (key, GSETTINGS_MONO_FONT) == 0)
     {
       val = g_settings_get_value (settings, GSETTINGS_MONO_FONT);
@@ -254,14 +257,14 @@ something_changed_gsettingsCB (GSettings *settings,
           g_variant_unref (val);
         }
     }
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
 }
 
 #endif /* HAVE_GSETTINGS */
 
 #ifdef HAVE_GCONF
 #define GCONF_TOOL_BAR_STYLE "/desktop/gnome/interface/toolbar_style"
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 #define GCONF_MONO_FONT  "/desktop/gnome/interface/monospace_font_name"
 #define GCONF_FONT_NAME  "/desktop/gnome/interface/font_name"
 #endif
@@ -287,7 +290,7 @@ something_changed_gconfCB (GConfClient *client,
       const char *value = gconf_value_get_string (v);
       store_tool_bar_style_changed (value, first_dpyinfo);
     }
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   else if (strcmp (key, GCONF_MONO_FONT) == 0)
     {
       const char *value = gconf_value_get_string (v);
@@ -298,12 +301,12 @@ something_changed_gconfCB (GConfClient *client,
       const char *value = gconf_value_get_string (v);
       store_font_name_changed (value);
     }
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
 }
 
 #endif /* HAVE_GCONF */
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
 
 /* Older fontconfig versions don't have FC_LCD_*.  */
 #ifndef FC_LCD_NONE
@@ -316,7 +319,7 @@ something_changed_gconfCB (GConfClient *client,
 #define FC_LCD_FILTER "lcdfilter"
 #endif
 
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
 
 /* Find the window that contains the XSETTINGS property values.  */
 
@@ -340,8 +343,8 @@ get_prop_window (struct x_display_info *dpyinfo)
 #define PAD(nr)    (((nr) + 3) & ~3)
 
 /* Parse xsettings and extract those that deal with Xft.
-   See http://freedesktop.org/wiki/Specifications/XSettingsRegistry
-   and http://standards.freedesktop.org/xsettings-spec/xsettings-spec-0.5.html.
+   See https://freedesktop.org/wiki/Specifications/XSettingsRegistry/
+   and https://specifications.freedesktop.org/xsettings-spec/xsettings-spec-0.5.html.
 
    Layout of prop.  First is a header:
 
@@ -394,8 +397,8 @@ parse_settings (unsigned char *prop,
                 unsigned long bytes,
                 struct xsettings *settings)
 {
-  Lisp_Object byteorder = Fbyteorder ();
-  int my_bo = XFASTINT (byteorder) == 'B' ? MSBFirst : LSBFirst;
+  int int1 = 1;
+  int my_bo = *(char *) &int1 == 1 ? LSBFirst : MSBFirst;
   int that_bo = prop[0];
   CARD32 n_settings;
   int bytes_parsed = 0;
@@ -404,7 +407,7 @@ parse_settings (unsigned char *prop,
 
   /* First 4 bytes is a serial number, skip that.  */
 
-  if (bytes < 12) return BadLength;
+  if (bytes < 12) return settings_seen;
   memcpy (&n_settings, prop+8, 4);
   if (my_bo != that_bo) n_settings = bswap_32 (n_settings);
   bytes_parsed = 12;
@@ -419,7 +422,7 @@ parse_settings (unsigned char *prop,
       CARD32 vlen, ival = 0;
       char name[128]; /* The names we are looking for are not this long.  */
       char sval[128]; /* The values we are looking for are not this long.  */
-      int want_this;
+      bool want_this;
       int to_cpy;
 
       sval[0] = '\0';
@@ -429,8 +432,8 @@ parse_settings (unsigned char *prop,
       memcpy (&nlen, prop+bytes_parsed, 2);
       bytes_parsed += 2;
       if (my_bo != that_bo) nlen = bswap_16 (nlen);
-      if (bytes_parsed+nlen > bytes) return BadLength;
-      to_cpy = nlen > 127 ? 127 : nlen;
+      if (bytes_parsed + nlen > bytes) return settings_seen;
+      to_cpy = min (nlen, sizeof name - 1);
       memcpy (name, prop+bytes_parsed, to_cpy);
       name[to_cpy] = '\0';
 
@@ -438,20 +441,19 @@ parse_settings (unsigned char *prop,
       bytes_parsed = PAD (bytes_parsed);
 
       bytes_parsed += 4; /* Skip serial for this value */
-      if (bytes_parsed > bytes) return BadLength;
+      if (bytes_parsed > bytes) return settings_seen;
 
-      want_this =
-#ifdef HAVE_XFT
-        (nlen > 6 && strncmp (name, "Xft/", 4) == 0)
-        || strcmp (XSETTINGS_FONT_NAME, name) == 0
-        ||
+      want_this = strcmp (XSETTINGS_TOOL_BAR_STYLE, name) == 0;
+#if defined USE_CAIRO || defined HAVE_XFT
+      if ((nlen > 6 && memcmp (name, "Xft/", 4) == 0)
+	  || strcmp (XSETTINGS_FONT_NAME, name) == 0)
+	want_this = true;
 #endif
-        strcmp (XSETTINGS_TOOL_BAR_STYLE, name) == 0;
 
       switch (type)
         {
         case 0: /* Integer */
-          if (bytes_parsed+4 > bytes) return BadLength;
+          if (bytes_parsed + 4 > bytes) return settings_seen;
           if (want_this)
             {
               memcpy (&ival, prop+bytes_parsed, 4);
@@ -461,13 +463,13 @@ parse_settings (unsigned char *prop,
           break;
 
         case 1: /* String */
-          if (bytes_parsed+4 > bytes) return BadLength;
+          if (bytes_parsed + 4 > bytes) return settings_seen;
           memcpy (&vlen, prop+bytes_parsed, 4);
           bytes_parsed += 4;
           if (my_bo != that_bo) vlen = bswap_32 (vlen);
           if (want_this)
             {
-              to_cpy = vlen > 127 ? 127 : vlen;
+              to_cpy = min (vlen, sizeof sval - 1);
               memcpy (sval, prop+bytes_parsed, to_cpy);
               sval[to_cpy] = '\0';
             }
@@ -477,23 +479,22 @@ parse_settings (unsigned char *prop,
 
         case 2: /* RGB value */
           /* No need to parse this */
-          if (bytes_parsed+8 > bytes) return BadLength;
+          if (bytes_parsed + 8 > bytes) return settings_seen;
           bytes_parsed += 8; /* 4 values (r, b, g, alpha), 2 bytes each.  */
           break;
 
         default: /* Parse Error */
-          return BadValue;
+          return settings_seen;
         }
 
       if (want_this)
         {
-          ++settings_seen;
           if (strcmp (name, XSETTINGS_TOOL_BAR_STYLE) == 0)
             {
               dupstring (&settings->tb_style, sval);
               settings->seen |= SEEN_TB_STYLE;
             }
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
           else if (strcmp (name, XSETTINGS_FONT_NAME) == 0)
             {
               dupstring (&settings->font, sval);
@@ -541,10 +542,10 @@ parse_settings (unsigned char *prop,
               else
                 settings->seen &= ~SEEN_RGBA;
             }
-          else if (strcmp (name, "Xft/DPI") == 0)
+          else if (strcmp (name, "Xft/DPI") == 0 && ival != (CARD32) -1)
             {
               settings->seen |= SEEN_DPI;
-              settings->dpi = (double)ival/1024.0;
+              settings->dpi = ival / 1024.0;
             }
           else if (strcmp (name, "Xft/lcdfilter") == 0)
             {
@@ -556,7 +557,10 @@ parse_settings (unsigned char *prop,
               else
                 settings->seen &= ~SEEN_LCDFILTER;
             }
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
+	  else
+	    want_this = false;
+	  settings_seen += want_this;
         }
     }
 
@@ -565,9 +569,9 @@ parse_settings (unsigned char *prop,
 
 /* Read settings from the XSettings property window on display for DPYINFO.
    Store settings read in SETTINGS.
-   Return non-zero if successful, zero if not.  */
+   Return true iff successful.  */
 
-static int
+static bool
 read_settings (struct x_display_info *dpyinfo, struct xsettings *settings)
 {
   Atom act_type;
@@ -576,6 +580,7 @@ read_settings (struct x_display_info *dpyinfo, struct xsettings *settings)
   unsigned char *prop = NULL;
   Display *dpy = dpyinfo->display;
   int rc;
+  bool got_settings = false;
 
   x_catch_errors (dpy);
   rc = XGetWindowProperty (dpy,
@@ -587,27 +592,26 @@ read_settings (struct x_display_info *dpyinfo, struct xsettings *settings)
 
   if (rc == Success && prop != NULL && act_form == 8 && nitems > 0
       && act_type == dpyinfo->Xatom_xsettings_prop)
-    rc = parse_settings (prop, nitems, settings);
+    got_settings = parse_settings (prop, nitems, settings) != 0;
 
   XFree (prop);
 
   x_uncatch_errors ();
 
-  return rc != 0;
+  return got_settings;
 }
 
 /* Apply Xft settings in SETTINGS to the Xft library.
-   If SEND_EVENT_P is non-zero store a Lisp event that Xft settings changed.  */
+   Store a Lisp event that Xft settings changed.  */
 
 static void
 apply_xft_settings (struct x_display_info *dpyinfo,
-                    int send_event_p,
                     struct xsettings *settings)
 {
 #ifdef HAVE_XFT
   FcPattern *pat;
   struct xsettings oldsettings;
-  int changed = 0;
+  bool changed = false;
 
   memset (&oldsettings, 0, sizeof (oldsettings));
   pat = FcPatternCreate ();
@@ -627,7 +631,7 @@ apply_xft_settings (struct x_display_info *dpyinfo,
     {
       FcPatternDel (pat, FC_ANTIALIAS);
       FcPatternAddBool (pat, FC_ANTIALIAS, settings->aa);
-      ++changed;
+      changed = true;
       oldsettings.aa = settings->aa;
     }
 
@@ -636,7 +640,7 @@ apply_xft_settings (struct x_display_info *dpyinfo,
     {
       FcPatternDel (pat, FC_HINTING);
       FcPatternAddBool (pat, FC_HINTING, settings->hinting);
-      ++changed;
+      changed = true;
       oldsettings.hinting = settings->hinting;
     }
   if ((settings->seen & SEEN_RGBA) != 0 && oldsettings.rgba != settings->rgba)
@@ -644,7 +648,7 @@ apply_xft_settings (struct x_display_info *dpyinfo,
       FcPatternDel (pat, FC_RGBA);
       FcPatternAddInteger (pat, FC_RGBA, settings->rgba);
       oldsettings.rgba = settings->rgba;
-      ++changed;
+      changed = true;
     }
 
   /* Older fontconfig versions don't have FC_LCD_FILTER. */
@@ -653,7 +657,7 @@ apply_xft_settings (struct x_display_info *dpyinfo,
     {
       FcPatternDel (pat, FC_LCD_FILTER);
       FcPatternAddInteger (pat, FC_LCD_FILTER, settings->lcdfilter);
-      ++changed;
+      changed = true;
       oldsettings.lcdfilter = settings->lcdfilter;
     }
 
@@ -663,17 +667,32 @@ apply_xft_settings (struct x_display_info *dpyinfo,
     {
       FcPatternDel (pat, FC_HINT_STYLE);
       FcPatternAddInteger (pat, FC_HINT_STYLE, settings->hintstyle);
-      ++changed;
+      changed = true;
       oldsettings.hintstyle = settings->hintstyle;
     }
 #endif
 
-  if ((settings->seen & SEEN_DPI) != 0 && oldsettings.dpi != settings->dpi
-      && settings->dpi > 0)
+  if ((settings->seen & SEEN_DPI) != 0
+      && settings->dpi > 0
+      /* The following conjunct avoids setting `changed' to true when
+	 old and new dpi settings do not differ "substantially".
+	 Otherwise, the dynamic-setting Elisp code may process all sorts
+	 of unrelated settings that override users' font customizations,
+	 among others.  Compare:
+
+	 https://lists.gnu.org/r/emacs-devel/2016-05/msg00557.html
+	 https://lists.gnu.org/r/bug-gnu-emacs/2016-12/msg00820.html
+
+	 As soon as the dynamic-settings code has been tested and
+	 verified, this Emacs 25.2 workaround should be removed.  */
+      && ((oldsettings.dpi >= settings->dpi
+	   && (oldsettings.dpi - settings->dpi) > 2)
+	  || ((settings->dpi > oldsettings.dpi)
+	      && (settings->dpi - oldsettings.dpi) > 2)))
     {
       FcPatternDel (pat, FC_DPI);
       FcPatternAddDouble (pat, FC_DPI, settings->dpi);
-      ++changed;
+      changed = true;
       oldsettings.dpi = settings->dpi;
 
       /* Changing the DPI on this display affects all frames on it.
@@ -699,9 +718,8 @@ apply_xft_settings (struct x_display_info *dpyinfo,
       char buf[sizeof format + d_formats * d_growth + lf_formats * lf_growth];
 
       XftDefaultSet (dpyinfo->display, pat);
-      if (send_event_p)
-        store_config_changed_event (Qfont_render,
-                                    XCAR (dpyinfo->name_list_element));
+      store_config_changed_event (Qfont_render,
+				  XCAR (dpyinfo->name_list_element));
       Vxft_settings
 	= make_formatted_string (buf, format,
 				 oldsettings.aa, oldsettings.hinting,
@@ -715,17 +733,17 @@ apply_xft_settings (struct x_display_info *dpyinfo,
 }
 
 /* Read XSettings from the display for DPYINFO.
-   If SEND_EVENT_P is non-zero store a Lisp event settings that changed.  */
+   If SEND_EVENT_P store a Lisp event settings that changed.  */
 
 static void
-read_and_apply_settings (struct x_display_info *dpyinfo, int send_event_p)
+read_and_apply_settings (struct x_display_info *dpyinfo, bool send_event_p)
 {
   struct xsettings settings;
 
   if (!read_settings (dpyinfo, &settings))
     return;
 
-  apply_xft_settings (dpyinfo, True, &settings);
+  apply_xft_settings (dpyinfo, &settings);
   if (settings.seen & SEEN_TB_STYLE)
     {
       if (send_event_p)
@@ -734,7 +752,7 @@ read_and_apply_settings (struct x_display_info *dpyinfo, int send_event_p)
         current_tool_bar_style = map_tool_bar_style (settings.tb_style);
       xfree (settings.tb_style);
     }
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   if (settings.seen & SEEN_FONT)
     {
       if (send_event_p)
@@ -751,27 +769,27 @@ read_and_apply_settings (struct x_display_info *dpyinfo, int send_event_p)
 void
 xft_settings_event (struct x_display_info *dpyinfo, const XEvent *event)
 {
-  bool check_window_p = 0, apply_settings_p = 0;
+  bool check_window_p = false, apply_settings_p = false;
 
   switch (event->type)
     {
     case DestroyNotify:
       if (dpyinfo->xsettings_window == event->xany.window)
-        check_window_p = 1;
+        check_window_p = true;
       break;
 
     case ClientMessage:
       if (event->xclient.message_type == dpyinfo->Xatom_xsettings_mgr
           && event->xclient.data.l[1] == dpyinfo->Xatom_xsettings_sel
           && event->xclient.window == dpyinfo->root_window)
-        check_window_p = 1;
+        check_window_p = true;
       break;
 
     case PropertyNotify:
       if (event->xproperty.window == dpyinfo->xsettings_window
           && event->xproperty.state == PropertyNewValue
           && event->xproperty.atom == dpyinfo->Xatom_xsettings_prop)
-        apply_settings_p = 1;
+        apply_settings_p = true;
       break;
     }
 
@@ -781,11 +799,11 @@ xft_settings_event (struct x_display_info *dpyinfo, const XEvent *event)
       dpyinfo->xsettings_window = None;
       get_prop_window (dpyinfo);
       if (dpyinfo->xsettings_window != None)
-        apply_settings_p = 1;
+        apply_settings_p = true;
     }
 
   if (apply_settings_p)
-    read_and_apply_settings (dpyinfo, True);
+    read_and_apply_settings (dpyinfo, true);
 }
 
 /* Initialize GSettings and read startup values.  */
@@ -795,7 +813,7 @@ init_gsettings (void)
 {
 #ifdef HAVE_GSETTINGS
   GVariant *val;
-  int schema_found = 0;
+  bool schema_found = false;
 
 #if ! GLIB_CHECK_VERSION (2, 36, 0)
   g_type_init ();
@@ -806,7 +824,7 @@ init_gsettings (void)
     GSettingsSchema *sc = g_settings_schema_source_lookup
       (g_settings_schema_source_get_default (),
        GSETTINGS_SCHEMA,
-       TRUE);
+       true);
     schema_found = sc != NULL;
     if (sc) g_settings_schema_unref (sc);
   }
@@ -836,7 +854,7 @@ init_gsettings (void)
       g_variant_unref (val);
     }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   val = g_settings_get_value (gsettings_client, GSETTINGS_MONO_FONT);
   if (val)
     {
@@ -854,7 +872,7 @@ init_gsettings (void)
         dupstring (&current_font, g_variant_get_string (val, NULL));
       g_variant_unref (val);
     }
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
 
 #endif /* HAVE_GSETTINGS */
 }
@@ -889,7 +907,7 @@ init_gconf (void)
       g_free (s);
     }
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   s = gconf_client_get_string (gconf_client, GCONF_MONO_FONT, NULL);
   if (s)
     {
@@ -918,7 +936,7 @@ init_gconf (void)
                            GCONF_FONT_NAME,
                            something_changed_gconfCB,
                            NULL, NULL, NULL);
-#endif /* HAVE_XFT */
+#endif /* USE_CAIRO || HAVE_XFT */
 #endif /* HAVE_GCONF */
 }
 
@@ -937,7 +955,7 @@ init_xsettings (struct x_display_info *dpyinfo)
 
   get_prop_window (dpyinfo);
   if (dpyinfo->xsettings_window != None)
-    read_and_apply_settings (dpyinfo, False);
+    read_and_apply_settings (dpyinfo, false);
 
   unblock_input ();
 }
@@ -1010,13 +1028,18 @@ void
 syms_of_xsettings (void)
 {
   current_mono_font = NULL;
+  PDUMPER_IGNORE (current_mono_font);
   current_font = NULL;
+  PDUMPER_IGNORE (current_font);
   first_dpyinfo = NULL;
+  PDUMPER_IGNORE (first_dpyinfo);
 #ifdef HAVE_GSETTINGS
   gsettings_client = NULL;
+  PDUMPER_IGNORE (gsettings_client);
 #endif
 #ifdef HAVE_GCONF
   gconf_client = NULL;
+  PDUMPER_IGNORE (gconf_client);
 #endif
 
   DEFSYM (Qmonospace_font_name, "monospace-font-name");
@@ -1030,13 +1053,13 @@ syms_of_xsettings (void)
 When this is non-nil and the system defined fixed width font changes, we
 update frames dynamically.
 If this variable is nil, Emacs ignores system font changes.  */);
-  use_system_font = 0;
+  use_system_font = false;
 
   DEFVAR_LISP ("xft-settings", Vxft_settings,
                doc: /* Font settings applied to Xft.  */);
   Vxft_settings = empty_unibyte_string;
 
-#ifdef HAVE_XFT
+#if defined USE_CAIRO || defined HAVE_XFT
   Fprovide (intern_c_string ("font-render-setting"), Qnil);
 #if defined (HAVE_GCONF) || defined (HAVE_GSETTINGS)
   Fprovide (intern_c_string ("system-font-setting"), Qnil);

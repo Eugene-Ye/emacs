@@ -1,6 +1,6 @@
 ;;; mm-partial.el --- showing message/partial
 
-;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
 ;; Author: Shenghuo Zhu <zsh@cs.rochester.edu>
 ;; Keywords: message partial
@@ -18,13 +18,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
-
-(eval-when-compile (require 'cl))
 
 (require 'gnus-sum)
 (require 'mm-util)
@@ -56,7 +54,7 @@
   "Show the partial part of HANDLE.
 This function replaces the buffer of HANDLE with a buffer contains
 the entire message.
-If NO-DISPLAY is nil, display it. Otherwise, do nothing after replacing."
+If NO-DISPLAY is nil, display it.  Otherwise, do nothing after replacing."
   (let ((id (cdr (assq 'id (cdr (mm-handle-type handle)))))
 	phandles
 	(b (point)) (n 1) total
@@ -136,13 +134,6 @@ If NO-DISPLAY is nil, display it. Otherwise, do nothing after replacing."
 	   handle
 	   `(lambda ()
 	      (let (buffer-read-only)
-		(condition-case nil
-		    ;; This is only valid on XEmacs.
-		    (mapcar (lambda (prop)
-			    (remove-specifier
-			     (face-property 'default prop) (current-buffer)))
-			    '(background background-pixmap foreground))
-		  (error nil))
 		(delete-region ,(point-min-marker) ,(point-max-marker))))))))))
 
 (provide 'mm-partial)

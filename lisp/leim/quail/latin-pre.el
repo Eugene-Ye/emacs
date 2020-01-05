@@ -1,6 +1,6 @@
 ;;; latin-pre.el --- Quail packages for inputting various European characters  -*-coding: utf-8;-*-
 
-;; Copyright (C) 1997-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
 ;;   2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -32,9 +32,11 @@
 ;;
 ;; polish-slash:
 ;; Author: Włodek Bzyl <matwb@univ.gda.pl>
-;; Maintainer: Włodek Bzyl <matwb@univ.gda.pl>
 ;;
 ;; latin-[89]-prefix: Dave Love <fx@gnu.org>
+;;
+;; polish-prefix:
+;; Author: Wojciech Gac <wojciech.s.gac@gmail.com>
 
 ;; You might make extra input sequences on the basis of the X
 ;; locale/*/Compose files (which have both prefix and postfix
@@ -52,8 +54,8 @@
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á, '' -> ´
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á, \\='\\=' -> ´
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"a -> ä  \"\" -> ¨
     tilde    |   ~    | ~a -> ã
@@ -183,11 +185,12 @@
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á   '' -> ´
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á   \\='\\=' -> ´
+    grave    |   \\=`    | \\=`a -> à
   diaeresis  |   \"    | \"i -> ï   \"\" -> ¨
     tilde    |   ~    | ~n -> ñ
    cedilla   |   ~    | ~c -> ç
+  middle dot |   ~    | ~. -> ·
    symbol    |   ~    | ~> -> »   ~< -> «   ~! -> ¡   ~? -> ¿
 " nil t nil nil nil nil nil nil nil nil t)
 
@@ -223,6 +226,7 @@
  ("~<" ?\«)
  ("~!" ?¡)
  ("~?" ?¿)
+ ("~." ?·)
  ("~ " ?~)
 )
 
@@ -258,8 +262,8 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'e -> é
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='e -> é
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"i -> ï
    cedilla   | ~ or , | ~c -> ç   ,c -> ç
@@ -315,7 +319,7 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+------------------
-    tilde    |   ~    | ~a -> ă
+    breve    |   ~    | ~a -> ă
   circumflex |   ^    | ^a -> â, ^i -> î
    cedilla   |   ,    | ,s -> ş, ,t -> ţ
    ~         |   ~    | ~~ -> ~
@@ -337,11 +341,11 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+------------------
-    tilde    |   \"    | \"a -> â
-  circumflex |   '    | 'a -> â, 'i -> î
-   cedilla   |   '    | 's -> ş, 't -> ţ
-   '         |   '    | '' -> '
-   \"         |   \"    | \"\" -> \"
+    breve    |   \\='    | \\='a -> ă
+ circumflex  |  \" \\='   | \"a -> â  \\='i -> î
+   cedilla   |   \\='    | \\='s -> ş  \\='t -> ţ
+      \\='      |   \\='    | \\='\\=' -> \\='
+      \"      |   \"    | \"\" -> \"
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -356,13 +360,14 @@ Key translation rules are:
  "german-prefix" "German" "DE>" t
  "German (Deutsch) input method with prefix modifiers
 Key translation rules are:
- \"A -> Ä ->   \"O -> Ö   \"U -> Ü   \"s -> ß
+ \"A -> Ä ->   \"O -> Ö   \"S -> ẞ   \"U -> Ü   \"s -> ß
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
  ("\"A" ?Ä)
  ("\"O" ?Ö)
  ("\"U" ?Ü)
+ ("\"S" ?ẞ)
  ("\"a" ?ä)
  ("\"o" ?ö)
  ("\"u" ?ü)
@@ -374,7 +379,7 @@ Key translation rules are:
  "irish-prefix" "Latin-1" "GA>" t
  "Irish input method with prefix modifiers
 Key translation rules are:
- 'A -> Á   'E -> É   'I -> Í   'O -> Ó   'U -> Ú
+ \\='A -> Á   \\='E -> É   \\='I -> Í   \\='O -> Ó   \\='U -> Ú
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -397,12 +402,12 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á   '' -> ´
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á   \\='\\=' -> ´
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"u -> ü
     tilde    |   ~    | ~a -> ã
-   cedilla   | ' or , | 'c -> ç   ,c -> ç
+   cedilla   | \\=' or , | \\='c -> ç   ,c -> ç
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -448,7 +453,7 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á
+    acute    |   \\='    | \\='a -> á
   diaeresis  |   \"    | \"u -> ü
     tilde    |   ~    | ~n -> ñ
    symbol    |   ~    | ~> -> »   ~< -> «   ~! -> ¡   ~? -> ¿
@@ -484,14 +489,14 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á   '' -> ?´
+    acute    |   \\='    | \\='a -> á   \\='\\=' -> ?´
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"a -> ä   \"\" -> ¨
     breve    |   ~    | ~a -> ă
     caron    |   ~    | ~c -> č
-   cedilla   |   `    | `c -> ç   `e -> ?ę
-    misc     | ' ` ~  | 'd -> đ   `l -> ł   `z -> ż   ~o -> ő   ~u -> ű
-   symbol    |   ~    | `. -> ˙   ~~ -> ˘   ~. -> ?¸
+   cedilla   |   \\=`    | \\=`c -> ç   \\=`e -> ?ę
+    misc     | \\=' \\=` ~  | \\='d -> đ   \\=`l -> ł   \\=`z -> ż   ~o -> ő   ~u -> ű
+   symbol    |   ~    | \\=`. -> ˙   ~~ -> ˘   ~. -> ?¸
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -595,14 +600,14 @@ Key translation rules are:
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á   '' -> ?´
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á   \\='\\=' -> ?´
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"a -> ä   \"\" -> ¨
    cedilla   |   ~    | ~c -> ç   ~s -> ş   ~~ -> ¸
-  dot above  |   / .  | /g -> ġ   .o -> ġ
+  dot above  |   / .  | /g -> ġ   .g -> ġ
     misc     | \" ~ /  | \"s -> ß   ~g -> ğ   ~u -> ŭ   /h -> ħ   /i -> ı
-   symbol    |   ~    | ~` -> ˘   /# -> £   /$ -> ¤   // -> °
+   symbol    |   ~    | ~\\=` -> ˘   /# -> £   /$ -> ¤   // -> °
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -702,12 +707,99 @@ Key translation rules are:
  (".z" ?ż)
 )
 
+(quail-define-package
+ "polish-prefix" "Polish" "PL>" nil
+ "Input method for Polish, Kashubian, Kurpie and Silesian.
+Similar in spirit to `polish-slash', but uses the most intuitive
+prefix for each diacritic.  In addition to ordinary Polish diacritics,
+this input method also contains characters from the Kashubian, Kurpie
+and Silesian (both Steuer and Ślabikŏrzowy szrajbōnek) scripts."
+ nil t t nil nil nil nil nil nil nil t)
+
+(quail-define-rules
+ (",a" ?ą)
+ (",A" ?Ą)
+ ("/a" ?á)
+ ("/A" ?Á)
+ ("'a" ?á)
+ ("'A" ?Á)
+ ("\\a" ?à)
+ ("\\A" ?À)
+ ("`a" ?à)
+ ("`A" ?À)
+ (".a" ?å)
+ (".A" ?Å)
+ ("~a" ?ã)
+ ("~A" ?Ã)
+ ("/c" ?ć)
+ ("/C" ?Ć)
+ ("'c" ?ć)
+ ("'C" ?Ć)
+ ("'e" ?é)
+ ("'E" ?É)
+ ("/e" ?é)
+ ("/E" ?É)
+ (",e" ?ę)
+ (",E" ?Ę)
+ (":e" ?ë)
+ (":E" ?Ë)
+ (":i" ?ï)
+ (":I" ?Ï)
+ ("/l" ?ł)
+ ("/L" ?Ł)
+ ("/n" ?ń)
+ ("/N" ?Ń)
+ ("'n" ?ń)
+ ("'N" ?Ń)
+ ("`o" ?ò)
+ ("`O" ?Ò)
+ ("\\o" ?ò)
+ ("\\O" ?Ò)
+ ("'o" ?ó)
+ ("'O" ?Ó)
+ ("/o" ?ó)
+ ("/O" ?Ó)
+ ("^o" ?ô)
+ ("^O" ?Ô)
+ ("-o" ?ō)
+ ("-O" ?Ō)
+ ("~o" ?õ)
+ ("~O" ?Õ)
+ ("#o" ?ŏ)
+ ("#O" ?Ŏ)
+ ("/s" ?ś)
+ ("/S" ?Ś)
+ ("'s" ?ś)
+ ("'S" ?Ś)
+ ("`u" ?ù)
+ ("`U" ?Ù)
+ (".u" ?ů)
+ (".U" ?Ů)
+ ("/z" ?ź)
+ ("/Z" ?Ź)
+ ("'z" ?ź)
+ ("'Z" ?Ź)
+ (".z" ?ż)
+ (".Z" ?Ż)
+ ;; Explicit input of prefix characters. Normally, to input a prefix
+ ;; character itself, one needs to press <Tab>. Definitions below
+ ;; allow to input those characters by entering them twice.
+ ("//" ?/)
+ ("\\\\" ?\\)
+ ("~~" ?~)
+ ("''" ?')
+ ("::" ?:)
+ ("``" ?`)
+ ("^^" ?^)
+ (".." ?.)
+ (",," ?,)
+ ("--" ?-))
 
 (quail-define-package
  "polish-slash" "Polish" "PL>" nil
  "Polish diacritics and slash character are input as `/[acelnosxzACELNOSXZ/]'.
 For example, the character named `aogonek' is obtained by `/a'."
- nil t t t nil nil nil nil nil nil t)
+ nil t t nil nil nil nil nil nil nil t)
 
 (quail-define-rules
  ("//" ?/)
@@ -736,8 +828,8 @@ For example, the character named `aogonek' is obtained by `/a'."
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"a -> ä, \"Y -> Ÿ
     tilde    |   ~    | ~a -> ã
@@ -871,8 +963,8 @@ For example, the character named `aogonek' is obtained by `/a'."
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^w -> ŵ
   diaeresis  |   \"    | \"a -> ä
   dot above  |   .    | .b -> ḃ
@@ -996,15 +1088,15 @@ of characters from a single Latin-N charset.
 
     effect   | prefix | examples
  ------------+--------+----------
-    acute    |   '    | 'a -> á, '' -> ´
-    grave    |   `    | `a -> à
+    acute    |   \\='    | \\='a -> á  \\='\\=' -> ´
+    grave    |   \\=`    | \\=`a -> à
   circumflex |   ^    | ^a -> â
   diaeresis  |   \"    | \"a -> ä  \"\" -> ¨
     tilde    |   ~    | ~a -> ã
-   cedilla   |   ~    | ~c -> ç
+   cedilla   |  , ~   | ,c -> ç  ~c -> ç
+    caron    |   ~    | ~c -> č  ~g -> ğ
     breve    |   ~    | ~a -> ă
-    caron    |   ~    | ~c -> č
-  dot above  | ~ / .  | ~o -> ġ   /o -> ġ   .o -> ġ
+  dot above  |   / .  | /g -> ġ   .g -> ġ
     misc     | \" ~ /  | \"s -> ß  ~d -> ð  ~t -> þ  /a -> å  /e -> æ  /o -> ø
    symbol    |   ~    | ~> -> »  ~< -> «  ~! -> ¡  ~? -> ¿  ~~ -> ¸
    symbol    |  _ /   | _o -> º  _a -> ª  // -> °  /\\ -> ×  _y -> ¥
@@ -1083,6 +1175,7 @@ of characters from a single Latin-N charset.
  ("\"E" ?Ë)
  ("\"I" ?Ï)
  ("\"O" ?Ö)
+ ("\"S" ?ẞ)
  ("\"U" ?Ü)
  ("\"W" ?Ẅ)
  ("\"Y" ?Ÿ)
@@ -1158,7 +1251,10 @@ of characters from a single Latin-N charset.
  ("~>" ?\»)
  ("~?" ?¿)
  ("~A" ?Ã)
+ ("~A" ?Ă)
  ("~C" ?Ç)
+ ("~C" ?Č)
+ (",C" ?Ç)
  ("~D" ?Ð)
  ("~G" ?Ğ)
  ("~N" ?Ñ)
@@ -1171,13 +1267,15 @@ of characters from a single Latin-N charset.
  ("~Z" ?Ž)
  ("~`" ?˘)
  ("~a" ?ã)
+ ("~a" ?ă)
  ("~c" ?ç)
+ ("~c" ?č)
+ (",c" ?ç)
  ("~d" ?ð)
  ("~e" ?€)
  ("~g" ?ğ)
  ("~n" ?ñ)
  ("~o" ?õ)
- ("~o" ?ġ)
  ("~p" ?¶)
  ("~s" ?§)
  ("~s" ?ş)
@@ -1190,5 +1288,53 @@ of characters from a single Latin-N charset.
  ("~|" ?¦)
  ("~~" ?¸)
 )
+
+;;; Hawaiian prefix input method. It's a small subset of Latin-4
+;;; with the addition of an ʻokina mapping.  Hopefully the ʻokina shows
+;;; correctly on most displays.
+
+;;; This reference is an authoritative guide to Hawaiian orthography:
+;;; http://www2.hawaii.edu/~strauch/tips/HawaiianOrthography.html
+
+;;; Initial coding 2018-09-08 Bob Newell, Honolulu, Hawaiʻi
+;;; Comments to bobnewell@bobnewell.net
+
+(quail-define-package
+ "hawaiian-prefix" "Hawaiian Prefix" "H>" t
+ "Hawaiian characters input method with postfix modifiers
+
+             | prefix | examples
+ ------------+---------+----------
+  ʻokina     |    \\=`    | \\=` -> ʻ
+  kahakō     |    -    | -a -> ā
+
+Doubling the prefix separates the letter and prefix. --a -> -a
+" nil t nil nil nil nil nil nil nil nil t)
+
+(quail-define-rules
+ ("-A" ?Ā)
+ ("-E" ?Ē)
+ ("~I" ?Ĩ)
+ ("-O" ?Ō)
+ ("-U" ?Ū)
+ ("-a" ?ā)
+ ("-e" ?ē)
+ ("-i" ?ī)
+ ("-o" ?ō)
+ ("-u" ?ū)
+ ("`" ?ʻ)
+
+ ("--A" ["-A"])
+ ("--E" ["-E"])
+ ("--I" ["-I"])
+ ("--O" ["-O"])
+ ("--U" ["-U"])
+ ("--a" ["-a"])
+ ("--e" ["-e"])
+ ("--i" ["-i"])
+ ("--o" ["-o"])
+ ("--u" ["-u"])
+ ("``"  ["`"])
+ )
 
 ;;; latin-pre.el ends here

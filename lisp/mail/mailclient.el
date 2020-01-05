@@ -1,6 +1,6 @@
 ;;; mailclient.el --- mail sending via system's mail client.
 
-;; Copyright (C) 2005-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: David Reitter <david.reitter@gmail.com>
 ;; Keywords: mail
@@ -18,11 +18,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
-;; This package allows to hand over a buffer to be sent off
+;; This package allows handing over a buffer to be sent off
 ;; via the system's designated e-mail client.
 ;; Note that the e-mail client will display the contents of the buffer
 ;; again for editing.
@@ -47,6 +47,7 @@
 (require 'sendmail)   ;; for mail-sendmail-undelimit-header
 (require 'mail-utils) ;; for mail-fetch-field
 (require 'browse-url)
+(require 'mail-parse)
 
 (defcustom mailclient-place-body-on-clipboard-flag
   (fboundp 'w32-set-clipboard-data)
@@ -62,10 +63,9 @@ supported.  Defaults to non-nil on Windows, nil otherwise."
 	 (mapcar
 	  (lambda (char)
 	    (cond
-	     ((eq char ?\x20) "%20")   ;; space
 	     ((eq char ?\n) "%0D%0A")  ;; newline
-	     ((string-match "[-a-zA-Z0-9_:/.@]" (char-to-string char))
-	      (char-to-string char))   ;; printable
+	     ((string-match "[-a-zA-Z0-9._~]" (char-to-string char))
+	      (char-to-string char))   ;; unreserved as per RFC 6068
 	     (t                        ;; everything else
 	      (format "%%%02x" char))))	;; escape
 	  ;; Convert string to list of chars
@@ -96,7 +96,7 @@ supported.  Defaults to non-nil on Windows, nil otherwise."
 		       recp)))
 	       (setq first nil))
 	     (split-string
-	      (mail-strip-quoted-names field) "\, *"))
+	      (mail-strip-quoted-names field) ", *"))
 	    result)))))
 
 (declare-function clipboard-kill-ring-save "menu-bar.el"
@@ -125,6 +125,13 @@ The mail client is taken to be the handler of mailto URLs."
 		      (< (point) delimline))
 	    (replace-match "\n"))
 	  (let ((case-fold-search t)
+		(mime-charset-pattern
+		 (concat
+		  "^content-type:[ \t]*text/plain;"
+		  "\\(?:[ \t\n]*\\(?:format\\|delsp\\)=\"?[-a-z0-9]+\"?;\\)*"
+		  "[ \t\n]*charset=\"?\\([^ \t\n\";]+\\)\"?"))
+		coding-system
+		character-coding
 		;; Use the external browser function to send the
 		;; message.
 		(browse-url-mailto-function nil))
@@ -135,9 +142,26 @@ The mail client is taken to be the handler of mailto URLs."
 	     (concat
 	      (save-excursion
 		(narrow-to-region (point-min) delimline)
+                ;; We can't send multipart/* messages (i. e. with
+                ;; attachments or the like) via this method.
+                (when-let ((type (mail-fetch-field "content-type")))
+                  (when (and (string-match "multipart"
+                                           (car (mail-header-parse-content-type
+                                                 type)))
+                             (not (y-or-n-p "Message with attachments can't be sent via mailclient; continue anyway?")))
+                    (error "Choose a different `send-mail-function' to send attachments")))
+		(goto-char (point-min))
+		(setq coding-system
+		      (if (re-search-forward mime-charset-pattern nil t)
+			  (coding-system-from-name (match-string 1))
+			'undecided))
+		(setq character-coding
+		      (mail-fetch-field "content-transfer-encoding"))
+		(when character-coding
+		  (setq character-coding (downcase character-coding)))
 		(concat
 		 "mailto:"
-		 ;; some of the headers according to RFC822
+		 ;; Some of the headers according to RFC 822 (or later).
 		 (mailclient-gather-addresses "To"
 					      'drop-first-name)
 		 (mailclient-gather-addresses "cc"  )
@@ -160,18 +184,31 @@ The mail client is taken to be the handler of mailto URLs."
 			       (mailclient-encode-string-as-url subj))
 		     ""))))
 	      ;; body
-	      (concat
-	       (mailclient-url-delim) "body="
-	       (mailclient-encode-string-as-url
-		(if mailclient-place-body-on-clipboard-flag
-		    (progn
-		      (clipboard-kill-ring-save
-		       (+ 1 delimline) (point-max))
-		      (concat
-		       "*** E-Mail body has been placed on clipboard, "
-		       "please paste it here! ***"))
-		  ;; else
-		  (buffer-substring (+ 1 delimline) (point-max))))))))))))
+	      (mailclient-url-delim) "body="
+	      (progn
+		(delete-region (point-min) delimline)
+		(unless (null character-coding)
+		  ;; mailto: and clipboard need UTF-8 and cannot deal with
+		  ;; Content-Transfer-Encoding or Content-Type.
+		  ;; FIXME: There is code duplication here with rmail.el.
+		  (set-buffer-multibyte nil)
+		  (cond
+		   ((string= character-coding "base64")
+		    (base64-decode-region (point-min) (point-max)))
+		   ((string= character-coding "quoted-printable")
+		    (mail-unquote-printable-region (point-min) (point-max)
+						   nil nil t))
+		   (t (error "unsupported Content-Transfer-Encoding: %s"
+			     character-coding)))
+		  (decode-coding-region (point-min) (point-max) coding-system))
+		(mailclient-encode-string-as-url
+		 (if mailclient-place-body-on-clipboard-flag
+		     (progn
+		       (clipboard-kill-ring-save (point-min) (point-max))
+		       (concat
+			"*** E-Mail body has been placed on clipboard, "
+			"please paste it here! ***"))
+		   (buffer-string)))))))))))
 
 (provide 'mailclient)
 

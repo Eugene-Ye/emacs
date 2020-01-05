@@ -1,14 +1,14 @@
 /* Caching facts about regions of the buffer, for optimization.
 
-Copyright (C) 1985-1989, 1993, 1995, 2001-2014 Free Software Foundation,
+Copyright (C) 1985-1989, 1993, 1995, 2001-2020 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,14 +16,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 #include <config.h>
 #include <stdio.h>
 
 #include "lisp.h"
-#include "character.h"
 #include "buffer.h"
 #include "region-cache.h"
 
@@ -760,7 +759,6 @@ void pp_cache (struct region_cache *) EXTERNALLY_VISIBLE;
 void
 pp_cache (struct region_cache *c)
 {
-  ptrdiff_t i;
   ptrdiff_t beg_u = c->buffer_beg + c->beg_unchanged;
   ptrdiff_t end_u = c->buffer_end - c->end_unchanged;
 
@@ -769,19 +767,14 @@ pp_cache (struct region_cache *c)
            c->buffer_beg, c->buffer_end,
            beg_u, end_u);
 
-  for (i = 0; i < c->cache_len; i++)
+  for (ptrdiff_t i = 0; i < c->cache_len; i++)
     {
       ptrdiff_t pos = BOUNDARY_POS (c, i);
 
-      putc (((pos < beg_u) ? 'v'
-             : (pos == beg_u) ? '-'
-             : ' '),
-            stderr);
-      putc (((pos > end_u) ? '^'
-             : (pos == end_u) ? '-'
-             : ' '),
-            stderr);
-      fprintf (stderr, "%"pD"d : %d\n", pos, BOUNDARY_VALUE (c, i));
+      fprintf (stderr, "%c%c%"pD"d : %d\n",
+	       pos < beg_u ? 'v' : pos == beg_u ? '-' : ' ',
+	       pos > end_u ? '^' : pos == end_u ? '-' : ' ',
+	       pos, BOUNDARY_VALUE (c, i));
     }
 }
 

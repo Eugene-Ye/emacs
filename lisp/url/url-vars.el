@@ -1,6 +1,7 @@
 ;;; url-vars.el --- Variables for Uniform Resource Locator tool
 
-;; Copyright (C) 1996-1999, 2001, 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1999, 2001, 2004-2020 Free Software Foundation,
+;; Inc.
 
 ;; Keywords: comm, data, processes, hypermedia
 
@@ -17,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 
@@ -59,10 +60,18 @@
 (defvar url-current-mime-headers nil
   "A parsed representation of the MIME headers for the current URL.")
 
+(defvar url-current-lastloc nil
+  "A parsed representation of the URL to be considered as the last location.
+Use of this value on outbound connections is subject to
+`url-privacy-level' and `url-lastloc-privacy-level'.  This is never set
+by the url library, applications are expected to set this
+variable in buffers representing a displayed location.")
+
 (mapc 'make-variable-buffer-local
       '(
 	url-current-object
 	url-current-mime-headers
+        url-current-lastloc
 	))
 
 (defcustom url-honor-refresh-requests t
@@ -115,15 +124,16 @@ If a list, this should be a list of symbols of what NOT to send.
 Valid symbols are:
 email    -- the email address
 os       -- the operating system info
-lastloc  -- the last location
+emacs    -- the version of Emacs
+lastloc  -- the last location (see also `url-lastloc-privacy-level')
 agent    -- do not send the User-Agent string
 cookies  -- never accept HTTP cookies
 
 Samples:
 
- (setq url-privacy-level 'high)
- (setq url-privacy-level '(email lastloc))    ;; equivalent to 'high
- (setq url-privacy-level '(os))
+ (setq url-privacy-level \\='high)
+ (setq url-privacy-level \\='(email lastloc))    ;; equivalent to \\='high
+ (setq url-privacy-level \\='(os))
 
 ::NOTE::
 This variable controls several other variables and is _NOT_ automatically
@@ -142,9 +152,28 @@ variable."
 		(checklist :tag "Custom"
 			   (const :tag "Email address" :value email)
 			   (const :tag "Operating system" :value os)
+			   (const :tag "Emacs version" :value emacs)
 			   (const :tag "Last location" :value lastloc)
 			   (const :tag "Browser identification" :value agent)
 			   (const :tag "No cookies" :value cookie)))
+  :group 'url)
+
+(defcustom url-lastloc-privacy-level 'domain-match
+  "Further restrictions on sending the last location.
+This value is only consulted if `url-privacy-level' permits
+sending last location in the first place.
+
+Valid values are:
+none          -- Always send last location.
+domain-match  -- Send last location if the new location is within the
+                 same domain
+host-match    -- Send last location if the new location is on the
+                 same host
+"
+  :version "27.1"
+  :type '(radio (const :tag "Always send" none)
+                (const :tag "Domains match" domain-match)
+                (const :tag "Hosts match" host-match))
   :group 'url)
 
 (defvar url-inhibit-uncompression nil "Do not do decompression if non-nil.")
@@ -220,26 +249,22 @@ Should be an assoc list of headers/contents.")
   "String to send in the Accept-encoding: field in HTTP requests.")
 
 (defvar mm-mime-mule-charset-alist)
-(declare-function mm-coding-system-p "mm-util" (cs))
 
 ;; Perhaps the first few should actually be given decreasing `q's and
 ;; the list should be trimmed significantly.
-;; Fixme: do something sane if we don't have `sort-coding-systems'
-;; (Emacs 20, XEmacs).
 (defun url-mime-charset-string ()
   "Generate a list of preferred MIME charsets for HTTP requests.
 Generated according to current coding system priorities."
   (require 'mm-util)
-  (if (fboundp 'sort-coding-systems)
-      (let ((ordered (sort-coding-systems
-		      (let (accum)
-			(dolist (elt mm-mime-mule-charset-alist)
-			  (if (mm-coding-system-p (car elt))
-			      (push (car elt) accum)))
-			(nreverse accum)))))
-	(concat (format "%s;q=1, " (pop ordered))
-		(mapconcat 'symbol-name ordered ";q=0.5, ")
-		";q=0.5"))))
+  (let ((ordered (sort-coding-systems
+		  (let (accum)
+		    (dolist (elt mm-mime-mule-charset-alist)
+		      (if (coding-system-p (car elt))
+			  (push (car elt) accum)))
+		    (nreverse accum)))))
+    (concat (format "%s;q=1, " (pop ordered))
+	    (mapconcat 'symbol-name ordered ";q=0.5, ")
+	    ";q=0.5")))
 
 (defvar url-mime-charset-string nil
   "String to send in the Accept-charset: field in HTTP requests.
@@ -247,9 +272,8 @@ The MIME charset corresponding to the most preferred coding system is
 given priority 1 and the rest are given priority 0.5.")
 
 (defun url-set-mime-charset-string ()
+  (declare (obsolete nil "27.1"))
   (setq url-mime-charset-string (url-mime-charset-string)))
-;; Regenerate if the language environment changes.
-(add-hook 'set-language-environment-hook 'url-set-mime-charset-string)
 
 ;; Fixme: set from the locale.
 (defcustom url-mime-language-string nil
@@ -303,7 +327,7 @@ a terminal with a slow modem."
 
 (defvar url-using-proxy nil
   "Either nil or the fully qualified proxy URL in use, e.g.
-http://www.example.com/")
+https://www.example.com/")
 
 (defcustom url-news-server nil
   "The default news server from which to get newsgroups/articles.
@@ -356,6 +380,23 @@ Currently supported methods:
 		(const :tag "Direct connection" :value native))
   :group 'url-hairy)
 
+(defcustom url-user-agent 'default
+  "User Agent used by the URL package for HTTP/HTTPS requests.
+Should be one of:
+* A string (not including the \"User-Agent:\" prefix)
+* A function of no arguments, returning a string
+* `default' (to compute a value according to `url-privacy-level')
+* nil (to omit the User-Agent header entirely)"
+  :type
+  '(choice
+    (string :tag "A static User-Agent string")
+    (function :tag "Call a function to get the User-Agent string")
+    (const :tag "No User-Agent at all" :value nil)
+    (const :tag "An string auto-generated according to `url-privacy-level'"
+           :value default))
+  :version "26.1"
+  :group 'url)
+
 (defvar url-setup-done nil "Has setup configuration been done?")
 
 (defconst url-weekday-alist
@@ -389,10 +430,6 @@ Currently supported methods:
   "Hook run after initializing the URL library."
   :group 'url
   :type 'hook)
-
-;;; Make OS/2 happy - yeeks
-;; (defvar	tcp-binary-process-input-services nil
-;;   "*Make OS/2 happy with our CRLF pairs...")
 
 (defconst url-working-buffer " *url-work")
 

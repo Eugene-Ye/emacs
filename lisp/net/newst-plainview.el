@@ -1,6 +1,6 @@
 ;;; newst-plainview.el --- Single buffer frontend for newsticker.
 
-;; Copyright (C) 2003-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2020 Free Software Foundation, Inc.
 
 ;; Author:      Ulf Jasper <ulf.jasper@web.de>
 ;; Filename:    newst-plainview.el
@@ -22,7 +22,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; ======================================================================
 ;;; Commentary:
@@ -228,7 +228,7 @@ Each function is called after one of `newsticker-next-item',
 `newsticker-next-new-item', `newsticker-previous-item',
 `newsticker-previous-new-item' has been called.
 
-The default value 'newsticker--buffer-make-item-completely-visible
+The default value `newsticker--buffer-make-item-completely-visible'
 assures that the current item is always completely visible."
   :type 'hook
   :options '(newsticker--buffer-make-item-completely-visible)
@@ -240,7 +240,7 @@ assures that the current item is always completely visible."
 Each function is called after one of `newsticker-next-feed', and
 `newsticker-previous-feed' has been called.
 
-The default value 'newsticker--buffer-make-item-completely-visible
+The default value `newsticker--buffer-make-item-completely-visible'
 assures that the current feed is completely visible."
   :type 'hook
   :options '(newsticker--buffer-make-item-completely-visible)
@@ -251,7 +251,7 @@ assures that the current feed is completely visible."
   "List of functions run after the newsticker buffer has been updated.
 Each function is called after `newsticker-buffer-update' has been called.
 
-The default value '`newsticker-w3m-show-inline-images' loads inline
+The default value `newsticker-w3m-show-inline-images' loads inline
 images."
   :type 'hook
   :group 'newsticker-plainview-hooks)
@@ -263,7 +263,7 @@ Each function is called after
 `newsticker-toggle-auto-narrow-to-feed' or
 `newsticker-toggle-auto-narrow-to-item' has been called.
 
-The default value '`newsticker-w3m-show-inline-images' loads inline
+The default value `newsticker-w3m-show-inline-images' loads inline
 images."
   :type 'hook
   :group 'newsticker-plainview-hooks)
@@ -273,69 +273,67 @@ images."
 ;; ======================================================================
 
 (defvar newsticker--plainview-tool-bar-map
-  (if (featurep 'xemacs)
-      nil
-    (if (boundp 'tool-bar-map)
-        (let ((tool-bar-map (make-sparse-keymap)))
-          (tool-bar-add-item "newsticker/prev-feed"
-                             'newsticker-previous-feed
-                             'newsticker-previous-feed
-                             :help "Go to previous feed"
-                             :enable '(newsticker-previous-feed-available-p))
-          (tool-bar-add-item "newsticker/prev-item"
-                             'newsticker-previous-item
-                             'newsticker-previous-item
-                             :help "Go to previous item"
-                             :enable '(newsticker-previous-item-available-p))
-          (tool-bar-add-item "newsticker/next-item"
-                             'newsticker-next-item
-                             'newsticker-next-item
-                             :help "Go to next item"
-                             :enable '(newsticker-next-item-available-p))
-          (tool-bar-add-item "newsticker/next-feed"
-                             'newsticker-next-feed
-                             'newsticker-next-feed
-                             :help "Go to next feed"
-                             :enable '(newsticker-next-feed-available-p))
-          (tool-bar-add-item "newsticker/narrow"
-                             'newsticker-toggle-auto-narrow-to-feed
-                             'newsticker-toggle-auto-narrow-to-feed
-                             :help "Toggle visibility of other feeds")
-          (tool-bar-add-item "newsticker/mark-immortal"
-                             'newsticker-mark-item-at-point-as-immortal
-                             'newsticker-mark-item-at-point-as-immortal
-                             :help "Mark current item as immortal"
-                             :enable '(newsticker-item-not-immortal-p))
-          (tool-bar-add-item "newsticker/mark-read"
-                             'newsticker-mark-item-at-point-as-read
-                             'newsticker-mark-item-at-point-as-read
-                             :help "Mark current item as read"
-                             :enable '(newsticker-item-not-old-p))
-          (tool-bar-add-item "newsticker/get-all-news"
-                             'newsticker-get-all-news
-                             'newsticker-get-all-news
-                             :help "Get news for all feeds")
-          (tool-bar-add-item "newsticker/update"
-                             'newsticker-buffer-force-update
-                             'newsticker-buffer-force-update
-                             :help "Update newsticker buffer"
-                             :enable '(not newsticker--buffer-uptodate-p))
-          (tool-bar-add-item "newsticker/browse-url"
-                             'newsticker-browse-url
-                             'newsticker-browse-url
-                             :help "Browse URL for item at point")
-          ;; standard icons / actions
-          (define-key tool-bar-map [newsticker-sep-1]
-            (list 'menu-item "--double-line"))
-          (tool-bar-add-item "close"
-                             'newsticker-close-buffer
-                             'newsticker-close-buffer
-                             :help "Close newsticker buffer")
-          (tool-bar-add-item "preferences"
-                             'newsticker-customize
-                             'newsticker-customize
-                             :help "Customize newsticker")
-          tool-bar-map))))
+  (when (boundp 'tool-bar-map)
+    (let ((tool-bar-map (make-sparse-keymap)))
+      (tool-bar-add-item "newsticker/prev-feed"
+                         'newsticker-previous-feed
+                         'newsticker-previous-feed
+                         :help "Go to previous feed"
+                         :enable '(newsticker-previous-feed-available-p))
+      (tool-bar-add-item "newsticker/prev-item"
+                         'newsticker-previous-item
+                         'newsticker-previous-item
+                         :help "Go to previous item"
+                         :enable '(newsticker-previous-item-available-p))
+      (tool-bar-add-item "newsticker/next-item"
+                         'newsticker-next-item
+                         'newsticker-next-item
+                         :help "Go to next item"
+                         :enable '(newsticker-next-item-available-p))
+      (tool-bar-add-item "newsticker/next-feed"
+                         'newsticker-next-feed
+                         'newsticker-next-feed
+                         :help "Go to next feed"
+                         :enable '(newsticker-next-feed-available-p))
+      (tool-bar-add-item "newsticker/narrow"
+                         'newsticker-toggle-auto-narrow-to-feed
+                         'newsticker-toggle-auto-narrow-to-feed
+                         :help "Toggle visibility of other feeds")
+      (tool-bar-add-item "newsticker/mark-immortal"
+                         'newsticker-mark-item-at-point-as-immortal
+                         'newsticker-mark-item-at-point-as-immortal
+                         :help "Mark current item as immortal"
+                         :enable '(newsticker-item-not-immortal-p))
+      (tool-bar-add-item "newsticker/mark-read"
+                         'newsticker-mark-item-at-point-as-read
+                         'newsticker-mark-item-at-point-as-read
+                         :help "Mark current item as read"
+                         :enable '(newsticker-item-not-old-p))
+      (tool-bar-add-item "newsticker/get-all-news"
+                         'newsticker-get-all-news
+                         'newsticker-get-all-news
+                         :help "Get news for all feeds")
+      (tool-bar-add-item "newsticker/update"
+                         'newsticker-buffer-force-update
+                         'newsticker-buffer-force-update
+                         :help "Update newsticker buffer"
+                         :enable '(not newsticker--buffer-uptodate-p))
+      (tool-bar-add-item "newsticker/browse-url"
+                         'newsticker-browse-url
+                         'newsticker-browse-url
+                         :help "Browse URL for item at point")
+      ;; standard icons / actions
+      (define-key tool-bar-map [newsticker-sep-1]
+        (list 'menu-item "--double-line"))
+      (tool-bar-add-item "close"
+                         'newsticker-close-buffer
+                         'newsticker-close-buffer
+                         :help "Close newsticker buffer")
+      (tool-bar-add-item "preferences"
+                         'newsticker-customize
+                         'newsticker-customize
+                         :help "Customize newsticker")
+      tool-bar-map)))
 
 ;; ======================================================================
 ;;; Newsticker mode
@@ -562,7 +560,6 @@ This does NOT start the retrieval timers."
         (newsticker--debug-msg "Getting news for %s" (symbol-name feed))
         (newsticker-get-news (symbol-name feed)))))
 
-(unless (fboundp 'declare-function) (defmacro declare-function (&rest r)))
 (declare-function w3m-toggle-inline-image "ext:w3m" (&optional force no-cache))
 
 (defun newsticker-w3m-show-inline-images ()
@@ -1003,7 +1000,7 @@ not get changed."
              ;; toggle
              (add-text-properties pos1 pos2
                                   (list 'invisible org-inv-prop))
-             (remove-text-properties pos1 pos2 '(org-invisible))))))
+             (remove-text-properties pos1 pos2 '(org-invisible nil))))))
   (newsticker--buffer-redraw))
 
 (defun newsticker-show-entry ()
@@ -1029,7 +1026,7 @@ not get changed."
              ;; toggle
              (add-text-properties pos1 pos2
                                   (list 'invisible org-inv-prop))
-             (remove-text-properties pos1 pos2 '(org-invisible))))))
+             (remove-text-properties pos1 pos2 '(org-invisible nil))))))
   (newsticker--buffer-redraw))
 
 (defun newsticker-toggle-auto-narrow-to-feed ()
@@ -1524,8 +1521,8 @@ Scans the buffer between START and END."
 
 (defun newsticker--buffer-set-invisibility (start end)
   "Add invisibility properties according to nt-type property.
-Scans the buffer between START and END.  Sets the 'invisible
-property to '(<nt-type>-<nt-age> <nt-type> <nt-age>)."
+Scans the buffer between START and END.  Sets the `invisible'
+property to (<nt-type>-<nt-age> <nt-type> <nt-age>)."
   (save-excursion
     ;; reset invisibility settings
     (put-text-property start end 'invisible nil)

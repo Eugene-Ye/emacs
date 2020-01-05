@@ -1,17 +1,17 @@
 ;;; pcvs.el --- a front-end to CVS  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1991-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1991-2020 Free Software Foundation, Inc.
 
-;; Author: (The PCL-CVS Trust) pcl-cvs@cyclic.com
-;;	(Per Cederqvist) ceder@lysator.liu.se
-;;	(Greg A. Woods) woods@weird.com
-;;	(Jim Blandy) jimb@cyclic.com
-;;	(Karl Fogel) kfogel@floss.red-bean.com
-;;	(Jim Kingdon) kingdon@cyclic.com
-;;	(Stefan Monnier) monnier@cs.yale.edu
-;;	(Greg Klanderman) greg@alphatech.com
-;;	(Jari Aalto+mail.emacs) jari.aalto@poboxes.com
-;; Maintainer: (Stefan Monnier) monnier@gnu.org
+;; Author: The PCL-CVS Trust <pcl-cvs@cyclic.com>
+;;	Per Cederqvist <ceder@lysator.liu.se>
+;;	Greg A. Woods <woods@weird.com>
+;;	Jim Blandy <jimb@cyclic.com>
+;;	Karl Fogel <kfogel@floss.red-bean.com>
+;;	Jim Kingdon <kingdon@cyclic.com>
+;;	Stefan Monnier <monnier@cs.yale.edu>
+;;	Greg Klanderman <greg@alphatech.com>
+;;	Jari Aalto <jari.aalto@poboxes.com>
+;; Maintainer: Stefan Monnier <monnier@gnu.org>
 ;; Keywords: CVS, vc, release management
 
 ;; This file is part of GNU Emacs.
@@ -27,7 +27,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -58,8 +58,8 @@
 ;; ******** FIX THE DOCUMENTATION *********
 ;;
 ;; - rework the displaying of error messages.
-;; - allow to flush messages only
-;; - allow to protect files like ChangeLog from flushing
+;; - allow the flushing of messages only
+;; - allow the protection of files like ChangeLog from flushing
 ;; - query the user for cvs-get-marked (for some cmds or if nothing's selected)
 ;; - don't return the first (resp last) FI if the cursor is before
 ;;   (resp after) it.
@@ -430,11 +430,11 @@ If non-nil, NEW means to create a new buffer no matter what."
 		    (set-buffer buffer)
 		    (and (cvs-buffer-p)
 			 (pcase cvs-reuse-cvs-buffer
-			   (`always t)
-			   (`subdir
+			   ('always t)
+			   ('subdir
 			    (or (string-prefix-p default-directory dir)
 				(string-prefix-p dir default-directory)))
-			   (`samedir (string= default-directory dir)))
+			   ('samedir (string= default-directory dir)))
 			 (cl-return buffer)))))
 	      ;; we really have to create a new buffer:
 	      ;; we temporarily bind cwd to "" to prevent
@@ -551,7 +551,7 @@ If non-nil, NEW means to create a new buffer no matter what."
 	       ;; is accessed via SSH, a bad interaction between libc,
 	       ;; CVS and SSH can lead to garbled output.
 	       ;; It might be a glibc-specific problem (but it can also happens
-	       ;; under Mac OS X, it seems).
+	       ;; under macOS, it seems).
 	       ;; It seems that using a pty can help circumvent the problem,
 	       ;; but at the cost of screwing up when the process thinks it
 	       ;; can ask for user input (such as password or host-key
@@ -696,11 +696,11 @@ SUBDIR is the subdirectory (if any) where this command was run.
 OLD-FIS is the list of fileinfos on which the cvs command was applied and
   which should be considered up-to-date if they are missing from the output."
   (when (eq system-type 'darwin)
-    ;; Fixup the ^D^H^H inserted at beginning of buffer sometimes on MacOSX
+    ;; Fixup the ^D^H^H inserted at beginning of buffer sometimes on macOS
     ;; because of the call to `process-send-eof'.
     (save-excursion
       (goto-char (point-min))
-      (while (re-search-forward "^\\^D+" nil t)
+      (while (re-search-forward "^\\^D\^H+" nil t)
 	(let ((inhibit-read-only t))
 	  (delete-region (match-beginning 0) (match-end 0))))))
   (let* ((fileinfos (cvs-parse-buffer 'cvs-parse-table dcd subdir))
@@ -876,11 +876,11 @@ RM-MSGS if non-nil means remove messages."
 		  (keep
 		   (pcase type
 		     ;; Remove temp messages and keep the others.
-		     (`MESSAGE (not (or rm-msgs (eq subtype 'TEMP))))
+		     ('MESSAGE (not (or rm-msgs (eq subtype 'TEMP))))
 		     ;; Remove dead entries.
-		     (`DEAD nil)
+		     ('DEAD nil)
 		     ;; Handled also?
-		     (`UP-TO-DATE
+		     ('UP-TO-DATE
                       (not
                        (if (find-buffer-visiting (cvs-fileinfo->full-name fi))
                            (eq rm-handled 'all)
@@ -968,10 +968,10 @@ With a prefix argument, prompt for cvs FLAGS to use."
 The files are stored to DIR."
   (interactive
    (let* ((branch (cvs-prefix-get 'cvs-branch-prefix))
-	  (prompt (format "CVS Checkout Directory for `%s%s': "
-			 (cvs-get-module)
-			 (if branch (format " (branch: %s)" branch)
-			   ""))))
+	  (prompt (format-message "CVS Checkout Directory for `%s%s': "
+				  (cvs-get-module)
+				  (if branch (format " (branch: %s)" branch)
+				    ""))))
      (list (read-directory-name prompt nil default-directory nil))))
   (let ((modules (split-string-and-unquote (cvs-get-module)))
 	(flags (cvs-add-branch-prefix
@@ -2209,7 +2209,7 @@ With prefix argument, prompt for cvs flags."
 ;; Byte compile files.
 
 (defun-cvs-mode cvs-mode-byte-compile-files ()
-  "Run byte-compile-file on all selected files with '.el' extension."
+  "Run byte-compile-file on all selected files with `.el' extension."
   (interactive)
   (let ((marked (cvs-get-marked (cvs-ignore-marks-p "byte-compile"))))
     (dolist (fi marked)
@@ -2312,7 +2312,7 @@ this file, or a list of arguments to send to the program."
 	    (revert-buffer 'ignore-auto 'dont-ask 'preserve-modes)
 	    ;; `preserve-modes' avoids changing the (minor) modes.  But we
 	    ;; do want to reset the mode for VC, so we do it explicitly.
-	    (vc-find-file-hook)
+	    (vc-refresh-state)
 	    (when (eq (cvs-fileinfo->type fileinfo) 'CONFLICT)
 	      (smerge-start-session))))))))
 
@@ -2403,9 +2403,9 @@ The exact behavior is determined also by `cvs-dired-use-hook'."
 			 (goto-char (point-min))
 			 (looking-at ".*to add this file permanently\n\\'"))
                 (dolist (file (if (listp files) files (list files)))
-                  (insert "cvs add: scheduling file `"
-                          (file-name-nondirectory file)
-                          "' for addition\n")))
+                  (insert (format-message
+			   "cvs add: scheduling file `%s' for addition\n"
+			   (file-name-nondirectory file)))))
 	      ;; VC never (?) does `cvs -n update' so dcd=nil
 	      ;; should probably always be the right choice.
 	      (cvs-parse-process nil subdir))))))))

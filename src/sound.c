@@ -1,13 +1,15 @@
 /* sound.c -- sound support.
 
-Copyright (C) 1998-1999, 2001-2014 Free Software Foundation, Inc.
+Copyright (C) 1998-1999, 2001-2020 Free Software Foundation, Inc.
+
+Author: Gerd Moellmann <gerd@gnu.org>
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,10 +17,9 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
-/* Written by Gerd Moellmann <gerd@gnu.org>.  Tested with Luigi's
-   driver on FreeBSD 2.2.7 with a SoundBlaster 16.  */
+/* Tested with Luigi's driver on FreeBSD 2.2.7 with a SoundBlaster 16.  */
 
 /*
   Modified by Ben Key <Bkey1@tampabay.rr.com> to add a partial
@@ -46,7 +47,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <errno.h>
 
 #include "lisp.h"
-#include "dispextern.h"
 #include "atimer.h"
 #include "syssignal.h"
 /* END: Common Includes */
@@ -72,12 +72,8 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <soundcard.h>
 #endif
 #ifdef HAVE_ALSA
-#ifdef ALSA_SUBDIR_INCLUDE
 #include <alsa/asoundlib.h>
-#else
-#include <asoundlib.h>
-#endif /* ALSA_SUBDIR_INCLUDE */
-#endif /* HAVE_ALSA */
+#endif
 
 /* END: Non Windows Includes */
 
@@ -98,12 +94,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #endif /* WINDOWSNT */
 
 /* BEGIN: Common Definitions */
-
-/* Symbols.  */
-
-static Lisp_Object QCvolume, QCdevice;
-static Lisp_Object Qsound;
-static Lisp_Object Qplay_sound_functions;
 
 /* Indices of attributes in a sound attributes vector.  */
 
@@ -300,9 +290,10 @@ static int do_play_sound (const char *, unsigned long);
 
 /* BEGIN: Common functions */
 
+#ifndef WINDOWSNT
 /* Like perror, but signals an error.  */
 
-static _Noreturn void
+static AVOID
 sound_perror (const char *msg)
 {
   int saved_errno = errno;
@@ -317,11 +308,10 @@ sound_perror (const char *msg)
   }
 #endif
   if (saved_errno != 0)
-    error ("%s: %s", msg, strerror (saved_errno));
+    error ("%s: %s", msg, emacs_strerror (saved_errno));
   else
     error ("%s", msg);
 }
-
 
 /* Display a warning message.  */
 
@@ -330,6 +320,7 @@ sound_warning (const char *msg)
 {
   message1 (msg);
 }
+#endif	/* !WINDOWSNT */
 
 
 /* Parse sound specification SOUND, and fill ATTRS with what is
@@ -390,16 +381,16 @@ parse_sound (Lisp_Object sound, Lisp_Object *attrs)
   /* Volume must be in the range 0..100 or unspecified.  */
   if (!NILP (attrs[SOUND_VOLUME]))
     {
-      if (INTEGERP (attrs[SOUND_VOLUME]))
+      if (FIXNUMP (attrs[SOUND_VOLUME]))
 	{
-	  if (XINT (attrs[SOUND_VOLUME]) < 0
-	      || XINT (attrs[SOUND_VOLUME]) > 100)
+	  EMACS_INT volume = XFIXNUM (attrs[SOUND_VOLUME]);
+	  if (! (0 <= volume && volume <= 100))
 	    return 0;
 	}
       else if (FLOATP (attrs[SOUND_VOLUME]))
 	{
-	  if (XFLOAT_DATA (attrs[SOUND_VOLUME]) < 0
-	      || XFLOAT_DATA (attrs[SOUND_VOLUME]) > 1)
+	  double volume = XFLOAT_DATA (attrs[SOUND_VOLUME]);
+	  if (! (0 <= volume && volume <= 1))
 	    return 0;
 	}
       else
@@ -879,7 +870,7 @@ vox_write (struct sound_device *sd, const char *buffer, ptrdiff_t nbytes)
 #define DEFAULT_ALSA_SOUND_DEVICE "default"
 #endif
 
-static _Noreturn void
+static AVOID
 alsa_sound_perror (const char *msg, int err)
 {
   error ("%s: %s", msg, snd_strerror (err));
@@ -1124,7 +1115,7 @@ alsa_write (struct sound_device *sd, const char *buffer, ptrdiff_t nbytes)
 {
   struct alsa_params *p = (struct alsa_params *) sd->data;
 
-  /* The the third parameter to snd_pcm_writei is frames, not bytes. */
+  /* The third parameter to snd_pcm_writei is frames, not bytes. */
   int fact = snd_pcm_format_size (sd->format, 1) * sd->channels;
   ptrdiff_t nwritten = 0;
   int err;
@@ -1357,9 +1348,6 @@ Internal use only, use `play-sound' instead.  */)
 {
   Lisp_Object attrs[SOUND_ATTR_SENTINEL];
   ptrdiff_t count = SPECPDL_INDEX ();
-  Lisp_Object file;
-  Lisp_Object args[2];
-  struct gcpro gcpro1, gcpro2;
 
 #ifdef WINDOWSNT
   unsigned long ui_volume_tmp = UINT_MAX;
@@ -1370,9 +1358,9 @@ Internal use only, use `play-sound' instead.  */)
   if (!parse_sound (sound, attrs))
     error ("Invalid sound specification");
 
+  Lisp_Object file = Qnil;
+
 #ifndef WINDOWSNT
-  file = Qnil;
-  GCPRO2 (sound, file);
   current_sound_device = xzalloc (sizeof *current_sound_device);
   current_sound = xzalloc (sizeof *current_sound);
   record_unwind_protect_void (sound_cleanup);
@@ -1408,14 +1396,12 @@ Internal use only, use `play-sound' instead.  */)
   /* Set up a device.  */
   current_sound_device->file = attrs[SOUND_DEVICE];
 
-  if (INTEGERP (attrs[SOUND_VOLUME]))
-    current_sound_device->volume = XFASTINT (attrs[SOUND_VOLUME]);
+  if (FIXNUMP (attrs[SOUND_VOLUME]))
+    current_sound_device->volume = XFIXNAT (attrs[SOUND_VOLUME]);
   else if (FLOATP (attrs[SOUND_VOLUME]))
     current_sound_device->volume = XFLOAT_DATA (attrs[SOUND_VOLUME]) * 100;
 
-  args[0] = Qplay_sound_functions;
-  args[1] = sound;
-  Frun_hook_with_args (2, args);
+  CALLN (Frun_hook_with_args, Qplay_sound_functions, sound);
 
 #ifdef HAVE_ALSA
   if (!alsa_init (current_sound_device))
@@ -1429,27 +1415,20 @@ Internal use only, use `play-sound' instead.  */)
   /* Play the sound.  */
   current_sound->play (current_sound, current_sound_device);
 
-  /* Clean up.  */
-  UNGCPRO;
-
 #else /* WINDOWSNT */
 
   file = Fexpand_file_name (attrs[SOUND_FILE], Vdata_directory);
   file = ENCODE_FILE (file);
-  if (INTEGERP (attrs[SOUND_VOLUME]))
+  if (FIXNUMP (attrs[SOUND_VOLUME]))
     {
-      ui_volume_tmp = XFASTINT (attrs[SOUND_VOLUME]);
+      ui_volume_tmp = XFIXNAT (attrs[SOUND_VOLUME]);
     }
   else if (FLOATP (attrs[SOUND_VOLUME]))
     {
       ui_volume_tmp = XFLOAT_DATA (attrs[SOUND_VOLUME]) * 100;
     }
 
-  GCPRO2 (sound, file);
-
-  args[0] = Qplay_sound_functions;
-  args[1] = sound;
-  Frun_hook_with_args (2, args);
+  CALLN (Frun_hook_with_args, Qplay_sound_functions, sound);
 
   /*
     Based on some experiments I have conducted, a value of 100 or less
@@ -1466,12 +1445,9 @@ Internal use only, use `play-sound' instead.  */)
     }
   (void)do_play_sound (SSDATA (file), ui_volume);
 
-  UNGCPRO;
-
 #endif /* WINDOWSNT */
 
-  unbind_to (count, Qnil);
-  return Qnil;
+  return unbind_to (count, Qnil);
 }
 
 /***********************************************************************

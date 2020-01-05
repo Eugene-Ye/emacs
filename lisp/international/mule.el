@@ -1,6 +1,6 @@
 ;;; mule.el --- basic commands for multilingual environment
 
-;; Copyright (C) 1997-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -343,7 +343,7 @@ Return t if file exists."
 	    ;; Have the original buffer current while we eval.
 	    (eval-buffer buffer nil
 			 ;; This is compatible with what `load' does.
-			 (if purify-flag file fullname)
+                         (if dump-mode file fullname)
 			 nil t))
 	(let (kill-buffer-hook kill-buffer-query-functions)
 	  (kill-buffer buffer)))
@@ -481,6 +481,61 @@ Return -1 if charset isn't an ISO 2022 one."
     (or charset
 	(error "Invalid Emacs-mule charset ID: %d" charset-id))
     (make-char charset code1 code2)))
+
+(defun char-displayable-p (char)
+  "Return non-nil if we should be able to display CHAR.
+On a multi-font display, the test is only whether there is an
+appropriate font from the selected frame's fontset to display
+CHAR's charset in general.  Since fonts may be specified on a
+per-character basis, this may not be accurate."
+  (cond ((< char 128)
+	 ;; ASCII characters are always displayable.
+	 t)
+	((not enable-multibyte-characters)
+	 ;; Maybe there's a font for it, but we can't put it in the buffer.
+	 nil)
+	(t
+	 (let ((font-glyph (internal-char-font nil char)))
+	   (if font-glyph
+	       (if (consp font-glyph)
+		   ;; On a window system, a character is displayable
+		   ;; if a font for that character is in the default
+		   ;; face of the currently selected frame.
+		   (car font-glyph)
+		 ;; On a text terminal supporting glyph codes, CHAR is
+		 ;; displayable if its glyph code is nonnegative.
+		 (<= 0 font-glyph))
+	     ;; On a text terminal without glyph codes, CHAR is displayable
+	     ;; if the coding system for the terminal can encode it.
+	     (let ((coding (terminal-coding-system)))
+	       (when coding
+		 (let ((cs-list (coding-system-get coding :charset-list)))
+		   (cond
+		    ((listp cs-list)
+		     (catch 'tag
+		       (mapc #'(lambda (charset)
+				 (if (encode-char char charset)
+				     (throw 'tag charset)))
+			     cs-list)
+		       nil))
+		    ((eq cs-list 'iso-2022)
+		     (catch 'tag2
+		       (mapc #'(lambda (charset)
+				 (if (and (plist-get (charset-plist charset)
+						     :iso-final-char)
+					  (encode-char char charset))
+				     (throw 'tag2 charset)))
+			     charset-list)
+		       nil))
+		    ((eq cs-list 'emacs-mule)
+		     (catch 'tag3
+		       (mapc #'(lambda (charset)
+				 (if (and (plist-get (charset-plist charset)
+						     :emacs-mule-id)
+					  (encode-char char charset))
+				     (throw 'tag3 charset)))
+			     charset-list)
+		       nil)))))))))))
 
 ;; Save the ASCII case table in case we need it later.  Some locales
 ;; (such as Turkish) modify the case behavior of ASCII characters,
@@ -593,6 +648,29 @@ as the single-shift area.")
 The remaining arguments must come in pairs ATTRIBUTE VALUE.  ATTRIBUTE
 may be any symbol.
 
+A coding system specifies a rule to decode (i.e. to convert a
+byte sequence to a character sequence) and a rule to encode (the
+opposite of decoding).
+
+The decoding is done by at most 3 steps; the first is to convert
+a byte sequence to a character sequence by one of Emacs'
+internal routines specified by `:coding-type' attribute.  The
+optional second step is to convert the character sequence (the
+result of the first step) by a translation table specified
+by `:decode-translation-table' attribute.  The optional third step
+is to convert the above result by a Lisp function specified
+by `:post-read-conversion' attribute.
+
+The encoding is done by at most 3 steps, which are the reverse
+of the decoding steps.  The optional first step converts a
+character sequence to another character sequence by a Lisp
+function specified by `:pre-write-conversion' attribute.  The
+optional second step converts the above result by a translation
+table specified by `:encode-translation-table' attribute.  The
+third step converts the above result to a byte sequence by one
+of the Emacs's internal routines specified by the `:coding-type'
+attribute.
+
 The following attributes have special meanings.  Those labeled as
 \"(required)\" should not be omitted.
 
@@ -602,27 +680,72 @@ VALUE is a character to display on mode line for the coding system.
 
 `:coding-type' (required)
 
-VALUE must be one of `charset', `utf-8', `utf-16', `iso-2022',
-`emacs-mule', `shift-jis', `ccl', `raw-text', `undecided'.
+VALUE specifies the format of byte sequence the coding system
+decodes and encodes to.  It must be one of `charset', `utf-8',
+`utf-16', `iso-2022', `emacs-mule', `shift-jis', `ccl',
+`raw-text', `undecided'.
+
+If VALUE is `charset', the coding system is for handling a
+byte sequence in which each byte or every two- to four-byte
+sequence represents a character code of a charset specified
+by the `:charset-list' attribute.
+
+If VALUE is `utf-8', the coding system is for handling Unicode
+UTF-8 byte sequences.  See also the documentation of the
+attribute `:bom'.
+
+If VALUE is `utf-16', the coding system is for handling Unicode
+UTF-16 byte sequences.  See also the documentation of the
+attributes :bom and `:endian'.
+
+If VALUE is `iso-2022', the coding system is for handling byte
+sequences conforming to ISO/IEC 2022.  See also the documentation
+of the attributes `:charset-list', `:flags', and `:designation'.
+
+If VALUE is `emacs-mule', the coding system is for handling
+byte sequences which Emacs 20 and 21 used for their internal
+representation of characters.
+
+If VALUE is `shift-jis', the coding system is for handling byte
+sequences of Shift_JIS format.  See also the attribute `:charset-list'.
+
+If VALUE is `ccl', the coding system uses CCL programs to decode
+and encode byte sequences.  The CCL programs must be
+specified by the attributes `:ccl-decoder' and `:ccl-encoder'.
+
+If VALUE is `raw-text', the coding system decodes byte sequences
+without any conversions.
 
 `:eol-type'
 
 VALUE is the EOL (end-of-line) format of the coding system.  It must be
 one of `unix', `dos', `mac'.  The symbol `unix' means Unix-like EOL
-\(i.e. single LF), `dos' means DOS-like EOL \(i.e. sequence of CR LF),
-and `mac' means Mac-like EOL \(i.e. single CR).  If omitted, Emacs
-detects the EOL format automatically when decoding.
+\(i.e., a single LF character), `dos' means DOS-like EOL \(i.e., a sequence
+of CR followed by LF), and `mac' means Mac-like EOL \(i.e., a single CR).
+If omitted, Emacs detects the EOL format automatically when decoding.
 
-`:charset-list'
+`:charset-list' (required if `:coding-type' is `charset' or `shift-jis')
 
-VALUE must be a list of charsets supported by the coding system.  On
-encoding by the coding system, if a character belongs to multiple
-charsets in the list, a charset that comes earlier in the list is
-selected.  If `:coding-type' is `iso-2022', VALUE may be `iso-2022',
-which indicates that the coding system supports all ISO-2022 based
-charsets.  If `:coding-type' is `emacs-mule', VALUE may be
-`emacs-mule', which indicates that the coding system supports all
-charsets that have the `:emacs-mule-id' property.
+VALUE must be a list of charsets supported by the coding system.
+
+If `coding-type:' is `charset', then on decoding and encoding by the
+coding system, if a character belongs to multiple charsets in the
+list, a charset that comes first in the list is selected.
+
+If `:coding-type' is `iso-2022', VALUE may be `iso-2022', which
+indicates that the coding system supports all ISO-2022 based
+charsets.
+
+If `:coding-type' is `shift-jis', VALUE must be a list of three
+to four charsets supported by Shift_JIS encoding scheme.  The
+first charset (one dimension) is for code space 0x00..0x7F, the
+second (one dimension) for 0xA1..0xDF, the third (two dimension)
+for 0x8140..0xEFFC, the optional fourth (three dimension) for
+0xF040..0xFCFC.
+
+If `:coding-type' is `emacs-mule', VALUE may be `emacs-mule',
+which indicates that the coding system supports all charsets that
+have the `:emacs-mule-id' property.
 
 `:ascii-compatible-p'
 
@@ -643,9 +766,13 @@ VALUE must be a translation table to use on encoding.
 VALUE must be a function to call after some text is inserted and
 decoded by the coding system itself and before any functions in
 `after-insert-functions' are called.  This function is passed one
-argument; the number of characters in the text to convert, with
+argument: the number of characters in the text to convert, with
 point at the start of the text.  The function should leave point
-the same, and return the new character count.
+unchanged, and should return the new character count.  Note that
+this function should avoid reading from files or receiving text
+from subprocesses -- anything that could invoke decoding; if it
+must do so, it should bind `coding-system-for-read' to a value
+other than the current coding-system, to avoid infinite recursion.
 
 `:pre-write-conversion'
 
@@ -654,7 +781,12 @@ VALUE must be a function to call after all functions in
 called, and before the text is encoded by the coding system
 itself.  This function should convert the whole text in the
 current buffer.  For backward compatibility, this function is
-passed two arguments which can be ignored.
+passed two arguments which can be ignored.  Note that this
+function should avoid writing to files or sending text to
+subprocesses -- anything that could invoke encoding; if it
+must do so, it should bind `coding-system-for-write' to a
+value other than the current coding-system, to avoid infinite
+recursion.
 
 `:default-char'
 
@@ -674,7 +806,7 @@ to lower case.
 `:mime-text-unsuitable'
 
 VALUE non-nil means the `:mime-charset' property names a charset which
-is unsuitable for the top-level media type \"text\".
+is unsuitable for the top-level media of type \"text\".
 
 `:flags'
 
@@ -696,7 +828,7 @@ never used by the other charsets.
 If it is a list, the elements must be charsets, nil, 94, or 96.  GN
 can be used by all the listed charsets.  If the list contains 94, any
 iso-2022 charset whose code-space ranges are 94 long can be designated
-to GN.  If the list contains 96, any charsets whose whose ranges are
+to GN.  If the list contains 96, any charsets whose ranges are
 96 long can be designated to GN.  If the first element is a charset,
 that charset is initially designated to GN.
 
@@ -704,8 +836,8 @@ This attribute is meaningful only when `:coding-type' is `iso-2022'.
 
 `:bom'
 
-This attributes specifies whether the coding system uses a `byte order
-mark'.  VALUE must be nil, t, or cons of coding systems whose
+This attributes specifies whether the coding system uses a \"byte order
+mark\".  VALUE must be nil, t, or a cons cell of coding systems whose
 `:coding-type' is `utf-16' or `utf-8'.
 
 If the value is nil, on decoding, don't treat the first two-byte as
@@ -714,9 +846,9 @@ BOM, and on encoding, don't produce BOM bytes.
 If the value is t, on decoding, skip the first two-byte as BOM, and on
 encoding, produce BOM bytes according to the value of `:endian'.
 
-If the value is cons, on decoding, check the first two-byte.  If they
-are 0xFE 0xFF, use the car part coding system of the value.  If they
-are 0xFF 0xFE, use the cdr part coding system of the value.
+If the value is a cons cell, on decoding, check the first two bytes.
+If they are 0xFE 0xFF, use the car part coding system of the value.
+If they are 0xFF 0xFE, use the cdr part coding system of the value.
 Otherwise, treat them as bytes for a normal character.  On encoding,
 produce BOM bytes according to the value of `:endian'.
 
@@ -730,22 +862,22 @@ little-endian respectively.  The default value is `big'.
 
 This attribute is meaningful only when `:coding-type' is `utf-16'.
 
-`:ccl-decoder'
+`:ccl-decoder' (required if :coding-type is `ccl')
 
-VALUE is a symbol representing the registered CCL program used for
-decoding.  This attribute is meaningful only when `:coding-type' is
-`ccl'.
+VALUE is a CCL program name defined by `define-ccl-program'.  The
+CCL program reads a byte sequence and writes a character sequence
+as a decoding result.
 
-`:ccl-encoder'
+`:ccl-encoder' (required if :coding-type is `ccl')
 
-VALUE is a symbol representing the registered CCL program used for
-encoding.  This attribute is meaningful only when `:coding-type' is
-`ccl'.
+VALUE is a CCL program name defined by `define-ccl-program'.  The
+CCL program reads a character sequence and writes a byte sequence
+as an encoding result.
 
-`:inhibit-null-byte-detection'
+`:inhibit-nul-byte-detection'
 
 VALUE non-nil means Emacs ignore null bytes on code detection.
-See the variable `inhibit-null-byte-detection'.  This attribute
+See the variable `inhibit-nul-byte-detection'.  This attribute
 is meaningful only when `:coding-type' is `undecided'.
 
 `:inhibit-iso-escape-detection'
@@ -790,7 +922,7 @@ non-ASCII files.  This attribute is meaningful only when
 				      :ccl-encoder
 				      :valids))
 				   ((eq coding-type 'undecided)
-				    '(:inhibit-null-byte-detection
+				    '(:inhibit-nul-byte-detection
 				      :inhibit-iso-escape-detection
 				      :prefer-utf-8))))))
 
@@ -834,7 +966,7 @@ non-ASCII files.  This attribute is meaningful only when
 		(i 0))
 	    (dolist (elt coding-system-iso-2022-flags)
 	      (if (memq elt flags)
-		  (setq bits (logior bits (lsh 1 i))))
+		  (setq bits (logior bits (ash 1 i))))
 	      (setq i (1+ i)))
 	    (setcdr (assq :flags spec-attrs) bits))))
 
@@ -843,8 +975,8 @@ non-ASCII files.  This attribute is meaningful only when
 	  (cons :name (cons name (cons :docstring (cons (purecopy docstring)
 							props)))))
     (setcdr (assq :plist common-attrs) props)
-    (apply 'define-coding-system-internal
-	   name (mapcar 'cdr (append common-attrs spec-attrs)))))
+    (apply #'define-coding-system-internal
+	   name (mapcar #'cdr (append common-attrs spec-attrs)))))
 
 (defun coding-system-doc-string (coding-system)
   "Return the documentation string for CODING-SYSTEM."
@@ -1234,8 +1366,8 @@ Internal use only.")
                                     preferred))))))
          (completion-ignore-case t)
          (completion-pcm--delim-wild-regex ; Let "u8" complete to "utf-8".
-          (concat completion-pcm--delim-wild-regex
-                  "\\|\\([[:alpha:]]\\)[[:digit:]]"))
+          (concat "\\(?:" completion-pcm--delim-wild-regex
+                  "\\|\\([[:alpha:]]\\)[[:digit:]]\\)"))
          (cs (completing-read
               (format "Coding system for saving file (default %s): " default)
               combined-table
@@ -1268,8 +1400,11 @@ just set the variable `buffer-file-coding-system' directly."
       (setq coding-system
 	    (merge-coding-systems coding-system buffer-file-coding-system)))
   (when (and (called-interactively-p 'interactive)
-	     (not (memq 'emacs (coding-system-get coding-system
-						  :charset-list))))
+             ;; FIXME: For some reason
+             ;;     (coding-system-get 'iso-2022-7bit :charset-list)
+             ;; returns `iso-2022' rather than returning a list!
+             (let ((css (coding-system-get coding-system :charset-list)))
+               (not (and (listp css) (memq 'emacs css)))))
     ;; Check whether save would succeed, and jump to the offending char(s)
     ;; if not.
     (let ((css (find-coding-systems-region (point-min) (point-max))))
@@ -1377,42 +1512,35 @@ graphical terminals."
   (let ((coding-type (coding-system-type coding-system))
 	(saved-meta-mode
 	 (terminal-parameter terminal 'keyboard-coding-saved-meta-mode)))
-    (if (not (eq coding-type 'raw-text))
-	(let (accept-8-bit)
-	  (if (not (or (coding-system-get coding-system :suitable-for-keyboard)
-		       (coding-system-get coding-system :ascii-compatible-p)))
-	      (error "Unsuitable coding system for keyboard: %s" coding-system))
-	  (cond ((memq coding-type '(charset utf-8 shift-jis big5 ccl))
-		 (setq accept-8-bit t))
-		((eq coding-type 'iso-2022)
-		 (let ((flags (coding-system-get coding-system :flags)))
-		   (or (memq '7-bit flags)
-		       (setq accept-8-bit t))))
-		(t
-		 (error "Unsupported coding system for keyboard: %s"
-			coding-system)))
-	  (if accept-8-bit
-	      (progn
-		(or saved-meta-mode
-		    (set-terminal-parameter terminal
-					    'keyboard-coding-saved-meta-mode
-					    (cons (nth 2 (current-input-mode))
-						  nil)))
-		(set-input-meta-mode 8 terminal))
-	    (when saved-meta-mode
-	      (set-input-meta-mode (car saved-meta-mode) terminal)
-	      (set-terminal-parameter terminal
-				      'keyboard-coding-saved-meta-mode
-				      nil)))
-	  ;; Avoid end-of-line conversion.
-	  (setq coding-system
-		(coding-system-change-eol-conversion coding-system 'unix)))
-
-      (when saved-meta-mode
-	(set-input-meta-mode (car saved-meta-mode) terminal)
-	(set-terminal-parameter terminal
-				'keyboard-coding-saved-meta-mode
-				nil))))
+    (let (accept-8-bit)
+      (if (not (or (coding-system-get coding-system :suitable-for-keyboard)
+                   (coding-system-get coding-system :ascii-compatible-p)))
+          (error "Unsuitable coding system for keyboard: %s" coding-system))
+      (cond ((memq coding-type '(raw-text charset utf-8 shift-jis big5 ccl))
+             (setq accept-8-bit t))
+            ((eq coding-type 'iso-2022)
+             (let ((flags (coding-system-get coding-system :flags)))
+               (or (memq '7-bit flags)
+                   (setq accept-8-bit t))))
+            (t
+             (error "Unsupported coding system for keyboard: %s"
+                    coding-system)))
+      (if accept-8-bit
+          (progn
+            (or saved-meta-mode
+                (set-terminal-parameter terminal
+                                        'keyboard-coding-saved-meta-mode
+                                        (cons (nth 2 (current-input-mode))
+                                              nil)))
+            (set-input-meta-mode 8 terminal))
+        (when saved-meta-mode
+          (set-input-meta-mode (car saved-meta-mode) terminal)
+          (set-terminal-parameter terminal
+                                  'keyboard-coding-saved-meta-mode
+                                  nil)))
+      ;; Avoid end-of-line conversion.
+      (setq coding-system
+            (coding-system-change-eol-conversion coding-system 'unix))))
   (set-keyboard-coding-system-internal coding-system terminal)
   (setq keyboard-coding-system coding-system))
 
@@ -1422,7 +1550,7 @@ If you set this on a terminal which can't distinguish Meta keys from
 8-bit characters, you will have to use ESC to type Meta characters.
 See Info node `Terminal Coding' and Info node `Unibyte Mode'.
 
-On non-windowing terminals, this is set from the locale by default.
+This is set at startup based on the locale.
 
 Setting this variable directly does not take effect;
 use either \\[customize] or \\[set-keyboard-coding-system]."
@@ -1444,6 +1572,7 @@ DECODING is the coding system to be used to decode input from the process,
 ENCODING is the coding system to be used to encode output to the process.
 
 For a list of possible coding systems, use \\[list-coding-systems]."
+  (declare (interactive-only set-process-coding-system))
   (interactive
    "zCoding-system for output from the process: \nzCoding-system for input to the process: ")
   (let ((proc (get-buffer-process (current-buffer))))
@@ -1781,9 +1910,12 @@ or nil."
 
 Each function in this list should be written to operate on the
 current buffer, but should not modify it in any way.  The buffer
-will contain undecoded text of parts of the file.  Each function
+will contain the text of parts of the file.  Each function
 should take one argument, SIZE, which says how many characters
-\(starting from point) it should look at.
+\(starting from point) it should look at.  The function might be
+called both when the file is visited and Emacs wants to decode
+its contents, and when the file's buffer is about to be saved
+and Emacs wants to determine how to encode its contents.
 
 If one of these functions succeeds in determining a coding
 system, it should return that coding system.  Otherwise, it
@@ -1803,7 +1935,7 @@ files.")
 (defun auto-coding-alist-lookup (filename)
   "Return the coding system specified by `auto-coding-alist' for FILENAME."
   (let ((alist auto-coding-alist)
-	(case-fold-search (memq system-type '(windows-nt ms-dos cygwin)))
+	(case-fold-search (file-name-case-insensitive-p filename))
 	coding-system)
     (while (and alist (not coding-system))
       (if (string-match (car (car alist)) filename)
@@ -1900,7 +2032,7 @@ use \"coding: 'raw-text\" instead."
 	  (goto-char tail-start)
 	  (re-search-forward "[\r\n]\^L" tail-end t)
 	  (if (re-search-forward
-	       "[\r\n]\\([^[\r\n]*\\)[ \t]*Local Variables:[ \t]*\\([^\r\n]*\\)[\r\n]"
+	       "[\r\n]\\([^\r\n]*\\)[ \t]*Local Variables:[ \t]*\\([^\r\n]*\\)[\r\n]"
 	       tail-end t)
 	      ;; The prefix is what comes before "local variables:" in its
 	      ;; line.  The suffix is what comes after "local variables:"
@@ -1934,7 +2066,7 @@ use \"coding: 'raw-text\" instead."
 		(goto-char pos)
 		(when (and set-auto-coding-for-load
 			   (re-search-forward re-unibyte tail-end t))
-                  (display-warning 'mule "`unibyte: t' is obsolete; \
+                  (display-warning 'mule "\"unibyte: t\" is obsolete; \
 use \"coding: 'raw-text\" instead." :warning)
 		  (setq coding-system 'raw-text))
 		(when (and (not coding-system)
@@ -2249,7 +2381,13 @@ ALIST is an alist, each element has the form (FROM . TO).
 FROM and TO are a character or a vector of characters.
 If FROM is a character, that character is translated to TO.
 If FROM is a vector of characters, that sequence is translated to TO.
-The first extra-slot of the value is a translation table for reverse mapping."
+The first extra-slot of the value is a translation table for reverse mapping.
+
+FROM and TO may be nil.  If TO is nil, the translation from FROM
+to nothing is defined in the translation table and that element
+is ignored in the reverse map.  If FROM is nil, the translation
+from TO to nothing is defined in the reverse map only.  A vector
+of length zero has the same meaning as specifying nil."
   (let ((tables (vector (make-char-table 'translation-table)
 			(make-char-table 'translation-table)))
 	table max-lookup from to idx val)
@@ -2262,20 +2400,23 @@ The first extra-slot of the value is a translation table for reverse mapping."
 	  (setq from (cdr elt) to (car elt)))
 	(if (characterp from)
 	    (setq idx from)
-	  (setq idx (aref from 0)
-		max-lookup (max max-lookup (length from))))
-	(setq val (aref table idx))
-	(if val
-	    (progn
-	      (or (consp val)
-		  (setq val (list (cons (vector idx) val))))
-	      (if (characterp from)
-		  (setq from (vector from)))
-	      (setq val (nconc val (list (cons from to)))))
-	  (if (characterp from)
-	      (setq val to)
-	    (setq val (list (cons from to)))))
-	(aset table idx val))
+	  (if (= (length from) 0)
+	      (setq idx nil)
+	    (setq idx (aref from 0)
+		  max-lookup (max max-lookup (length from)))))
+	(when idx
+	  (setq val (aref table idx))
+	  (if val
+	      (progn
+		(or (consp val)
+		    (setq val (list (cons (vector idx) val))))
+		(if (characterp from)
+		    (setq from (vector from)))
+		(setq val (nconc val (list (cons from to)))))
+	    (if (characterp from)
+		(setq val to)
+	      (setq val (list (cons from to)))))
+	  (aset table idx val)))
       (set-char-table-extra-slot table 1 max-lookup))
     (set-char-table-extra-slot (aref tables 0) 0 (aref tables 1))
     (aref tables 0)))
@@ -2412,9 +2553,41 @@ This function is intended to be added to `auto-coding-functions'."
       (when end
 	(if (re-search-forward "encoding=[\"']\\(.+?\\)[\"']" end t)
 	    (let* ((match (match-string 1))
-		   (sym (intern (downcase match))))
+                   (sym-name (downcase match))
+                   (sym-name
+                    ;; https://www.w3.org/TR/xml/#charencoding says:
+                    ;; "Entities encoded in UTF-16 MUST [...] begin
+                    ;; with the Byte Order Mark."  The trick below is
+                    ;; based on the fact that utf-16be/le don't
+                    ;; specify BOM, while utf-16-be/le do.
+                    (cond
+                     ((equal sym-name "utf-16le") "utf-16-le")
+                     ((equal sym-name "utf-16be") "utf-16-be")
+                     (t sym-name)))
+		   (sym (intern sym-name)))
 	      (if (coding-system-p sym)
-		  sym
+                  ;; If the encoding tag is UTF-8 and the buffer's
+                  ;; encoding is one of the variants of UTF-8, use the
+                  ;; buffer's encoding.  This allows, e.g., saving an
+                  ;; XML file as UTF-8 with BOM when the tag says UTF-8.
+                  (let ((sym-type (coding-system-type sym))
+                        (bfcs-type
+                         (coding-system-type buffer-file-coding-system)))
+                    ;; If the buffer is unibyte, its encoding is
+                    ;; immaterial (it is just the default value of
+                    ;; buffer-file-coding-system), so we ignore it.
+                    ;; This situation happens when this function is
+                    ;; called as part of visiting a file, as opposed
+                    ;; to when saving a buffer to a file.
+                    (if (and enable-multibyte-characters
+                             ;; 'charset' will signal an error in
+                             ;; coding-system-equal, since it isn't a
+                             ;; coding-system.  So test that up front.
+                             (not (equal sym-type 'charset))
+                             (coding-system-equal 'utf-8 sym-type)
+                             (coding-system-equal 'utf-8 bfcs-type))
+                        buffer-file-coding-system
+		      sym))
 		(message "Warning: unknown coding system \"%s\"" match)
 		nil))
           ;; Files without an encoding tag should be UTF-8. But users
@@ -2427,7 +2600,8 @@ This function is intended to be added to `auto-coding-functions'."
                    (coding-system-base
                     (detect-coding-region (point-min) size t)))))
             ;; Pure ASCII always comes back as undecided.
-            (if (memq detected '(utf-8 undecided))
+            (if (memq detected
+                      '(utf-8 'utf-8-with-signature 'utf-8-hfs undecided))
                 'utf-8
               (warn "File contents detected as %s.
   Consider adding an encoding attribute to the xml declaration,
@@ -2450,11 +2624,22 @@ This function is intended to be added to `auto-coding-functions'."
     ;; (allowing for whitespace at bob).  Note: 'DOCTYPE NETSCAPE' is
     ;; useful for Mozilla bookmark files.
     (when (and (re-search-forward "\\`[[:space:]\n]*\\(<!doctype[[:space:]\n]+\\(html\\|netscape\\)\\|<html\\)" size t)
-	       (re-search-forward "<meta\\s-+\\(http-equiv=[\"']?content-type[\"']?\\s-+content=[\"']text/\\sw+;\\s-*\\)?charset=[\"']?\\(.+?\\)[\"'\\s-/>]" size t))
+	       (re-search-forward "<meta\\s-+\\(http-equiv=[\"']?content-type[\"']?\\s-+content=[\"']text/\\sw+;\\s-*\\)?charset=[\"']?\\(.+?\\)[\"'[:space:]/>]" size t))
       (let* ((match (match-string 2))
 	     (sym (intern (downcase match))))
 	(if (coding-system-p sym)
-	    sym
+            ;; If the encoding tag is UTF-8 and the buffer's
+            ;; encoding is one of the variants of UTF-8, use the
+            ;; buffer's encoding.  This allows, e.g., saving an
+            ;; HTML file as UTF-8 with BOM when the tag says UTF-8.
+            (let ((sym-type (coding-system-type sym))
+                  (bfcs-type
+                   (coding-system-type buffer-file-coding-system)))
+              (if (and enable-multibyte-characters
+                       (coding-system-equal 'utf-8 sym-type)
+                       (coding-system-equal 'utf-8 bfcs-type))
+                  buffer-file-coding-system
+		sym))
 	  (message "Warning: unknown coding system \"%s\"" match)
 	  nil)))))
 
@@ -2468,9 +2653,14 @@ added by processing software."
       (let ((detected
              (with-coding-priority '(utf-8)
                (coding-system-base
-                (detect-coding-region (point-min) (point-max) t)))))
-        ;; Pure ASCII always comes back as undecided.
+                (detect-coding-region (point-min) (point-max) t))))
+            (bom (list (char-after 1) (char-after 2))))
         (cond
+         ((equal bom '(#xFE #xFF))
+          'utf-16be-with-signature)
+         ((equal bom '(#xFF #xFE))
+          'utf-16le-with-signature)
+         ;; Pure ASCII always comes back as undecided.
          ((memq detected '(utf-8 undecided))
           'utf-8)
          ((eq detected 'utf-16le-with-signature) 'utf-16le-with-signature)

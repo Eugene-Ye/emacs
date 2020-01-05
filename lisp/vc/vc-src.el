@@ -1,9 +1,9 @@
 ;;; vc-src.el --- support for SRC version-control  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992-2020 Free Software Foundation, Inc.
 
-;; Author:     FSF (see vc.el for full credits)
-;; Maintainer: Eric S. Raymond <esr@ythyrsus.com>
+;; Author: FSF (see vc.el for full credits)
+;; Maintainer: emacs-devel@gnu.org
 ;; Package: vc
 
 ;; This file is part of GNU Emacs.
@@ -19,11 +19,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
-;; See vc.el.  SRC requires an underlying RCS version of 4.0 or greater. 
+;; See vc.el.  SRC requires an underlying RCS version of 4.0 or greater.
 
 ;; FUNCTION NAME                               STATUS
 ;; BACKEND PROPERTIES
@@ -31,29 +31,22 @@
 ;; STATE-QUERYING FUNCTIONS
 ;; * registered (file)                         OK
 ;; * state (file)                              OK
-;; - state-heuristic (file)                    NOT NEEDED
-;; * dir-status (dir update-function)          OK
-;; - dir-status-files (dir files ds uf)        ??
+;; - dir-status-files (dir files uf)           OK
 ;; - dir-extra-headers (dir)                   NOT NEEDED
 ;; - dir-printer (fileinfo)                    ??
 ;; * working-revision (file)                   OK
-;; - latest-on-branch-p (file)                 ??
 ;; * checkout-model (files)                    OK
-;; * workfile-unchanged-p (file)               OK
 ;; - mode-line-string (file)                   NOT NEEDED
 ;; STATE-CHANGING FUNCTIONS
 ;; * register (files &optional rev comment)    OK
 ;; * create-repo ()                            OK
-;; - init-revision ()                          NOT NEEDED
 ;; * responsible-p (file)                      OK
-;; * could-register (file)                     OK
 ;; - receive-file (file rev)                   NOT NEEDED
 ;; - unregister (file)                         NOT NEEDED
 ;; * checkin (files comment)                   OK
 ;; * find-revision (file rev buffer)           OK
 ;; * checkout (file &optional rev)             OK
 ;; * revert (file &optional contents-done)     OK
-;; - rollback (files)                          NOT NEEDED
 ;; - merge (file rev1 rev2)                    NOT NEEDED
 ;; - merge-news (file)                         NOT NEEDED
 ;; - steal-lock (file &optional revision)      NOT NEEDED
@@ -74,11 +67,9 @@
 ;; - retrieve-tag (dir name update)            ??
 ;; MISCELLANEOUS
 ;; - make-version-backups-p (file)             ??
-;; - repository-hostname (dirname)             NOT NEEDED
 ;; - previous-revision (file rev)              ??
 ;; - next-revision (file rev)                  ??
 ;; - check-headers ()                          ??
-;; - clear-headers ()                          ??
 ;; - delete-file (file)                        ??
 ;; * rename-file (old new)                     OK
 ;; - find-file-hook ()                         NOT NEEDED
@@ -94,9 +85,11 @@
   (require 'cl-lib)
   (require 'vc))
 
+(declare-function vc-setup-buffer "vc-dispatcher" (buf))
+
 (defgroup vc-src nil
   "VC SRC backend."
-  :version "24.1"
+  :version "25.1"
   :group 'vc)
 
 (defcustom vc-src-release nil
@@ -119,7 +112,6 @@ If nil, use the value of `vc-diff-switches'.  If t, use no switches."
                  (const :tag "None" t)
 		 (string :tag "Argument String")
 		 (repeat :tag "Argument List" :value ("") string))
-  :version "21.1"
   :group 'vc-src)
 
 ;; This needs to be autoloaded because vc-src-registered uses it (via
@@ -135,7 +127,6 @@ For a description of possible values, see `vc-check-master-templates'."
 		 (repeat :tag "User-specified"
 			 (choice string
 				 function)))
-  :version "21.1"
   :group 'vc-src)
 
 
@@ -187,16 +178,11 @@ For a description of possible values, see `vc-check-master-templates'."
 
 (autoload 'vc-expand-dirs "vc")
 
-(defun vc-src-dir-status (dir update-function)
-  ;; FIXME: this function should be rewritten or `vc-expand-dirs'
-  ;; should be changed to take a backend parameter.  Using
-  ;; `vc-expand-dirs' is not TRTD because it returns files from
-  ;; multiple backends.  It should also return 'unregistered files.
-
+(defun vc-src-dir-status-files (dir files update-function)
   ;; FIXME: Use one src status -a call for this
-  (let ((flist (vc-expand-dirs (list dir)))
-	(result nil))
-    (dolist (file flist)
+  (if (not files) (setq files (vc-expand-dirs (list dir) 'SRC)))
+  (let ((result nil))
+    (dolist (file files)
       (let ((state (vc-state file))
 	    (frel (file-relative-name file)))
 	(when (and (eq (vc-backend file) 'SRC)
@@ -207,17 +193,19 @@ For a description of possible values, see `vc-check-master-templates'."
 (defun vc-src-command (buffer file-or-list &rest flags)
   "A wrapper around `vc-do-command' for use in vc-src.el.
 This function differs from vc-do-command in that it invokes `vc-src-program'."
-  (apply 'vc-do-command (or buffer "*vc*") 0 vc-src-program file-or-list flags))
+  (let (file-list)
+    (cond ((stringp file-or-list)
+	   (setq file-list (list "--" file-or-list)))
+	  (file-or-list
+	   (setq file-list (cons "--" file-or-list))))
+    (apply 'vc-do-command (or buffer "*vc*") 0 vc-src-program file-list flags)))
 
 (defun vc-src-working-revision (file)
   "SRC-specific version of `vc-working-revision'."
-  (or (ignore-errors
-        (with-output-to-string
-          (vc-src-command standard-output file "list" "-f{1}" "@")))
-      "0"))
-
-(defun vc-src-workfile-unchanged-p (file)
-  (eq 'up-to-date (vc-src-state file)))
+  (let ((result (ignore-errors
+		  (with-output-to-string
+		    (vc-src-command standard-output file "list" "-f{1}" "@")))))
+    (if (zerop (length result)) "0" result)))
 
 ;;;
 ;;; State-changing functions
@@ -230,22 +218,18 @@ This function differs from vc-do-command in that it invokes `vc-src-program'."
 
 (autoload 'vc-switches "vc")
 
-(defun vc-src-register (files &optional _rev _comment)
-  "Register FILES under src.
-REV is ignored.
-COMMENT is ignored."
+(defun vc-src-register (files &optional _comment)
+  "Register FILES under src. COMMENT is ignored."
   (vc-src-command nil files "add"))
 
-(defun vc-rcs-responsible-p (file)
+(defun vc-src-responsible-p (file)
   "Return non-nil if SRC thinks it would be responsible for registering FILE."
   (file-directory-p (expand-file-name ".src"
                                       (if (file-directory-p file)
                                           file
                                         (file-name-directory file)))))
 
-(defalias 'vc-could-register 'vc-src-responsible-p)
-
-(defun vc-src-checkin (files comment)
+(defun vc-src-checkin (files comment &optional _rev)
   "SRC-specific version of `vc-backend-checkin'.
 REV is ignored."
   (vc-src-command nil files "commit" "-m" comment))
@@ -268,13 +252,13 @@ REV is the revision to check out into WORKFILE."
   "Revert FILE to the version it was based on.  If FILE is a directory,
 revert all registered files beneath it."
   (if (file-directory-p file)
-      (mapc 'vc-src-revert (vc-expand-dirs (list file)))
+      (mapc 'vc-src-revert (vc-expand-dirs (list file) 'SRC))
     (vc-src-command nil file "co")))
 
 (defun vc-src-modify-change-comment (files rev comment)
   "Modify the change comments change on FILES on a specified REV.  If FILE is a
 directory the operation is applied to all registered files beneath it."
-  (dolist (file (vc-expand-dirs files))
+  (dolist (file (vc-expand-dirs files 'SRC))
     (vc-src-command nil file "amend" "-m" comment rev)))
 
 ;; History functions
@@ -286,7 +270,7 @@ directory the operation is applied to all registered files beneath it."
                  (repeat :tag "Argument List" :value ("") string))
   :group 'vc-src)
 
-(defun vc-src-print-log (files buffer &optional shortlog start-revision limit)
+(defun vc-src-print-log (files buffer &optional shortlog _start-revision limit)
   "Print commit log associated with FILES into specified BUFFER.
 If SHORTLOG is non-nil, use the list method.
 If START-REVISION is non-nil, it is the newest revision to show.
@@ -306,7 +290,7 @@ If LIMIT is non-nil, show no more than this many entries."
 	      (when limit (list "-l" (format "%s" limit)))
 	      vc-src-log-switches)))))
 
-(defun vc-src-diff (files &optional oldvers newvers buffer)
+(defun vc-src-diff (files &optional oldvers newvers buffer _async)
   "Get a difference report using src between two revisions of FILES."
   (let* ((firstfile (car files))
          (working (and firstfile (vc-working-revision firstfile))))

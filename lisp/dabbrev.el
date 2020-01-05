@@ -1,12 +1,12 @@
 ;;; dabbrev.el --- dynamic abbreviation package  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1986, 1992, 1994, 1996-1997, 2000-2014 Free
+;; Copyright (C) 1985-1986, 1992, 1994, 1996-1997, 2000-2020 Free
 ;; Software Foundation, Inc.
 
 ;; Author: Don Morrison
 ;;	Lars Lindberg
 ;; (according to ack.texi)
-;; Maintainer: Lars Lindberg <Lars.Lindberg@sypro.cap.se>
+;; Maintainer: emacs-devel@gnu.org
 ;; Created: 16 Mars 1992
 ;; Lindberg's last update version: 5.7
 ;; Keywords: abbrev expand completion convenience
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -82,7 +82,7 @@
 ;;  [hymie]	Hyman Rosen <marks!hymie@jyacc.jyacc.com>
 ;;  [burgett]	Steve Burgett <burgett@bizet.eecs.berkeley.edu>
 ;;  [jules]	Julian Gosnell <jules@x.co.uk>
-;;  [kifer]	Michael Kifer <kifer@sbcs.sunysb.edu>
+;;  [kifer]	Michael Kifer <kifer@cs.stonybrook.edu>
 ;;  [ake]	Ake Stenhoff <extaksf@aom.ericsson.se>
 ;;  [alon]	Alon Albert <al%imercury@uunet.uu.net>
 ;;  [tromey]	Tom Tromey <tromey@busco.lanl.gov>
@@ -120,7 +120,7 @@
 
 Example: Set this to \"\\\\$\" for programming languages
 in which variable names may appear with or without a leading `$'.
-\(For example, in Makefiles.\)
+\(For example, in Makefiles.)
 
 Set this to nil if no characters should be skipped."
   :type '(choice regexp
@@ -191,23 +191,21 @@ This variable has an effect only when the value of
 This regexp will be surrounded with \\\\( ... \\\\) when actually used.
 
 Set this variable to \"\\\\sw\" if you want ordinary words or
-\"\\\\sw\\\\|\\\\s_\" if you want symbols (including characters whose
-syntax is \"symbol\" as well as those whose syntax is \"word\".
+\"\\\\sw\\\\|\\\\s_\" if you want symbols (including characters
+whose syntax is \"symbol\" as well as those whose syntax is
+\"word\").  The abbreviation is from point to the start of the
+previous sequence of characters matching this variable.
 
-The value nil has a special meaning: the abbreviation is from point to
-previous word-start, but the search is for symbols.
+The default value of nil is equivalent to \"\\\\sw\\\\|\\\\s_\".
 
-For instance, if you are programming in Lisp, `yes-or-no-p' is a symbol,
-while `yes', `or', `no' and `p' are considered words.  If this
-variable is nil, then expanding `yes-or-no-' looks for a symbol
-starting with or containing `no-'.  If you set this variable to
-\"\\\\sw\\\\|\\\\s_\", that expansion looks for a symbol starting with
-`yes-or-no-'.  Finally, if you set this variable to \"\\\\sw\", then
-expanding `yes-or-no-' signals an error because `-' is not part of a word;
-but expanding `yes-or-no' looks for a word starting with `no'.
-
-The recommended value is nil, which will make dabbrev default to
-using \"\\\\sw\\\\|\\\\s_\"."
+For instance, suppose the current buffer is in `c-mode'.  If this
+variable is nil or \"\\\\sw\\\\|\\\\s_\", then expanding
+`debug_print_in_' looks for a symbol starting with
+`debug_print_in_'.  If you set this variable to \"\\\\sw\", that
+expansion looks for a word prefixed with `in_' (e.g., it would
+match `in_range', but not `in_close_range').  If expanding
+`debug_print_in' it would look for a word starting with
+`in' (e.g. `integer')."
   :type '(choice (const nil)
 		 regexp)
   :group 'dabbrev)
@@ -221,7 +219,7 @@ designated by `dabbrev-select-buffers-function'.
 
 Then, if `dabbrev-check-all-buffers' is non-nil, dabbrev searches
 all the other buffers, except those named in `dabbrev-ignored-buffer-names',
-or matched by `dabbrev-ignored-regexps'."
+or matched by `dabbrev-ignored-buffer-regexps'."
   :type 'boolean
   :group 'dabbrev)
 
@@ -240,8 +238,7 @@ See also `dabbrev-ignored-buffer-names'."
   :version "21.1")
 
 (defcustom dabbrev-check-other-buffers t
-  "Should \\[dabbrev-expand] look in other buffers?\
-
+  "Should \\[dabbrev-expand] look in other buffers?
 nil: Don't look in other buffers.
 t: Also look for expansions in the buffers pointed out by
    `dabbrev-select-buffers-function'.
@@ -326,6 +323,9 @@ this list."
 ;; Same as dabbrev-check-other-buffers, but is set for every expand.
 (defvar dabbrev--check-other-buffers dabbrev-check-other-buffers)
 
+;; Same as dabbrev-check-all-buffers, but is set for every expand.
+(defvar dabbrev--check-all-buffers dabbrev-check-all-buffers)
+
 ;; The regexp for recognizing a character in an abbreviation.
 (defvar dabbrev--abbrev-char-regexp nil)
 
@@ -383,10 +383,7 @@ If the prefix argument is 16 (which comes from \\[universal-argument] \\[univers
 then it searches *all* buffers."
   (interactive "*P")
   (dabbrev--reset-global-variables)
-  (let* ((dabbrev-check-other-buffers (and arg t))
-	 (dabbrev-check-all-buffers
-	  (and arg (= (prefix-numeric-value arg) 16)))
-	 (abbrev (dabbrev--abbrev-at-point))
+  (let* ((abbrev (dabbrev--abbrev-at-point))
          (beg (progn (search-backward abbrev) (point)))
          (end (progn (search-forward abbrev) (point)))
 	 (ignore-case-p (dabbrev--ignore-case-p abbrev))
@@ -423,6 +420,9 @@ then it searches *all* buffers."
                            (t
                             (mapcar #'downcase completion-list)))))))
               (complete-with-action a list s p)))))
+    (setq dabbrev--check-other-buffers (and arg t))
+    (setq dabbrev--check-all-buffers
+          (and arg (= (prefix-numeric-value arg) 16)))
     (completion-in-region beg end table)))
 
 ;;;###autoload
@@ -433,7 +433,10 @@ Expands to the most recent, preceding word for which this is a prefix.
 If no suitable preceding word is found, words following point are
 considered.  If still no suitable word is found, then look in the
 buffers accepted by the function pointed out by variable
-`dabbrev-friend-buffer-function'.
+`dabbrev-friend-buffer-function', if `dabbrev-check-other-buffers'
+says so.  Then, if `dabbrev-check-all-buffers' is non-nil, look in
+all the other buffers, subject to constraints specified
+by `dabbrev-ignored-buffer-names' and `dabbrev-ignored-buffer-regexps'.
 
 A positive prefix argument, N, says to take the Nth backward *distinct*
 possibility.  A negative argument says search forward.
@@ -534,7 +537,7 @@ See also `dabbrev-abbrev-char-regexp' and \\[dabbrev-completion]."
       (if (not (or (eq dabbrev--last-buffer dabbrev--last-buffer-found)
 		   (minibuffer-window-active-p (selected-window))))
 	  (progn
-	    (message "Expansion found in '%s'"
+	    (message "Expansion found in `%s'"
 		     (buffer-name dabbrev--last-buffer))
 	    (setq dabbrev--last-buffer-found dabbrev--last-buffer))
 	(message nil))
@@ -546,8 +549,8 @@ See also `dabbrev-abbrev-char-regexp' and \\[dabbrev-completion]."
 		(copy-marker dabbrev--last-expansion-location)))
       ;; Success: stick it in and return.
       (setq buffer-undo-list (cons orig-point buffer-undo-list))
-      (dabbrev--substitute-expansion old abbrev expansion
-				     record-case-pattern)
+      (setq expansion (dabbrev--substitute-expansion old abbrev expansion
+                                                     record-case-pattern))
 
       ;; Save state for re-expand.
       (setq dabbrev--last-expansion expansion)
@@ -623,7 +626,8 @@ all skip characters."
 	dabbrev--last-buffer-found nil
 	dabbrev--abbrev-char-regexp (or dabbrev-abbrev-char-regexp
 					"\\sw\\|\\s_")
-	dabbrev--check-other-buffers dabbrev-check-other-buffers))
+	dabbrev--check-other-buffers dabbrev-check-other-buffers
+        dabbrev--check-all-buffers dabbrev-check-all-buffers))
 
 (defun dabbrev--select-buffers ()
   "Return a list of other buffers to search for a possible abbrev.
@@ -772,7 +776,7 @@ of the start of the occurrence."
       ;; If dabbrev-check-all-buffers, tack on all the other
       ;; buffers at the end of the list, except those which are
       ;; specifically to be ignored.
-      (if dabbrev-check-all-buffers
+      (if dabbrev--check-all-buffers
 	  (setq list
 		(append list
 			(dabbrev-filter-elements
@@ -902,7 +906,9 @@ to record whether we upcased the expansion, downcased it, or did neither."
     ;; and (2) the replacement itself is all lower case.
     (dabbrev--safe-replace-match expansion
 				 (not use-case-replace)
-				 t)))
+				 t))
+  ;; Return the expansion actually used.
+  expansion)
 
 
 ;;;----------------------------------------------------------------

@@ -1,9 +1,8 @@
 ;;; calc-embed.el --- embed Calc in a buffer
 
-;; Copyright (C) 1990-1993, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1990-1993, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: David Gillespie <daveg@synaptics.com>
-;; Maintainer: Jay Belanger <jay.p.belanger@gmail.com>
 
 ;; This file is part of GNU Emacs.
 
@@ -18,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -28,6 +27,7 @@
 
 (require 'calc-ext)
 (require 'calc-macs)
+(require 'cl-lib)
 
 ;; Declare functions which are defined elsewhere.
 (declare-function thing-at-point-looking-at "thingatpt"
@@ -330,10 +330,12 @@
       (if calc-embedded-firsttime-formula
           (run-hooks 'calc-embedded-new-formula-hook))
       (or (eq calc-embedded-quiet t)
-	  (message "Embedded Calc mode enabled; %s to return to normal"
-		   (if calc-embedded-quiet
-		       "Type `C-x * x'"
-		     "Give this command again")))))
+	  (message (concat
+                    "Embedded Calc mode enabled; "
+                    (if calc-embedded-quiet
+                        "Type `C-x * x'"
+                      "Give this command again")
+                    " to return to normal")))))
   (scroll-down 0))    ; fix a bug which occurs when truncate-lines is changed.
 
 
@@ -803,7 +805,7 @@ The command \\[yank] can retrieve it from there."
       (backward-char 6))
     (goto-char save-pt)
     (unless (assq 'the-language modes)
-      (let ((lang (assoc major-mode calc-language-alist)))
+      (let ((lang (cl-assoc-if #'derived-mode-p calc-language-alist)))
         (if lang
             (setq modes (cons (cons 'the-language (cdr lang))
                               modes)))))
@@ -828,13 +830,19 @@ The command \\[yank] can retrieve it from there."
          (setq found (list (current-buffer))
                calc-embedded-active (cons found calc-embedded-active)
                calc-embedded-firsttime-buf t)
-         (let ((newann (assoc major-mode calc-embedded-announce-formula-alist))
-               (newform (assoc major-mode calc-embedded-open-close-formula-alist))
-               (newword (assoc major-mode calc-embedded-word-regexp-alist))
-               (newplain (assoc major-mode calc-embedded-open-close-plain-alist))
+         (let ((newann (cl-assoc-if #'derived-mode-p
+                                    calc-embedded-announce-formula-alist))
+               (newform (cl-assoc-if #'derived-mode-p
+                                     calc-embedded-open-close-formula-alist))
+               (newword (cl-assoc-if #'derived-mode-p
+                                     calc-embedded-word-regexp-alist))
+               (newplain (cl-assoc-if #'derived-mode-p
+                                      calc-embedded-open-close-plain-alist))
                (newnewform
-                (assoc major-mode calc-embedded-open-close-new-formula-alist))
-               (newmode (assoc major-mode calc-embedded-open-close-mode-alist)))
+                (cl-assoc-if #'derived-mode-p
+                             calc-embedded-open-close-new-formula-alist))
+               (newmode (cl-assoc-if #'derived-mode-p
+                                     calc-embedded-open-close-mode-alist)))
            (when newann
              (make-local-variable 'calc-embedded-announce-formula)
              (setq calc-embedded-announce-formula (cdr newann)))

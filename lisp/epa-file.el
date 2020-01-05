@@ -1,5 +1,5 @@
 ;;; epa-file.el --- the EasyPG Assistant, transparent file encryption -*- lexical-binding: t -*-
-;; Copyright (C) 2006-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Keywords: PGP, GnuPG
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 
@@ -82,12 +82,15 @@ encryption is used."
 		passphrase))))
     (epa-passphrase-callback-function context key-id file)))
 
+(defvar epa-inhibit nil
+  "Non-nil means don't try to decrypt .gpg files when operating on them.")
+
 ;;;###autoload
 (defun epa-file-handler (operation &rest args)
   (save-match-data
     (let ((op (get operation 'epa-file)))
-      (if op
-  	  (apply op args)
+      (if (and op (not epa-inhibit))
+          (apply op args)
   	(epa-file-run-real-handler operation args)))))
 
 (defun epa-file-run-real-handler (operation args)
@@ -99,25 +102,22 @@ encryption is used."
     (apply operation args)))
 
 (defun epa-file-decode-and-insert (string file visit beg end replace)
-  (if (fboundp 'decode-coding-inserted-region)
-      (save-restriction
-	(narrow-to-region (point) (point))
-	(insert (if enable-multibyte-characters
-		    (string-to-multibyte string)
-		  string))
-	(decode-coding-inserted-region
-	 (point-min) (point-max)
-	 (substring file 0 (string-match epa-file-name-regexp file))
-	 visit beg end replace))
-    (insert (epa-file--decode-coding-string string (or coding-system-for-read
-						       'undecided)))))
+  (save-restriction
+    (narrow-to-region (point) (point))
+    (insert string)
+    (decode-coding-inserted-region
+     (point-min) (point-max)
+     (substring file 0 (string-match epa-file-name-regexp file))
+     visit beg end replace)
+    (goto-char (point-max))
+    (- (point-max) (point-min))))
 
 (defvar epa-file-error nil)
 (defun epa-file--find-file-not-found-function ()
   (let ((error epa-file-error))
     (save-window-excursion
       (kill-buffer))
-    (signal 'file-error
+    (signal 'file-missing
 	    (cons "Opening input file" (cdr error)))))
 
 (defvar last-coding-system-used)
@@ -144,11 +144,8 @@ encryption is used."
      context
      (cons #'epa-progress-callback-function
 	   (format "Decrypting %s" file)))
-    (setf (epg-context-pinentry-mode context) epa-pinentry-mode)
     (unwind-protect
 	(progn
-	  (if replace
-	      (goto-char (point-min)))
 	  (condition-case error
 	      (setq string (epg-decrypt-file context local-file nil))
 	    (error
@@ -158,22 +155,23 @@ encryption is used."
 	     ;; signal that as a non-file error
 	     ;; so that find-file-noselect-1 won't handle it.
 	     ;; Borrowed from jka-compr.el.
-	     (if (and (eq (car error) 'file-error)
+	     (if (and (memq 'file-error (get (car error) 'error-conditions))
 		      (equal (cadr error) "Searching for program"))
 		 (error "Decryption program `%s' not found"
 			(nth 3 error)))
-	     (when (file-exists-p local-file)
-	       ;; Hack to prevent find-file from opening empty buffer
-	       ;; when decryption failed (bug#6568).  See the place
-	       ;; where `find-file-not-found-functions' are called in
-	       ;; `find-file-noselect-1'.
-	       (setq-local epa-file-error error)
-	       (add-hook 'find-file-not-found-functions
-			 'epa-file--find-file-not-found-function
-			 nil t)
-	       (epa-display-error context))
-	     (signal 'file-error
-		     (cons "Opening input file" (cdr error)))))
+	     (let ((exists (file-exists-p local-file)))
+	       (when exists
+		 ;; Hack to prevent find-file from opening empty buffer
+		 ;; when decryption failed (bug#6568).  See the place
+		 ;; where `find-file-not-found-functions' are called in
+		 ;; `find-file-noselect-1'.
+		 (setq-local epa-file-error error)
+		 (add-hook 'find-file-not-found-functions
+			   'epa-file--find-file-not-found-function
+			   nil t)
+		 (epa-display-error context))
+	       (signal (if exists 'file-error 'file-missing)
+		       (cons "Opening input file" (cdr error))))))
           (set-buffer buf) ;In case timer/filter changed/killed it (bug#16029)!
 	  (setq-local epa-file-encrypt-to
                       (mapcar #'car (epg-context-result-for
@@ -186,12 +184,11 @@ encryption is used."
 	    ;; really edit the buffer.
 	    (let ((buffer-file-name
 		   (if visit nil buffer-file-name)))
-	      (save-restriction
-		(narrow-to-region (point) (point))
-		(epa-file-decode-and-insert string file visit beg end replace)
-		(setq length (- (point-max) (point-min))))
-	      (if replace
-		  (delete-region (point) (point-max))))
+              (setq length
+                    (if replace
+                        (epa-file--replace-text string file visit beg end)
+		      (epa-file-decode-and-insert
+                       string file visit beg end replace))))
 	    (if visit
 		(set-visited-file-modtime))))
       (if (and local-copy
@@ -199,6 +196,38 @@ encryption is used."
 	  (delete-file local-copy)))
     (list file length)))
 (put 'insert-file-contents 'epa-file 'epa-file-insert-file-contents)
+
+(defun epa-file--replace-text (string file visit beg end)
+  ;; The idea here is that we want to replace the text in the buffer
+  ;; (for instance, for a `revert-buffer'), but we want to touch as
+  ;; little of the text as possible.  So we compare the new and the
+  ;; old text and only starts replacing when the text changes.
+  (let ((orig-point (point))
+        new-start length)
+    (goto-char (point-max))
+    (setq new-start (point))
+    (setq length
+	  (epa-file-decode-and-insert
+           string file visit beg end t))
+    (if (equal (buffer-substring (point-min) new-start)
+               (buffer-substring new-start (point-max)))
+        ;; The new text is equal to the old, so just keep the old.
+        (delete-region new-start (point-max))
+      ;; Compute the region the hard way.
+      (let ((p1 (point-min))
+            (p2 new-start))
+        (while (and (< p1 new-start)
+                    (< p2 (point-max))
+                    (eql (char-after p1) (char-after p2)))
+          (cl-incf p1)
+          (cl-incf p2))
+        (delete-region new-start p2)
+        (delete-region p1 new-start)))
+    ;; Restore point, if possible.
+    (if (< orig-point (point-max))
+        (goto-char orig-point)
+      (goto-char (point-max)))
+    length))
 
 (defun epa-file-write-region (start end file &optional append visit lockname
 				    mustbenew)
@@ -232,7 +261,6 @@ encryption is used."
      (cons #'epa-progress-callback-function
 	   (format "Encrypting %s" file)))
     (setf (epg-context-armor context) epa-armor)
-    (setf (epg-context-pinentry-mode context) epa-pinentry-mode)
     (condition-case error
 	(setq string
 	      (epg-encrypt-string

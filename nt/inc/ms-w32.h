@@ -1,13 +1,13 @@
 /* System description file for Windows NT.
 
-Copyright (C) 1993-1995, 2001-2014 Free Software Foundation, Inc.
+Copyright (C) 1993-1995, 2001-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +15,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* Define symbols to identify the version of Unix this is.
    Define all the symbols that apply correctly.  */
@@ -25,6 +25,21 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #endif
 
 #include <mingw_time.h>
+
+/* MinGW-w64 gcc does not automotically define a macro for
+   differentiating it fom MinGW gcc. We need to test the presence of
+   __MINGW64_VERSION_MAJOR in _mingw.h: */
+#ifdef __MINGW32__
+# include <_mingw.h>
+# ifdef __MINGW64_VERSION_MAJOR
+#  define MINGW_W64
+# endif
+# if defined __MINGW32_VERSION && __MINGW32_VERSION >= 5001000L
+/* Avoid warnings about gettimeofday being deprecated.  */
+#  undef __POSIX_2008_DEPRECATED
+#  define __POSIX_2008_DEPRECATED
+# endif
+#endif
 
 /* #undef const */
 
@@ -47,10 +62,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 /* Define HAVE_TIMEVAL if the system supports the BSD style clock values.
    Look in <sys/time.h> for a timeval structure.  */
 #define HAVE_TIMEVAL 1
-
-/* But our select implementation doesn't allow us to make non-blocking
-   connects.  So until that is fixed, this is necessary:  */
-#define BROKEN_NON_BLOCKING_CONNECT 1
 
 /* And the select implementation does 1-byte read-ahead waiting
    for received packets, so datagrams are broken too.  */
@@ -139,13 +150,13 @@ extern char *getenv ();
    versions we still support.  MinGW64 defines this to a higher value
    in its system headers, and is not really compatible with values
    lower than 0x0500, so leave it alone.  */
-#ifndef _W64
+#ifndef MINGW_W64
 # undef _WIN32_WINNT
 # define _WIN32_WINNT 0x0400
 #endif
 
 /* Make a leaner executable.  */
-#define WIN32_LEAN_AND_MEAN 1
+#define WIN32_LEAN_AND_MEAN
 
 #include <sys/types.h>
 
@@ -167,7 +178,7 @@ extern char *getenv ();
 
 #ifdef emacs
 
-#ifdef _W64
+#ifdef MINGW_W64
 /* MinGW64 specific stuff.  */
 /* Make sure 'struct timespec' and 'struct timezone' are defined.  */
 #include <sys/types.h>
@@ -180,7 +191,28 @@ extern struct tm * sys_localtime (const time_t *);
    supply the 2nd arg correctly, so don't use _setjmp directly in that
    case.  */
 #undef HAVE__SETJMP
+
+/* Unlike MS and mingw.org, MinGW64 doesn't define gai_strerror as an
+   inline function in a system header file, and instead seems to
+   require to link against ws2_32.a.  But we don't want to link with
+   -lws2_32, as that would make Emacs dependent on the respective DLL.
+   So MinGW64 is amply punished here by the following:  */
+#undef HAVE_GAI_STRERROR
 #endif
+
+/* The following is needed for recovery from C stack overflows.  */
+#include <setjmp.h>
+typedef jmp_buf sigjmp_buf;
+#ifdef MINGW_W64
+/* Evidently, MinGW64's longjmp crashes when invoked from an exception
+   handler, see https://sourceforge.net/p/mingw-w64/mailman/message/32421953/.
+   This seems to be an unsolved problem in the MinGW64 runtime.  So we
+   use the GCC intrinsics instead.  FIXME.  */
+#define sigsetjmp(j,m) __builtin_setjmp(j)
+#else
+#define sigsetjmp(j,m) setjmp(j)
+#endif
+extern void w32_reset_stack_overflow_guard (void);
 
 #ifdef _MSC_VER
 #include <sys/timeb.h>
@@ -210,9 +242,6 @@ extern struct tm * sys_localtime (const time_t *);
 #define fopen   sys_fopen
 #define link    sys_link
 #define localtime sys_localtime
-#define mkdir   sys_mkdir
-#undef open
-#define open    sys_open
 #undef read
 #define read    sys_read
 #define rename  sys_rename
@@ -262,10 +291,27 @@ extern int sys_umask (int);
 
 #endif /* emacs */
 
+/* Used both in Emacs, in lib-src, and in Gnulib.  */
+#undef open
+#define open    sys_open
+
 /* Map to MSVC names.  */
 #define execlp    _execlp
 #define execvp    _execvp
-#define fdatasync _commit
+#include <stdint.h>		/* for intptr_t */
+extern intptr_t _execvp (const char *, char **);
+#ifdef MINGW_W64
+/* GCC 6 has a builtin execve with the prototype shown below.  MinGW64
+   changed the prototype in its process.h to match that, although the
+   library function still calls _execve, which still returns intptr_t.
+   However, using the prototype with intptr_t causes GCC to emit
+   warnings.  Fortunately, execve is not used in the MinGW build, but
+   the code that references it is still compiled.  */
+extern int execve (const char *, char * const *, char * const *);
+#else
+extern intptr_t execve (const char *, char * const *, char * const *);
+#endif
+#define tcdrain _commit
 #define fdopen	  _fdopen
 #define fsync	  _commit
 #define ftruncate _chsize
@@ -300,18 +346,6 @@ int _getpid (void);
    array, and triggers an error message.  */
 #include <time.h>
 #define tzname    _tzname
-
-/* 'struct timespec' is used by time-related functions in lib/ and
-   elsewhere, but we don't use lib/time.h where the structure is
-   defined.  */
-/* MinGW64 defines 'struct timespec' and _TIMESPEC_DEFINED in sys/types.h.  */
-#ifndef _TIMESPEC_DEFINED
-struct timespec
-{
-  time_t	tv_sec;		/* seconds */
-  long int	tv_nsec;	/* nanoseconds */
-};
-#endif
 
 /* Required for functions in lib/time_r.c, since we don't use lib/time.h.  */
 extern struct tm *gmtime_r (time_t const * restrict, struct tm * restrict);
@@ -370,7 +404,7 @@ typedef int sigset_t;
 typedef int ssize_t;
 #endif
 
-#ifdef _W64	/* MinGW64 */
+#ifdef MINGW_W64
 #ifndef _POSIX
 typedef _sigset_t sigset_t;
 #endif
@@ -426,7 +460,12 @@ extern char *get_emacs_configuration_options (void);
    windows.h.  For this to have proper effect, config.h must always be
    included before windows.h.  */
 #define _WINSOCKAPI_    1
-#define _WINSOCK_H
+#if !(defined __MINGW32_VERSION && __MINGW32_VERSION >= 5000002L)
+/* mingw.org's MinGW 5.x changed how it includes winsock.h and time.h,
+   and now defining _WINSOCK_H skips the definition of struct timeval,
+   which we don't want.  */
+# define _WINSOCK_H
+#endif
 
 /* Defines size_t and alloca ().  */
 #include <stdlib.h>
@@ -436,6 +475,12 @@ extern char *get_emacs_configuration_options (void);
 #else
 #include <malloc.h>
 #endif
+
+/* Needed in Emacs and in Gnulib.  */
+/* This must be after including sys/stat.h, because we need mode_t.  */
+#undef mkdir
+#define mkdir(d,f)   sys_mkdir(d,f)
+int sys_mkdir (const char *, mode_t);
 
 #ifdef emacs
 
@@ -450,6 +495,12 @@ extern void *malloc_after_dump(size_t);
 extern void *realloc_after_dump(void *, size_t);
 extern void free_after_dump(void *);
 
+extern void *malloc_after_dump_9x(size_t);
+extern void *realloc_after_dump_9x(void *, size_t);
+extern void free_after_dump_9x(void *);
+
+extern void *sys_calloc(size_t, size_t);
+
 extern malloc_fn the_malloc_fn;
 extern realloc_fn the_realloc_fn;
 extern free_fn the_free_fn;
@@ -457,6 +508,7 @@ extern free_fn the_free_fn;
 #define malloc(size) (*the_malloc_fn)(size)
 #define free(ptr)   (*the_free_fn)(ptr)
 #define realloc(ptr, size) (*the_realloc_fn)(ptr, size)
+#define calloc(num, size) sys_calloc(num, size)
 
 #endif
 
@@ -486,8 +538,8 @@ extern int getpagesize (void);
 
 extern void * memrchr (void const *, int, size_t);
 
+/* Declared here, since we don't use Gnulib's stdlib.h.  */
 extern int mkostemp (char *, int);
-
 
 #if defined (__MINGW32__)
 
@@ -564,13 +616,6 @@ typedef unsigned int EMACS_UINT;
 /* #define FULL_DEBUG */
 /* #define EMACSDEBUG */
 
-#ifdef EMACSDEBUG
-extern void _DebPrint (const char *fmt, ...);
-#define DebPrint(stuff) _DebPrint stuff
-#else
-#define DebPrint(stuff)
-#endif
-
 #ifdef _MSC_VER
 #if _MSC_VER >= 800 && !defined(__cplusplus)
 /* Unnamed type definition in parentheses.
@@ -588,5 +633,7 @@ extern void _DebPrint (const char *fmt, ...);
 #endif
 #endif
 
+/* Event name for when emacsclient starts the Emacs daemon on Windows.  */
+#define W32_DAEMON_EVENT "EmacsServerEvent"
 
 /* ============================================================ */

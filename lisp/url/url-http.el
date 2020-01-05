@@ -1,6 +1,6 @@
-;;; url-http.el --- HTTP retrieval routines
+;;; url-http.el --- HTTP retrieval routines  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999, 2001, 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999, 2001, 2004-2020 Free Software Foundation, Inc.
 
 ;; Author: Bill Perry <wmperry@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -19,13 +19,17 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-(eval-when-compile (require 'cl-lib))
+(require 'cl-lib)
+(require 'puny)
+(require 'nsm)
+(eval-when-compile
+  (require 'subr-x))
 
 (defvar url-callback-arguments)
 (defvar url-callback-function)
@@ -50,6 +54,7 @@
 (defvar url-http-target-url)
 (defvar url-http-transfer-encoding)
 (defvar url-show-status)
+(defvar url-http-referer)
 
 (require 'url-gw)
 (require 'url-parse)
@@ -124,6 +129,7 @@ request.")
     (422 unprocessable-entity            "Unprocessable Entity (Added by DAV)")
     (423 locked                          "Locked")
     (424 failed-Dependency               "Failed Dependency")
+    (451 unavailable-for-legal-reasons   "Unavailable for legal reasons") ;RFC 7725
     (500 internal-server-error           "Internal server error")
     (501 not-implemented                 "Not implemented")
     (502 bad-gateway                     "Bad gateway")
@@ -133,16 +139,7 @@ request.")
     (507 insufficient-storage            "Insufficient storage"))
   "The HTTP return codes and their text.")
 
-(defcustom url-user-agent (format "User-Agent: %sURL/%s\r\n"
-				  (if url-package-name
-				      (concat url-package-name "/"
-					      url-package-version " ")
-				    "") url-version)
-  "User Agent used by the URL package."
-  :type '(choice (string :tag "A static User-Agent string")
-                 (function :tag "Call a function to get the User-Agent string"))
-  :version "25.1"
-  :group 'url)
+(defconst url-https-default-port 443 "Default HTTPS port.")
 
 ;(eval-when-compile
 ;; These are all macros so that they are hidden from external sight
@@ -153,15 +150,6 @@ request.")
 ;; These routines will allow us to implement persistent HTTP
 ;; connections.
 (defsubst url-http-debug (&rest args)
-  (if quit-flag
-      (let ((proc (get-buffer-process (current-buffer))))
-	;; The user hit C-g, honor it!  Some things can get in an
-	;; incredibly tight loop (chunked encoding)
-	(if proc
-	    (progn
-	      (set-process-sentinel proc nil)
-	      (set-process-filter proc nil)))
-	(error "Transfer interrupted!")))
   (apply 'url-debug 'http args))
 
 (defun url-http-mark-connection-as-busy (host port proc)
@@ -205,7 +193,14 @@ request.")
 	;; `url-open-stream' needs a buffer in which to do things
 	;; like authentication.  But we use another buffer afterwards.
 	(unwind-protect
-	    (let ((proc (url-open-stream host buf host port gateway-method)))
+            (let ((proc (url-open-stream host buf
+                                         (if url-using-proxy
+                                             (url-host url-using-proxy)
+                                           host)
+                                         (if url-using-proxy
+                                             (url-port url-using-proxy)
+                                           port)
+                                         gateway-method)))
 	      ;; url-open-stream might return nil.
 	      (when (processp proc)
 		;; Drop the temp buffer link before killing the buffer.
@@ -220,18 +215,69 @@ request.")
     (if connection
 	(url-http-mark-connection-as-busy host port connection))))
 
+(defun url-http--user-agent-default-string ()
+  "Compute a default User-Agent string based on `url-privacy-level'."
+  (let ((package-info (when url-package-name
+                        (format "%s/%s" url-package-name url-package-version)))
+        (emacs-info (unless (and (listp url-privacy-level)
+                                 (memq 'emacs url-privacy-level))
+                      (format "Emacs/%s" emacs-version)))
+        (os-info (unless (and (listp url-privacy-level)
+                              (memq 'os url-privacy-level))
+                   (format "(%s; %s)" url-system-type url-os-type)))
+        (url-info (format "URL/%s" url-version)))
+    (string-join (delq nil (list package-info url-info
+                                 emacs-info os-info))
+                 " ")))
+
+(defun url-http--get-referer (url)
+  (url-http-debug "getting referer from buffer: buffer:%S target-url:%S lastloc:%S" (current-buffer) url url-current-lastloc)
+  (when url-current-lastloc
+    (if (not (url-p url-current-lastloc))
+        (setq url-current-lastloc (url-generic-parse-url url-current-lastloc)))
+    (let ((referer (copy-sequence url-current-lastloc)))
+      (setf (url-host referer) (puny-encode-domain (url-host referer)))
+      (let ((referer-string (url-recreate-url referer)))
+        (when (and (not (memq url-privacy-level '(low high paranoid)))
+                   (not (and (listp url-privacy-level)
+                             (memq 'lastloc url-privacy-level))))
+          ;; url-privacy-level allows referer.  But url-lastloc-privacy-level
+          ;; may restrict who we send it to.
+          (cl-case url-lastloc-privacy-level
+            (host-match
+             (let ((referer-host (url-host referer))
+                   (url-host (url-host url)))
+               (when (string= referer-host url-host)
+                 referer-string)))
+            (domain-match
+             (let ((referer-domain (url-domain referer))
+                   (url-domain (url-domain url)))
+               (when (and referer-domain
+                          url-domain
+                          (string= referer-domain url-domain))
+                 referer-string)))
+            (otherwise
+             referer-string)))))))
+
 ;; Building an HTTP request
 (defun url-http-user-agent-string ()
-  (if (or (eq url-privacy-level 'paranoid)
-	  (and (listp url-privacy-level)
-	       (memq 'agent url-privacy-level)))
-      ""
-    (if (functionp url-user-agent)
-        (funcall url-user-agent)
-      url-user-agent)))
+  "Compute a User-Agent string.
+The string is based on `url-privacy-level' and `url-user-agent'."
+  (let* ((hide-ua
+          (or (eq url-privacy-level 'paranoid)
+              (and (listp url-privacy-level)
+                   (memq 'agent url-privacy-level))))
+         (ua-string
+          (and (not hide-ua)
+               (cond
+                ((functionp url-user-agent) (funcall url-user-agent))
+                ((stringp url-user-agent) url-user-agent)
+                ((eq url-user-agent 'default) (url-http--user-agent-default-string))))))
+    (if ua-string (format "User-Agent: %s\r\n" (string-trim ua-string)) "")))
 
-(defun url-http-create-request (&optional ref-url)
-  "Create an HTTP request for `url-http-target-url', referred to by REF-URL."
+(defun url-http-create-request ()
+  "Create an HTTP request for `url-http-target-url'.
+Use `url-http-referer' as the Referer-header (subject to `url-privacy-level')."
   (let* ((extra-headers)
 	 (request nil)
 	 (no-cache (cdr-safe (assoc "Pragma" url-http-extra-headers)))
@@ -250,7 +296,8 @@ request.")
 		 (url-get-authentication (or
 					  (and (boundp 'proxy-info)
 					       proxy-info)
-					  url-http-target-url) nil 'any nil))))
+					  url-http-target-url) nil 'any nil)))
+         (ref-url (url-http--encode-string url-http-referer)))
     (if (equal "" real-fname)
 	(setq real-fname "/"))
     (setq no-cache (and no-cache (string-match "no-cache" no-cache)))
@@ -262,12 +309,6 @@ request.")
     ;; Protection against stupid values in the referrer
     (if (and ref-url (stringp ref-url) (or (string= ref-url "file:nil")
 					   (string= ref-url "")))
-	(setq ref-url nil))
-
-    ;; We do not want to expose the referrer if the user is paranoid.
-    (if (or (memq url-privacy-level '(low high paranoid))
-	    (and (listp url-privacy-level)
-		 (memq 'lastloc url-privacy-level)))
 	(setq ref-url nil))
 
     ;; url-http-extra-headers contains an assoc-list of
@@ -284,22 +325,14 @@ request.")
     ;; allows us to elide null lines directly, at the cost of making
     ;; the layout less clear.
     (setq request
-          ;; We used to concat directly, but if one of the strings happens
-          ;; to being multibyte (even if it only contains pure ASCII) then
-          ;; every string gets converted with `string-MAKE-multibyte' which
-          ;; turns the 127-255 codes into things like latin-1 accented chars
-          ;; (it would work right if it used `string-TO-multibyte' instead).
-          ;; So to avoid the problem we force every string to be unibyte.
-          (mapconcat
-           ;; FIXME: Instead of `string-AS-unibyte' we'd want
-           ;; `string-to-unibyte', so as to properly signal an error if one
-           ;; of the strings contains a multibyte char.
-           'string-as-unibyte
-           (delq nil
-            (list
+          (concat
              ;; The request
              (or url-http-method "GET") " "
-             (if using-proxy (url-recreate-url url-http-target-url) real-fname)
+             (url-http--encode-string
+              (if (and using-proxy
+                       ;; Bug#35969.
+                       (not (equal "https" (url-type url-http-target-url))))
+                  (url-recreate-url url-http-target-url) real-fname))
              " HTTP/" url-http-version "\r\n"
              ;; Version of MIME we speak
              "MIME-Version: 1.0\r\n"
@@ -316,8 +349,11 @@ request.")
                      (url-scheme-get-property
                       (url-type url-http-target-url) 'default-port))
                  (format
-                  "Host: %s:%d\r\n" host (url-port url-http-target-url))
-               (format "Host: %s\r\n" host))
+                  "Host: %s:%d\r\n" (url-http--encode-string
+                                     (puny-encode-domain host))
+                  (url-port url-http-target-url))
+               (format "Host: %s\r\n"
+                       (url-http--encode-string (puny-encode-domain host))))
              ;; Who its from
              (if url-personal-mail-address
                  (concat
@@ -335,7 +371,9 @@ request.")
                   "Accept-encoding: " url-mime-encoding-string "\r\n"))
              (if url-mime-charset-string
                  (concat
-                  "Accept-charset: " url-mime-charset-string "\r\n"))
+                  "Accept-charset: "
+                  (url-http--encode-string url-mime-charset-string)
+                  "\r\n"))
              ;; Languages we understand
              (if url-mime-language-string
                  (concat
@@ -350,9 +388,10 @@ request.")
              auth
              ;; Cookies
 	     (when (url-use-cookies url-http-target-url)
-	       (url-cookie-generate-header-lines
-		host real-fname
-		(equal "https" (url-type url-http-target-url))))
+               (url-http--encode-string
+                (url-cookie-generate-header-lines
+                 host real-fname
+                 (equal "https" (url-type url-http-target-url)))))
              ;; If-modified-since
              (if (and (not no-cache)
                       (member url-http-method '("GET" nil)))
@@ -374,9 +413,17 @@ request.")
              "\r\n"
              ;; Any data
              url-http-data))
-           ""))
+    ;; Bug#23750
+    (unless (= (string-bytes request)
+               (length request))
+      (error "Multibyte text in HTTP request: %s" request))
     (url-http-debug "Request is: \n%s" request)
     request))
+
+(defun url-http--encode-string (s)
+  (if (multibyte-string-p s)
+      (encode-coding-string s 'us-ascii)
+    s))
 
 ;; Parsing routines
 (defun url-http-clean-headers ()
@@ -409,6 +456,14 @@ Return the number of characters removed."
 	auth
 	(strength 0))
 
+    ;; If we're here, then we got a 40x Unauthorized response from the
+    ;; server.  If we already have "Authorization" in the extra
+    ;; headers, then this means that we've already tried sending
+    ;; credentials to the server, and they were wrong, so just give
+    ;; up.
+    (when (assoc "Authorization" url-http-extra-headers)
+      (error "Wrong authorization used for %s" url))
+
     ;; find strongest supported auth
     (dolist (this-auth auths)
       (setq this-auth (url-eat-trailing-space
@@ -429,7 +484,7 @@ Return the number of characters removed."
 	(progn
 	  (widen)
 	  (goto-char (point-max))
-	  (insert "<hr>Sorry, but I do not know how to handle " type
+	  (insert "<hr>Sorry, but I do not know how to handle " (or type auth url "")
 		  " authentication.  If you'd like to write it,"
 		  " please use M-x report-emacs-bug RET.<hr>")
           ;; We used to set a `status' var (declared "special") but I can't
@@ -460,11 +515,11 @@ Return the number of characters removed."
   (url-http-debug "url-http-parse-response called in (%s)" (buffer-name))
   (goto-char (point-min))
   (skip-chars-forward " \t\n")		; Skip any blank crap
-  (skip-chars-forward "HTTP/")		; Skip HTTP Version
+  (skip-chars-forward "/HPT")		; Skip HTTP Version "HTTP/".
   (setq url-http-response-version
 	(buffer-substring (point)
 			  (progn
-			    (skip-chars-forward "[0-9].")
+			    (skip-chars-forward "0-9.")
 			    (point))))
   (setq url-http-response-status (read (current-buffer))))
 
@@ -483,6 +538,27 @@ work correctly."
     )
   )
 
+(declare-function gnutls-peer-status "gnutls.c" (proc))
+(declare-function gnutls-negotiate "gnutls.el" t t)
+
+(defun url-http--insert-file-helper (buffer url &optional visit)
+  (with-current-buffer buffer
+    (when (bound-and-true-p url-http-response-status)
+      ;; Don't signal an error if VISIT is non-nil, because
+      ;; 'insert-file-contents' doesn't.  This is required to
+      ;; support, e.g., 'browse-url-emacs', which is a fancy way of
+      ;; visiting the HTML source of a URL: in that case, we want to
+      ;; display a file buffer even if the URL does not exist and
+      ;; 'url-retrieve-synchronously' returns 404 or whatever.
+      (unless (or visit
+                  (or (and (>= url-http-response-status 200)
+                           (< url-http-response-status 300))
+                      (= url-http-response-status 304))) ; "Not modified"
+        (let ((desc (nth 2 (assq url-http-response-status url-http-codes))))
+          (kill-buffer buffer)
+          ;; Signal file-error per bug#16733.
+          (signal 'file-error (list url desc)))))))
+
 (defun url-http-parse-headers ()
  "Parse and handle HTTP specific headers.
 Return t if and only if the current buffer is still active and
@@ -492,7 +568,14 @@ should be shown to the user."
   (url-http-mark-connection-as-free (url-host url-current-object)
 				    (url-port url-current-object)
 				    url-http-process)
-
+  ;; Pass the https certificate on to the caller.
+  (when (gnutls-available-p)
+    (let ((status (gnutls-peer-status url-http-process)))
+      (when (or status
+		(plist-get (car url-callback-arguments) :peer))
+	(setcar url-callback-arguments
+		(plist-put (car url-callback-arguments)
+			   :peer status)))))
   (if (or (not (boundp 'url-http-end-of-headers))
 	  (not url-http-end-of-headers))
       (error "Trying to parse headers in odd buffer: %s" (buffer-name)))
@@ -550,7 +633,7 @@ should be shown to the user."
        ;; 206 Partial content
        ;; 207 Multi-status (Added by DAV)
        (pcase status-symbol
-	 ((or `no-content `reset-content)
+	 ((or 'no-content 'reset-content)
 	  ;; No new data, just stay at the same document
 	  (url-mark-buffer-as-dead buffer))
 	 (_
@@ -571,7 +654,7 @@ should be shown to the user."
        (let ((redirect-uri (or (mail-fetch-field "Location")
 			       (mail-fetch-field "URI"))))
 	 (pcase status-symbol
-	   (`multiple-choices	    ; 300
+	   ('multiple-choices	    ; 300
 	    ;; Quoth the spec (section 10.3.1)
 	    ;; -------------------------------
 	    ;; The requested resource corresponds to any one of a set of
@@ -588,28 +671,26 @@ should be shown to the user."
 	    ;; We do not support agent-driven negotiation, so we just
 	    ;; redirect to the preferred URI if one is provided.
 	    nil)
-	   ((or `moved-permanently `found `temporary-redirect) ; 301 302 307
-	    ;; If the 301|302 status code is received in response to a
-	    ;; request other than GET or HEAD, the user agent MUST NOT
-	    ;; automatically redirect the request unless it can be
-	    ;; confirmed by the user, since this might change the
-	    ;; conditions under which the request was issued.
-	    (unless (member url-http-method '("HEAD" "GET"))
-	      (setq redirect-uri nil)))
-	   (`see-other			; 303
+           ('found			; 302
+	    ;; 302 Found was ambiguously defined in the standards, but
+	    ;; it's now recommended that it's treated like 303 instead
+	    ;; of 307, since that's what most servers expect.
+	    (setq url-http-method "GET"
+		  url-http-data nil))
+           ('see-other			; 303
 	    ;; The response to the request can be found under a different
 	    ;; URI and SHOULD be retrieved using a GET method on that
 	    ;; resource.
 	    (setq url-http-method "GET"
 		  url-http-data nil))
-	   (`not-modified		; 304
+	   ('not-modified		; 304
 	    ;; The 304 response MUST NOT contain a message-body.
 	    (url-http-debug "Extracting document from cache... (%s)"
 			    (url-cache-create-filename (url-view-url t)))
 	    (url-cache-extract (url-cache-create-filename (url-view-url t)))
 	    (setq redirect-uri nil
 		  success t))
-	   (`use-proxy			; 305
+	   ('use-proxy			; 305
 	    ;; The requested resource MUST be accessed through the
 	    ;; proxy given by the Location field.  The Location field
 	    ;; gives the URI of the proxy.  The recipient is expected
@@ -635,6 +716,12 @@ should be shown to the user."
                ;; compute the redirection relative to the URL of the proxy.
 	       (setq redirect-uri
 		     (url-expand-file-name redirect-uri url-http-target-url)))
+	   ;; Do not automatically include an authorization header in the
+	   ;; redirect.  If needed it will be regenerated by the relevant
+	   ;; auth scheme when the new request happens.
+	   (setq url-http-extra-headers
+		 (cl-remove "Authorization"
+			    url-http-extra-headers :key 'car :test 'equal))
            (let ((url-request-method url-http-method)
 		 (url-request-data url-http-data)
 		 (url-request-extra-headers url-http-extra-headers))
@@ -701,50 +788,50 @@ should be shown to the user."
        ;; 424 Failed Dependency
        (setq success
              (pcase status-symbol
-               (`unauthorized			; 401
+               ('unauthorized			; 401
                 ;; The request requires user authentication.  The response
                 ;; MUST include a WWW-Authenticate header field containing a
                 ;; challenge applicable to the requested resource.  The
                 ;; client MAY repeat the request with a suitable
                 ;; Authorization header field.
                 (url-http-handle-authentication nil))
-               (`payment-required              ; 402
+               ('payment-required              ; 402
                 ;; This code is reserved for future use
                 (url-mark-buffer-as-dead buffer)
                 (error "Somebody wants you to give them money"))
-               (`forbidden			; 403
+               ('forbidden			; 403
                 ;; The server understood the request, but is refusing to
                 ;; fulfill it.  Authorization will not help and the request
                 ;; SHOULD NOT be repeated.
                 t)
-               (`not-found			; 404
+               ('not-found			; 404
                 ;; Not found
                 t)
-               (`method-not-allowed		; 405
+               ('method-not-allowed		; 405
                 ;; The method specified in the Request-Line is not allowed
                 ;; for the resource identified by the Request-URI.  The
                 ;; response MUST include an Allow header containing a list of
                 ;; valid methods for the requested resource.
                 t)
-               (`not-acceptable		; 406
+               ('not-acceptable		; 406
                 ;; The resource identified by the request is only capable of
                 ;; generating response entities which have content
                 ;; characteristics not acceptable according to the accept
                 ;; headers sent in the request.
                 t)
-               (`proxy-authentication-required ; 407
+               ('proxy-authentication-required ; 407
                 ;; This code is similar to 401 (Unauthorized), but indicates
                 ;; that the client must first authenticate itself with the
                 ;; proxy.  The proxy MUST return a Proxy-Authenticate header
                 ;; field containing a challenge applicable to the proxy for
                 ;; the requested resource.
                 (url-http-handle-authentication t))
-               (`request-timeout		; 408
+               ('request-timeout		; 408
                 ;; The client did not produce a request within the time that
                 ;; the server was prepared to wait.  The client MAY repeat
                 ;; the request without modifications at any later time.
                 t)
-               (`conflict			; 409
+               ('conflict			; 409
                 ;; The request could not be completed due to a conflict with
                 ;; the current state of the resource.  This code is only
                 ;; allowed in situations where it is expected that the user
@@ -753,11 +840,11 @@ should be shown to the user."
                 ;; information for the user to recognize the source of the
                 ;; conflict.
                 t)
-               (`gone                          ; 410
+               ('gone                          ; 410
                 ;; The requested resource is no longer available at the
                 ;; server and no forwarding address is known.
                 t)
-               (`length-required		; 411
+               ('length-required		; 411
                 ;; The server refuses to accept the request without a defined
                 ;; Content-Length.  The client MAY repeat the request if it
                 ;; adds a valid Content-Length header field containing the
@@ -767,29 +854,29 @@ should be shown to the user."
                 ;; `url-http-create-request' automatically calculates the
                 ;; content-length.
                 t)
-               (`precondition-failed		; 412
+               ('precondition-failed		; 412
                 ;; The precondition given in one or more of the
                 ;; request-header fields evaluated to false when it was
                 ;; tested on the server.
                 t)
-               ((or `request-entity-too-large `request-uri-too-large) ; 413 414
+               ((or 'request-entity-too-large 'request-uri-too-large) ; 413 414
                 ;; The server is refusing to process a request because the
                 ;; request entity|URI is larger than the server is willing or
                 ;; able to process.
                 t)
-               (`unsupported-media-type	; 415
+               ('unsupported-media-type	; 415
                 ;; The server is refusing to service the request because the
                 ;; entity of the request is in a format not supported by the
                 ;; requested resource for the requested method.
                 t)
-               (`requested-range-not-satisfiable ; 416
+               ('requested-range-not-satisfiable ; 416
                 ;; A server SHOULD return a response with this status code if
                 ;; a request included a Range request-header field, and none
                 ;; of the range-specifier values in this field overlap the
                 ;; current extent of the selected resource, and the request
                 ;; did not include an If-Range request-header field.
                 t)
-               (`expectation-failed		; 417
+               ('expectation-failed		; 417
                 ;; The expectation given in an Expect request-header field
                 ;; could not be met by this server, or, if the server is a
                 ;; proxy, the server has unambiguous evidence that the
@@ -816,16 +903,16 @@ should be shown to the user."
        ;; 507 Insufficient storage
        (setq success t)
        (pcase url-http-response-status
-	 (`not-implemented		; 501
+	 ('not-implemented		; 501
 	  ;; The server does not support the functionality required to
 	  ;; fulfill the request.
 	  nil)
-	 (`bad-gateway			; 502
+	 ('bad-gateway			; 502
 	  ;; The server, while acting as a gateway or proxy, received
 	  ;; an invalid response from the upstream server it accessed
 	  ;; in attempting to fulfill the request.
 	  nil)
-	 (`service-unavailable		; 503
+	 ('service-unavailable		; 503
 	  ;; The server is currently unable to handle the request due
 	  ;; to a temporary overloading or maintenance of the server.
 	  ;; The implication is that this is a temporary condition
@@ -834,19 +921,19 @@ should be shown to the user."
 	  ;; header.  If no Retry-After is given, the client SHOULD
 	  ;; handle the response as it would for a 500 response.
 	  nil)
-	 (`gateway-timeout		; 504
+	 ('gateway-timeout		; 504
 	  ;; The server, while acting as a gateway or proxy, did not
 	  ;; receive a timely response from the upstream server
 	  ;; specified by the URI (e.g. HTTP, FTP, LDAP) or some other
 	  ;; auxiliary server (e.g. DNS) it needed to access in
 	  ;; attempting to complete the request.
 	  nil)
-	 (`http-version-not-supported	; 505
+	 ('http-version-not-supported	; 505
 	  ;; The server does not support, or refuses to support, the
 	  ;; HTTP protocol version that was used in the request
 	  ;; message.
 	  nil)
-	 (`insufficient-storage		; 507 (DAV)
+	 ('insufficient-storage		; 507 (DAV)
 	  ;; The method could not be performed on the resource
 	  ;; because the server is unable to store the representation
 	  ;; needed to successfully complete the request.  This
@@ -866,16 +953,21 @@ should be shown to the user."
 	      class url-http-response-status)))
     (if (not success)
 	(url-mark-buffer-as-dead buffer)
+      ;; Narrow the buffer for url-handle-content-transfer-encoding to
+      ;; find only the headers relevant to this transaction.
+      (and (not (buffer-narrowed-p))
+                (mail-narrow-to-head))
       (url-handle-content-transfer-encoding))
     (url-http-debug "Finished parsing HTTP headers: %S" success)
     (widen)
     (goto-char (point-min))
     success))
 
-(declare-function zlib-decompress-region "decompress.c" (start end))
+(declare-function zlib-decompress-region "decompress.c"
+                  (start end &optional allow-partial))
 
 (defun url-handle-content-transfer-encoding ()
-  (let ((encoding (mail-fetch-field "content-encoding")))
+  (let ((encoding (mail-fetch-field "content-encoding" nil nil nil t)))
     (when (and encoding
 	       (fboundp 'zlib-available-p)
 	       (zlib-available-p)
@@ -884,7 +976,7 @@ should be shown to the user."
 	(widen)
 	(goto-char (point-min))
 	(when (search-forward "\n\n")
-	  (zlib-decompress-region (point) (point-max)))))))
+	  (zlib-decompress-region (point) (point-max) t))))))
 
 ;; Miscellaneous
 (defun url-http-activate-callback ()
@@ -892,13 +984,14 @@ should be shown to the user."
   (url-http-mark-connection-as-free (url-host url-current-object)
 				    (url-port url-current-object)
 				    url-http-process)
-  (url-http-debug "Activating callback in buffer (%s)" (buffer-name))
+  (url-http-debug "Activating callback in buffer (%s): %S %S"
+		  (buffer-name) url-callback-function url-callback-arguments)
   (apply url-callback-function url-callback-arguments))
 
 ;; )
 
 ;; These unfortunately cannot be macros... please ignore them!
-(defun url-http-idle-sentinel (proc why)
+(defun url-http-idle-sentinel (proc _why)
   "Remove (now defunct) process PROC from the list of open connections."
   (maphash (lambda (key val)
 		(if (memq proc val)
@@ -924,18 +1017,27 @@ should be shown to the user."
 	       (erase-buffer)
                (let ((url-request-method url-http-method)
                      (url-request-extra-headers url-http-extra-headers)
-                     (url-request-data url-http-data))
+                     (url-request-data url-http-data)
+                     (url-using-proxy (url-find-proxy-for-url
+                                       url-current-object
+                                       (url-host url-current-object))))
+                 (when url-using-proxy
+                   (setq url-using-proxy
+                         (url-generic-parse-url url-using-proxy)))
                  (url-http url-current-object url-callback-function
-                           url-callback-arguments (current-buffer)))))
+                           url-callback-arguments (current-buffer)
+                           (and (string= "https" (url-type url-current-object))
+                                'tls)))))
 	    ((url-http-parse-headers)
 	     (url-http-activate-callback))))))
 
-(defun url-http-simple-after-change-function (st nd length)
+(defun url-http-simple-after-change-function (_st _nd _length)
   ;; Function used when we do NOT know how long the document is going to be
   ;; Just _very_ simple 'downloaded %d' type of info.
-  (url-lazy-message "Reading %s..." (file-size-human-readable nd)))
+  (url-lazy-message "Reading %s..."
+                    (funcall byte-count-to-string-function (buffer-size))))
 
-(defun url-http-content-length-after-change-function (st nd length)
+(defun url-http-content-length-after-change-function (_st nd _length)
   "Function used when we DO know how long the document is going to be.
 More sophisticated percentage downloaded, etc.
 Also does minimal parsing of HTTP headers and will actually cause
@@ -946,16 +1048,16 @@ the callback to be triggered."
        (url-percentage (- nd url-http-end-of-headers)
 		       url-http-content-length)
        url-http-content-type
-       (file-size-human-readable (- nd url-http-end-of-headers))
-       (file-size-human-readable url-http-content-length)
+       (funcall byte-count-to-string-function (- nd url-http-end-of-headers))
+       (funcall byte-count-to-string-function url-http-content-length)
        (url-percentage (- nd url-http-end-of-headers)
 		       url-http-content-length))
     (url-display-percentage
      "Reading... %s of %s (%d%%)"
      (url-percentage (- nd url-http-end-of-headers)
 		     url-http-content-length)
-     (file-size-human-readable (- nd url-http-end-of-headers))
-     (file-size-human-readable url-http-content-length)
+     (funcall byte-count-to-string-function (- nd url-http-end-of-headers))
+     (funcall byte-count-to-string-function url-http-content-length)
      (url-percentage (- nd url-http-end-of-headers)
 		     url-http-content-length)))
 
@@ -968,7 +1070,7 @@ the callback to be triggered."
 	    (url-http-activate-callback)))))
 
 (defun url-http-chunked-encoding-after-change-function (st nd length)
-  "Function used when dealing with 'chunked' encoding.
+  "Function used when dealing with chunked encoding.
 Cannot give a sophisticated percentage, but we need a different
 function to look for the special 0-length chunk that signifies
 the end of the document."
@@ -1014,10 +1116,16 @@ the end of the document."
 	  (if no-initial-crlf (skip-chars-forward "\r\n"))
 	  (if (not (looking-at regexp))
 	      (progn
-	   ;; Must not have received the entirety of the chunk header,
+	        ;; Must not have received the entirety of the chunk header,
 		;; need to spin some more.
 		(url-http-debug "Did not see start of chunk @ %d!" (point))
 		(setq read-next-chunk nil))
+            ;; The data we got may have started in the middle of the
+            ;; initial chunk header, so move back to the start of the
+            ;; line and re-compute.
+            (when (= url-http-chunked-counter 0)
+              (beginning-of-line)
+              (looking-at regexp))
  	    (add-text-properties (match-beginning 0) (match-end 0)
 				 (list 'start-open t
 				       'end-open t
@@ -1033,8 +1141,7 @@ the end of the document."
 					  (or url-http-chunked-start
 					      (make-marker))
 					  (match-end 0)))
-;	    (if (not url-http-debug)
-		(delete-region (match-beginning 0) (match-end 0));)
+	    (delete-region (match-beginning 0) (match-end 0))
 	    (url-http-debug "Saw start of chunk %d (length=%d, start=%d"
 			    url-http-chunked-counter url-http-chunked-length
 			    (marker-position url-http-chunked-start))
@@ -1049,12 +1156,12 @@ the end of the document."
 		  (when (looking-at "\r?\n")
 		    (url-http-debug "Removing terminator of last chunk")
 		    (delete-region (match-beginning 0) (match-end 0)))
-		  (if (re-search-forward "^\r*$" nil t)
+		  (if (re-search-forward "^\r?\n" nil t)
 		      (url-http-debug "Saw end of trailers..."))
 		  (if (url-http-parse-headers)
 		      (url-http-activate-callback))))))))))
 
-(defun url-http-wait-for-headers-change-function (st nd length)
+(defun url-http-wait-for-headers-change-function (_st nd _length)
   ;; This will wait for the headers to arrive and then splice in the
   ;; next appropriate after-change-function, etc.
   (url-http-debug "url-http-wait-for-headers-change-function (%s)"
@@ -1062,7 +1169,8 @@ the end of the document."
   (let ((end-of-headers nil)
 	(old-http nil)
 	(process-buffer (current-buffer))
-	(content-length nil))
+	;; (content-length nil)
+        )
     (when (not (bobp))
       (goto-char (point-min))
       (if (and (looking-at ".*\n")	; have one line at least
@@ -1188,33 +1296,44 @@ the end of the document."
   "Retrieve URL via HTTP asynchronously.
 URL must be a parsed URL.  See `url-generic-parse-url' for details.
 
-When retrieval is completed, execute the function CALLBACK, passing it
-an updated value of CBARGS as arguments.  The first element in CBARGS
-should be a plist describing what has happened so far during the
-request, as described in the docstring of `url-retrieve' (if in
-doubt, specify nil).
+When retrieval is completed, execute the function CALLBACK,
+passing it an updated value of CBARGS as arguments.  The first
+element in CBARGS should be a plist describing what has happened
+so far during the request, as described in the docstring of
+`url-retrieve' (if in doubt, specify nil).  The current buffer
+then CALLBACK is executed is the retrieval buffer.
 
 Optional arg RETRY-BUFFER, if non-nil, specifies the buffer of a
 previous `url-http' call, which is being re-attempted.
 
 Optional arg GATEWAY-METHOD specifies the gateway to be used,
-overriding the value of `url-gateway-method'."
-  (cl-check-type url vector "Need a pre-parsed URL.")
-  (let* ((host (url-host (or url-using-proxy url)))
-	 (port (url-port (or url-using-proxy url)))
+overriding the value of `url-gateway-method'.
+
+The return value of this function is the retrieval buffer."
+  (cl-check-type url url "Need a pre-parsed URL.")
+  (let* (;; (host (url-host (or url-using-proxy url)))
+	 ;; (port (url-port (or url-using-proxy url)))
 	 (nsm-noninteractive (or url-request-noninteractive
 				 (and (boundp 'url-http-noninteractive)
 				      url-http-noninteractive)))
-	 (connection (url-http-find-free-connection host port gateway-method))
+         ;; The following binding is needed in url-open-stream, which
+         ;; is called from url-http-find-free-connection.
+         (url-current-object url)
+         (connection (url-http-find-free-connection (url-host url)
+                                                    (url-port url)
+                                                    gateway-method))
+         (mime-accept-string url-mime-accept-string)
 	 (buffer (or retry-buffer
 		     (generate-new-buffer
-                      (format " *http %s:%d*" host port)))))
+                      (format " *http %s:%d*" (url-host url) (url-port url)))))
+         (referer (url-http--encode-string (url-http--get-referer url))))
     (if (not connection)
 	;; Failed to open the connection for some reason
 	(progn
 	  (kill-buffer buffer)
 	  (setq buffer nil)
-	  (error "Could not create connection to %s:%d" host port))
+          (error "Could not create connection to %s:%d" (url-host url)
+                 (url-port url)))
       (with-current-buffer buffer
 	(mm-disable-multibyte)
 	(setq url-current-object url
@@ -1241,7 +1360,9 @@ overriding the value of `url-gateway-method'."
 		       url-http-target-url
 		       url-http-no-retry
 		       url-http-connection-opened
-		       url-http-proxy))
+                       url-mime-accept-string
+		       url-http-proxy
+                       url-http-referer))
 	  (set (make-local-variable var) nil))
 
 	(setq url-http-method (or url-request-method "GET")
@@ -1258,22 +1379,83 @@ overriding the value of `url-gateway-method'."
 	      url-http-target-url url-current-object
 	      url-http-no-retry retry-buffer
 	      url-http-connection-opened nil
-	      url-http-proxy url-using-proxy)
+              url-mime-accept-string mime-accept-string
+	      url-http-proxy url-using-proxy
+              url-http-referer referer)
 
 	(set-process-buffer connection buffer)
 	(set-process-filter connection 'url-http-generic-filter)
 	(pcase (process-status connection)
-          (`connect
+          ('connect
            ;; Asynchronous connection
            (set-process-sentinel connection 'url-http-async-sentinel))
-          (`failed
+          ('failed
            ;; Asynchronous connection failed
-           (error "Could not create connection to %s:%d" host port))
+           (error "Could not create connection to %s:%d" (url-host url)
+                  (url-port url)))
           (_
-           (set-process-sentinel connection
-                                 'url-http-end-of-document-sentinel)
-           (process-send-string connection (url-http-create-request))))))
+           (if (and url-http-proxy (string= "https"
+                                            (url-type url-current-object)))
+               (url-https-proxy-connect connection)
+             (set-process-sentinel connection
+                                   'url-http-end-of-document-sentinel)
+             (process-send-string connection (url-http-create-request)))))))
     buffer))
+
+(defun url-https-proxy-connect (connection)
+  (setq url-http-after-change-function 'url-https-proxy-after-change-function)
+  (process-send-string connection (format (concat "CONNECT %s:%d HTTP/1.1\r\n"
+                                                  "Host: %s\r\n"
+                                                  "\r\n")
+                                          (url-host url-current-object)
+                                          (or (url-port url-current-object)
+                                              url-https-default-port)
+                                          (url-host url-current-object))))
+
+(defun url-https-proxy-after-change-function (_st _nd _length)
+  (let* ((process-buffer (current-buffer))
+         (proc (get-buffer-process process-buffer)))
+    (goto-char (point-min))
+    (when (re-search-forward "^\r?\n" nil t)
+      (backward-char 1)
+      ;; Saw the end of the headers
+      (setq url-http-end-of-headers (set-marker (make-marker) (point)))
+      (url-http-parse-response)
+      (cond
+       ((null url-http-response-status)
+        ;; We got back a headerless malformed response from the
+        ;; server.
+        (url-http-activate-callback)
+        (error "Malformed response from proxy, fail!"))
+       ((= url-http-response-status 200)
+        (if (gnutls-available-p)
+            (condition-case e
+                (let ((tls-connection (gnutls-negotiate
+                                       :process proc
+                                       :hostname (url-host url-current-object)
+                                       :verify-error nil)))
+                  ;; check certificate validity
+                  (setq tls-connection
+                        (nsm-verify-connection tls-connection
+                                               (url-host url-current-object)
+                                               (url-port url-current-object)))
+                  (with-current-buffer process-buffer (erase-buffer))
+                  (set-process-buffer tls-connection process-buffer)
+                  (setq url-http-after-change-function
+                        'url-http-wait-for-headers-change-function)
+                  (set-process-filter tls-connection 'url-http-generic-filter)
+                  (process-send-string tls-connection
+                                       (url-http-create-request)))
+              (gnutls-error
+               (url-http-activate-callback)
+               (error "gnutls-error: %s" e))
+              (error
+               (url-http-activate-callback)
+               (error "error: %s" e)))
+          (error "error: gnutls support needed!")))
+       (t
+        (url-http-debug "error response: %d" url-http-response-status)
+        (url-http-activate-callback))))))
 
 (defun url-http-async-sentinel (proc why)
   ;; We are performing an asynchronous connection, and a status change
@@ -1286,11 +1468,13 @@ overriding the value of `url-gateway-method'."
 	(url-http-end-of-document-sentinel proc why))
        ((string= (substring why 0 4) "open")
 	(setq url-http-connection-opened t)
-	(condition-case error
-	    (process-send-string proc (url-http-create-request))
-	  (file-error
-	   (setq url-http-connection-opened nil)
-	   (message "HTTP error: %s" error))))
+        (if (and url-http-proxy (string= "https" (url-type url-current-object)))
+            (url-https-proxy-connect proc)
+          (condition-case error
+              (process-send-string proc (url-http-create-request))
+            (file-error
+             (setq url-http-connection-opened nil)
+             (message "HTTP error: %s" error)))))
        (t
 	(setf (car url-callback-arguments)
 	      (nconc (list :error (list 'error 'connection-failed why
@@ -1352,7 +1536,7 @@ overriding the value of `url-gateway-method'."
 
 (defalias 'url-http-file-readable-p 'url-http-file-exists-p)
 
-(defun url-http-head-file-attributes (url &optional id-format)
+(defun url-http-head-file-attributes (url &optional _id-format)
   (let ((buffer (url-http-head url)))
     (when buffer
       (prog1
@@ -1367,7 +1551,7 @@ overriding the value of `url-gateway-method'."
            nil nil nil)          ;whether gid would change ; inode ; device.
         (kill-buffer buffer)))))
 
-(declare-function url-dav-file-attributes "url-dav" (url &optional id-format))
+(declare-function url-dav-file-attributes "url-dav" (url &optional _id-format))
 
 (defun url-http-file-attributes (url &optional id-format)
   (if (url-dav-supported-p url)
@@ -1449,9 +1633,7 @@ p3p
 
 ;; HTTPS.  This used to be in url-https.el, but that file collides
 ;; with url-http.el on systems with 8-character file names.
-(require 'tls)
 
-(defconst url-https-default-port 443 "Default HTTPS port.")
 (defconst url-https-asynchronous-p t "HTTPS retrievals are asynchronous.")
 
 ;; FIXME what is the point of this alias being an autoload?

@@ -1,8 +1,8 @@
 ;;;; srecode/find.el --- Tools for finding templates in the database.
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -27,8 +27,7 @@
 (require 'srecode/ctxt)
 (require 'srecode/table)
 (require 'srecode/map)
-
-(declare-function srecode-compile-file "srecode/compile")
+(require 'srecode/compile)
 
 ;;; Code:
 
@@ -58,7 +57,6 @@ Templates are found in the SRecode Template Map.
 See `srecode-get-maps' for more.
 APPNAME is the name of an application.  In this case,
 all template files for that application will be loaded."
-  (require 'srecode/compile)
   (let ((files
 	 (if appname
 	     (apply 'append
@@ -96,11 +94,11 @@ all template files for that application will be loaded."
 ;;
 ;; Find if a template table has a project set, and if so, is the
 ;; current buffer in that project.
-(defmethod srecode-template-table-in-project-p ((tab srecode-template-table))
+(cl-defmethod srecode-template-table-in-project-p ((tab srecode-template-table))
   "Return non-nil if the table TAB can be used in the current project.
 If TAB has a :project set, check that the directories match.
 If TAB is nil, then always return t."
-  (let ((proj (oref tab :project)))
+  (let ((proj (oref tab project)))
     ;; Return t if the project wasn't set.
     (if (not proj) t
       ;; If the project directory was set, let's check it.
@@ -113,7 +111,7 @@ If TAB is nil, then always return t."
 ;;
 ;; Find a given template based on name, and features of the current
 ;; buffer.
-(defmethod srecode-template-get-table ((tab srecode-template-table)
+(cl-defmethod srecode-template-get-table ((tab srecode-template-table)
 				       template-name &optional
 				       context application)
   "Find in the template in table TAB, the template with TEMPLATE-NAME.
@@ -129,7 +127,7 @@ The APPLICATION argument is unused."
       ;; No context, perhaps a merged name?
       (gethash template-name (oref tab namehash)))))
 
-(defmethod srecode-template-get-table ((tab srecode-mode-table)
+(cl-defmethod srecode-template-get-table ((tab srecode-mode-table)
 				       template-name &optional
 				       context application)
   "Find in the template in mode table TAB, the template with TEMPLATE-NAME.
@@ -139,10 +137,10 @@ Optional argument APPLICATION restricts searches to only template tables
 belonging to a specific application.  If APPLICATION is nil, then only
 tables that do not belong to an application will be searched."
   (let* ((mt tab)
-	 (tabs (oref mt :tables))
+	 (tabs (oref mt tables))
 	 (ans nil))
     (while (and (not ans) tabs)
-      (let ((app (oref (car tabs) :application)))
+      (let ((app (oref (car tabs) application)))
 	(when (or (and (not application) (null app))
 		  (and application (eq app application)))
 	  (setq ans (srecode-template-get-table (car tabs) template-name
@@ -150,14 +148,14 @@ tables that do not belong to an application will be searched."
 	(setq tabs (cdr tabs))))
     (or ans
 	;; Recurse to the default.
-	(when (not (equal (oref tab :major-mode) 'default))
+	(when (not (equal (oref tab major-mode) 'default))
 	  (srecode-template-get-table (srecode-get-mode-table 'default)
 				      template-name context application)))))
 
 ;;
 ;; Find a given template based on a key binding.
 ;;
-(defmethod srecode-template-get-table-for-binding
+(cl-defmethod srecode-template-get-table-for-binding
   ((tab srecode-template-table) binding &optional context)
   "Find in the template name in table TAB, the template with BINDING.
 Optional argument CONTEXT specifies that the template should part
@@ -190,7 +188,7 @@ of a particular context."
 	(maphash hashfcn (oref tab namehash)))
       keyout)))
 
-(defmethod srecode-template-get-table-for-binding
+(cl-defmethod srecode-template-get-table-for-binding
   ((tab srecode-mode-table) binding &optional context application)
   "Find in the template name in mode table TAB, the template with BINDING.
 Optional argument CONTEXT specifies a context a particular template
@@ -199,10 +197,10 @@ Optional argument APPLICATION restricts searches to only template tables
 belonging to a specific application.  If APPLICATION is nil, then only
 tables that do not belong to an application will be searched."
   (let* ((mt tab)
-	 (tabs (oref mt :tables))
+	 (tabs (oref mt tables))
 	 (ans nil))
     (while (and (not ans) tabs)
-      (let ((app (oref (car tabs) :application)))
+      (let ((app (oref (car tabs) application)))
 	(when (or (and (not application) (null app))
 		  (and application (eq app application)))
 	  (setq ans (srecode-template-get-table-for-binding
@@ -210,7 +208,7 @@ tables that do not belong to an application will be searched."
 	(setq tabs (cdr tabs))))
     (or ans
 	;; Recurse to the default.
-	(when (not (equal (oref tab :major-mode) 'default))
+	(when (not (equal (oref tab major-mode) 'default))
 	  (srecode-template-get-table-for-binding
 	   (srecode-get-mode-table 'default) binding context)))))
 ;;; Interactive
@@ -241,10 +239,10 @@ templates."
 
     ;; Load up the hash table for our current mode.
     (let* ((mt   (srecode-get-mode-table mmode))
-	   (tabs (when mt (oref mt :tables))))
+	   (tabs (when mt (oref mt tables))))
       (dolist (tab tabs)
 	;; Exclude templates for a particular application.
-	(when (and (not (oref tab :application))
+	(when (and (not (oref tab application))
 		   (srecode-template-table-in-project-p tab))
 	  (maphash (lambda (key temp)
 		     (when (or (not predicate)

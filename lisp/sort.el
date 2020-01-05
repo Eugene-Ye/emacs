@@ -1,6 +1,6 @@
-;;; sort.el --- commands to sort text in an Emacs buffer
+;;; sort.el --- commands to sort text in an Emacs buffer -*- lexical-binding: t -*-
 
-;; Copyright (C) 1986-1987, 1994-1995, 2001-2014 Free Software
+;; Copyright (C) 1986-1987, 1994-1995, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Howie Kaye
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -225,11 +225,17 @@ the sort order."
       (narrow-to-region beg end)
       (goto-char (point-min))
       (sort-subr reverse
-		 (function
-		  (lambda ()
-		    (while (and (not (eobp)) (looking-at paragraph-separate))
-		      (forward-line 1))))
-		 'forward-paragraph))))
+		 (lambda ()
+		   (while (and (not (eobp)) (looking-at paragraph-separate))
+		     (forward-line 1)))
+		 (lambda ()
+                   (forward-paragraph)
+                   ;; If the buffer doesn't end with a newline, add a
+                   ;; newline to avoid having paragraphs being
+                   ;; concatenated after sorting.
+                   (when (and (eobp)
+                              (not (bolp)))
+                     (insert "\n")))))))
 
 ;;;###autoload
 (defun sort-pages (reverse beg end)
@@ -316,7 +322,7 @@ FIELD, BEG and END.  BEG and END specify region to sort."
 ;;			       (point)
 ;;			       (save-excursion
 ;;				 (re-search-forward
-;;				  "[+-]?[0-9]*\.?[0-9]*\\([eE][+-]?[0-9]+\\)?")
+;;				  "[+-]?[0-9]*\\.?[0-9]*\\([eE][+-]?[0-9]+\\)?")
 ;;				 (point))))))
 ;;		 nil))
 
@@ -406,7 +412,7 @@ the sort order."
 
 ;;;###autoload
 (defun sort-regexp-fields (reverse record-regexp key-regexp beg end)
-  "Sort the text in the region region lexicographically.
+  "Sort the text in the region lexicographically.
 If called interactively, prompt for two regular expressions,
 RECORD-REGEXP and KEY-REGEXP.
 
@@ -596,7 +602,7 @@ is non-nil, it also prints a message describing the number of deletions."
 	   (equal current-prefix-arg '(64))
 	   t)))
   (let ((lines (unless adjacent (make-hash-table :test 'equal)))
-	line prev-line
+	line prev-line first-line
 	(count 0)
 	(beg (copy-marker beg))
 	(end (copy-marker end)))
@@ -604,8 +610,9 @@ is non-nil, it also prints a message describing the number of deletions."
       (goto-char (if reverse end beg))
       (if (and reverse (bolp)) (forward-char -1))
       (while (if reverse
-		 (and (> (point) beg) (not (bobp)))
+		 (not first-line)
 	       (and (< (point) end) (not (eobp))))
+	(setq first-line (and reverse (or (<= (point) beg) (bobp))))
 	(setq line (buffer-substring-no-properties
 		    (line-beginning-position) (line-end-position)))
         (if (and keep-blanks (string= "" line))

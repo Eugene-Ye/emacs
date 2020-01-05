@@ -26,7 +26,7 @@
 
 (defun post-mail-send-it ()
   "The MH -post interface for `rmail-mail' to call.
-To use it, include \"(setq send-mail-function 'post-mail-send-it)\" in
+To use it, include \"(setq send-mail-function \\='post-mail-send-it)\" in
 site-init."
   (let ((errbuf (if mail-interactive
 		    (generate-new-buffer " post-mail errors")
@@ -54,10 +54,10 @@ site-init."
 	  (while (and (re-search-forward "\n\n\n*" delimline t)
 		      (< (point) delimline))
 	    (replace-match "\n"))
-	  ;; Find and handle any FCC fields.
+	  ;; Find and handle any Fcc fields.
 	  (let ((case-fold-search t))
 	    (goto-char (point-min))
-	    (if (re-search-forward "^FCC:" delimline t)
+	    (if (re-search-forward "^Fcc:" delimline t)
 		(mail-do-fcc delimline))
 	    ;; If there is a From and no Sender, put it a Sender.
 	    (goto-char (point-min))

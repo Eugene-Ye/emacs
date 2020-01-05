@@ -1,6 +1,6 @@
 ;;; semantic/analyze/complete.el --- Smart Completions
 
-;; Copyright (C) 2007-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -89,12 +89,14 @@ in a buffer."
   ;;(semantic-refresh-tags-safe)
   (if (semantic-active-p)
     (with-syntax-table semantic-lex-syntax-table
-      (let* ((context (if (semantic-analyze-context-child-p context)
+      (let* ((context (if (cl-typep context 'semantic-analyze-context)
 			  context
 			(semantic-analyze-current-context context)))
 	     (ans (if (not context)
-		      (error "Nothing to complete")
-		    (:override))))
+		      (when (called-interactively-p 'any)
+			(error "Nothing to complete"))
+		    (with-demoted-errors "%S"
+		      (:override)))))
 	;; If interactive, display them.
 	(when (called-interactively-p 'any)
 	  (with-output-to-temp-buffer "*Possible Completions*"
@@ -112,9 +114,9 @@ in a buffer."
 Argument CONTEXT is an object specifying the locally derived context.
 The optional argument FLAGS changes which return options are returned.
 FLAGS can be any number of:
-  'no-tc         - do not apply data-type constraint.
-  'no-longprefix - ignore long multi-symbol prefixes.
-  'no-unique     - do not apply unique by name filtering."
+  `no-tc'         - do not apply data-type constraint.
+  `no-longprefix' - ignore long multi-symbol prefixes.
+  `no-unique'     - do not apply unique by name filtering."
   (let* ((a context)
 	 (desired-type (semantic-analyze-type-constraint a))
 	 (desired-class (oref a prefixclass))

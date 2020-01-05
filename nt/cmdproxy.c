@@ -1,5 +1,5 @@
 /* Proxy shell designed for use with Emacs on Windows 95 and NT.
-   Copyright (C) 1997, 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 1997, 2001-2020 Free Software Foundation, Inc.
 
    Accepts subset of Unix sh(1) command-line options, for compatibility
    with elisp code written for Unix.  When possible, executes external
@@ -16,8 +16,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,7 +25,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <windows.h>
 
@@ -45,6 +45,16 @@ extern int _snprintf (char *buffer, size_t count, const char *format, ...);
 
 #define stdout GetStdHandle (STD_OUTPUT_HANDLE)
 #define stderr GetStdHandle (STD_ERROR_HANDLE)
+
+#if __GNUC__ + (__GNUC_MINOR__ >= 4) >= 5
+void fail (const char *, ...) __attribute__((noreturn));
+#else
+void fail (const char *, ...);
+#endif
+int vfprintf (HANDLE, const char *, va_list);
+int fprintf (HANDLE, const char *, ...);
+int printf (const char *, ...);
+void warn (const char *, ...);
 
 int
 vfprintf (HANDLE hnd, const char * msg, va_list args)
@@ -106,7 +116,7 @@ warn (const char * msg, ...)
 
 /******************************************************************/
 
-char *
+static char *
 canon_filename (char *fname)
 {
   char *p = fname;
@@ -121,24 +131,27 @@ canon_filename (char *fname)
   return fname;
 }
 
-const char *
+static const char *
 skip_space (const char *str)
 {
   while (isspace (*str)) str++;
   return str;
 }
 
-const char *
+static const char *
 skip_nonspace (const char *str)
 {
   while (*str && !isspace (*str)) str++;
   return str;
 }
 
-int escape_char = '\\';
+/* This value is never changed by the code.  We keep the code that
+   supports also the value of '"', but let's allow the compiler to
+   optimize it out, until someone actually uses that.  */
+const int escape_char = '\\';
 
 /* Get next token from input, advancing pointer.  */
-int
+static int
 get_next_token (char * buf, const char ** pSrc)
 {
   const char * p = *pSrc;
@@ -196,11 +209,31 @@ get_next_token (char * buf, const char ** pSrc)
 	      /* End of string, but no ending quote found.  We might want to
 		 flag this as an error, but for now will consider the end as
 		 the end of the token.  */
+	      if (escape_char == '\\')
+		{
+		  /* Output literal backslashes.  Note that if the
+		     token ends with an unpaired backslash, we eat it
+		     up here.  But since this case invokes undefined
+		     behavior anyway, it's okay.  */
+		  while (escape_char_run > 1)
+		    {
+		      *o++ = escape_char;
+		      escape_char_run -= 2;
+		    }
+		}
 	      *o = '\0';
 	      break;
 	    }
 	  else
 	    {
+	      if (escape_char == '\\')
+		{
+		  /* Output literal backslashes.  Note that we don't
+		     treat a backslash as an escape character here,
+		     since it doesn't precede a quote.  */
+		  for ( ; escape_char_run > 0; escape_char_run--)
+		    *o++ = escape_char;
+		}
 	      *o++ = *p++;
 	    }
 	}
@@ -221,7 +254,7 @@ get_next_token (char * buf, const char ** pSrc)
 }
 
 /* Return TRUE if PROGNAME is a batch file. */
-BOOL
+static BOOL
 batch_file_p (const char *progname)
 {
   const char *exts[] = {".bat", ".cmd"};
@@ -244,20 +277,51 @@ batch_file_p (const char *progname)
 
 /* Search for EXEC file in DIR.  If EXEC does not have an extension,
    DIR is searched for EXEC with the standard extensions appended.  */
-int
+static int
 search_dir (const char *dir, const char *exec, int bufsize, char *buffer)
 {
   const char *exts[] = {".bat", ".cmd", ".exe", ".com"};
   int n_exts = sizeof (exts) / sizeof (char *);
   char *dummy;
   int i, rc;
+  const char *pext = strrchr (exec, '\\');
+
+  /* Does EXEC already include an extension?  */
+  if (!pext)
+    pext = exec;
+  pext = strchr (pext, '.');
 
   /* Search the directory for the program.  */
-  for (i = 0; i < n_exts; i++)
+  if (pext)
     {
-      rc = SearchPath (dir, exec, exts[i], bufsize, buffer, &dummy);
+      /* SearchPath will not append an extension if the file already
+	 has an extension, so we must append it ourselves.  */
+      char exec_ext[MAX_PATH], *p;
+
+      p = strcpy (exec_ext, exec) + strlen (exec);
+
+      /* Search first without any extension; if found, we are done.  */
+      rc = SearchPath (dir, exec_ext, NULL, bufsize, buffer, &dummy);
       if (rc > 0)
 	return rc;
+
+      /* Try the known extensions.  */
+      for (i = 0; i < n_exts; i++)
+	{
+	  strcpy (p, exts[i]);
+	  rc = SearchPath (dir, exec_ext, NULL, bufsize, buffer, &dummy);
+	  if (rc > 0)
+	    return rc;
+	}
+    }
+  else
+    {
+      for (i = 0; i < n_exts; i++)
+	{
+	  rc = SearchPath (dir, exec, exts[i], bufsize, buffer, &dummy);
+	  if (rc > 0)
+	    return rc;
+	}
     }
 
   return 0;
@@ -266,7 +330,7 @@ search_dir (const char *dir, const char *exec, int bufsize, char *buffer)
 /* Return the absolute name of executable file PROG, including
    any file extensions.  If an absolute name for PROG cannot be found,
    return NULL.  */
-char *
+static char *
 make_absolute (const char *prog)
 {
   char absname[MAX_PATH];
@@ -339,7 +403,7 @@ make_absolute (const char *prog)
    success, return 1 with cmdline dequoted.  Otherwise, when we've
    found constructs only cmd can properly interpret, return 0 and
    leave cmdline unchanged.  */
-int
+static int
 try_dequote_cmdline (char* cmdline)
 {
   /* Dequoting can only subtract characters, so the length of the
@@ -437,6 +501,8 @@ setup_argv (void)
 PROCESS_INFORMATION child;
 int interactive = TRUE;
 
+BOOL console_event_handler (DWORD);
+
 BOOL
 console_event_handler (DWORD event)
 {
@@ -473,7 +539,7 @@ console_event_handler (DWORD event)
 
 /* Change from normal usage; return value indicates whether spawn
    succeeded or failed - program return code is returned separately.  */
-int
+static int
 spawn (const char *progname, char *cmdline, const char *dir, int *retcode)
 {
   BOOL success = FALSE;
@@ -518,7 +584,7 @@ spawn (const char *progname, char *cmdline, const char *dir, int *retcode)
 }
 
 /* Return size of current environment block.  */
-int
+static int
 get_env_size (void)
 {
   char * start = GetEnvironmentStrings ();
@@ -798,7 +864,7 @@ main (int argc, char ** argv)
 	     quotes, since they are illegal in path names).  */
 
 	  remlen = maxlen =
-	    strlen (progname) + extra_arg_space + strlen (cmdline) + 16;
+	    strlen (progname) + extra_arg_space + strlen (cmdline) + 16 + 2;
 	  buf = p = alloca (maxlen + 1);
 
 	  /* Quote progname in case it contains spaces.  */
@@ -813,10 +879,16 @@ main (int argc, char ** argv)
 	      remlen = maxlen - (p - buf);
 	    }
 
+	  /* Now that we know we will be invoking the shell, quote the
+	     command line after the "/c" switch as the shell expects:
+	     a single pair of quotes enclosing the entire command
+	     tail, no matter whether quotes are used in the command
+	     line, and how many of them are there.  See the output of
+	     "cmd /?" for how cmd.exe treats quotes.  */
 	  if (run_command_dot_com)
-	    _snprintf (p, remlen, " /e:%d /c %s", envsize, cmdline);
+	    _snprintf (p, remlen, " /e:%d /c \"%s\"", envsize, cmdline);
 	  else
-	    _snprintf (p, remlen, " /c %s", cmdline);
+	    _snprintf (p, remlen, " /c \"%s\"", cmdline);
 	  cmdline = buf;
 	}
       else

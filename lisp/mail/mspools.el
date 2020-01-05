@@ -1,9 +1,8 @@
 ;;; mspools.el --- show mail spools waiting to be read
 
-;; Copyright (C) 1997, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Stephen Eglen <stephen@gnu.org>
-;; Maintainer: Stephen Eglen <stephen@gnu.org>
 ;; Created: 22 Jan 1997
 ;; Keywords: mail
 ;; location: http://www.anc.ed.ac.uk/~stephen/emacs/
@@ -21,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -309,7 +308,7 @@ Buffer is not displayed if SHOW is non-nil."
 ;; to file name.
 ;(defun get-folder-from-spool-safe (name)
 ;  "Return the folder name corresponding to the spool file NAME."
-;  (if (string-match "^\\(.*\\)\.spool$" name)
+;  (if (string-match "^\\(.*\\)\\.spool$" name)
 ;      (substring name (match-beginning 1) (match-end 1))
 ;    (error "Could not extract folder name from spool name %s" name)))
 
@@ -387,7 +386,7 @@ nil."
   (let ((file (concat mspools-folder-directory spool))
 	size)
     (setq file (or (file-symlink-p file) file))
-    (setq size (nth 7 (file-attributes file)))
+    (setq size (file-attribute-size (file-attributes file)))
     ;; size could be nil if the sym-link points to a non-existent file
     ;; so check this first.
     (if (and size  (> size 0))

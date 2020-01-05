@@ -1,6 +1,6 @@
 ;;; ethio-util.el --- utilities for Ethiopic	-*- coding: utf-8-emacs; -*-
 
-;; Copyright (C) 1997-1998, 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2002-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
 ;;   2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; Author: TAKAHASHI Naoto <ntakahas@m17n.org>
 
@@ -129,9 +129,9 @@ isolated vowel.")
   "Degree of reduction in converting Ethiopic digits into Arabic digits.
 Should be 0, 1 or 2.
 For example, ({10}{9}{100}{80}{7}) is converted into:
-    `10`9`100`80`7  if `ethio-numeric-reduction' is 0,
-    `109100807	    if `ethio-numeric-reduction' is 1,
-    `10900807	    if `ethio-numeric-reduction' is 2.")
+    \\=`10\\=`9\\=`100\\=`80\\=`7  if `ethio-numeric-reduction' is 0,
+    \\=`109100807	    if `ethio-numeric-reduction' is 1,
+    \\=`10900807	    if `ethio-numeric-reduction' is 2.")
 
 (defvar ethio-java-save-lowercase nil
   "Non-nil means save Ethiopic characters in lowercase hex numbers to Java files.
@@ -804,7 +804,7 @@ The 2nd and 3rd arguments BEGIN and END specify the region."
 
     ;; Special Ethiopic punctuation.
     (goto-char (point-min))
-    (while (re-search-forward "\\ce[»\\.\\?]\\|«\\ce" nil t)
+    (while (re-search-forward "\\ce[».?]\\|«\\ce" nil t)
       (cond
        ((= (setq ch (preceding-char)) ?\»)
 	(delete-char -1)
@@ -1014,7 +1014,7 @@ With ARG, insert that many delimiters."
 ;;
 
 ;;;###autoload
-(defun ethio-composition-function (pos to font-object string)
+(defun ethio-composition-function (pos to font-object string _direction)
   (setq pos (1- pos))
   (let ((pattern "\\ce\\(፟\\|����\\)"))
     (if string
@@ -2069,7 +2069,5 @@ mark."
 ;; not registered with the register-input-method function.
 
 (provide 'ethio-util)
-
-;;; ethio-util.el ends here
 
 ;;; ethio-util.el ends here

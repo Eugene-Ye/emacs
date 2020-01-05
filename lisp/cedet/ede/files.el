@@ -1,8 +1,8 @@
 ;;; ede/files.el --- Associate projects with files and directories.
 
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
-;; Author: Eric M. Ludlam <eric@siege-engine.com>
+;; Author: Eric M. Ludlam <zappo@gnu.org>
 
 ;; This file is part of GNU Emacs.
 
@@ -17,7 +17,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -25,7 +25,7 @@
 ;;
 ;; Basic Model:
 ;;
-;; A directory belongs to a project if a ede-project-autoload structure
+;; A directory belongs to a project if an ede-project-autoload structure
 ;; matches your directory.
 ;;
 ;; A toplevel project is one where there is no active project above
@@ -41,7 +41,7 @@
 (declare-function ede-locate-flush-hash "ede/locate")
 
 (defvar ede--disable-inode nil
-  "Set to 't' to simulate systems w/out inode support.")
+  "Set to t to simulate systems w/out inode support.")
 
 ;;; Code:
 ;;;###autoload
@@ -69,12 +69,12 @@ the current EDE project."
 
 ;;; Placeholders for ROOT directory scanning on base objects
 ;;
-(defmethod ede-project-root ((this ede-project-placeholder))
+(cl-defmethod ede-project-root ((this ede-project-placeholder))
   "If a project knows its root, return it here.
 Allows for one-project-object-for-a-tree type systems."
   (oref this rootproject))
 
-(defmethod ede-project-root-directory ((this ede-project-placeholder)
+(cl-defmethod ede-project-root-directory ((this ede-project-placeholder)
 				       &optional file)
   "If a project knows its root, return it here.
 Allows for one-project-object-for-a-tree type systems.
@@ -113,14 +113,14 @@ of the anchor file for the project."
 	(if ede--disable-inode
 	    (ede--put-inode-dir-hash dir 0)
 	  (let ((fattr (file-attributes dir)))
-	    (ede--put-inode-dir-hash dir (nth 10 fattr))
+	    (ede--put-inode-dir-hash dir (file-attribute-inode-number fattr))
 	    )))))
 
-(defmethod ede--project-inode ((proj ede-project-placeholder))
+(cl-defmethod ede--project-inode ((proj ede-project-placeholder))
   "Get the inode of the directory project PROJ is in."
   (if (slot-boundp proj 'dirinode)
       (oref proj dirinode)
-    (oset proj dirinode (ede--inode-for-dir (oref proj :directory)))))
+    (oset proj dirinode (ede--inode-for-dir (oref proj directory)))))
 
 (defun ede--inode-get-toplevel-open-project (inode)
   "Return an already open toplevel project that is managing INODE.
@@ -159,7 +159,8 @@ If DIR is the root project, then it is the same."
     (when rootreturn (set rootreturn proj))
     ;; Find subprojects.
     (when (and proj (if ede--disable-inode
-			(not (string= ft (expand-file-name (oref proj :directory))))
+			(not (string= ft (expand-file-name
+                                          (oref proj directory))))
 		      (not (equal inode (ede--project-inode proj)))))
       (setq ans (ede-find-subproject-for-directory proj ft)))
     ans))
@@ -175,8 +176,7 @@ If optional EXACT is non-nil, only return exact matches for DIR."
 	(shortans nil))
     (while (and all (not ans))
       ;; Do the check.
-      (let ((pd (expand-file-name (oref (car all) :directory)))
-	    )
+      (let ((pd (expand-file-name (oref (car all) directory))))
 	(cond
 	 ;; Exact text match.
 	 ((string= pd ft)
@@ -187,7 +187,7 @@ If optional EXACT is non-nil, only return exact matches for DIR."
 	      (setq shortans (car all))
 	    ;; We already have a short answer, so see if pd (the match we found)
 	    ;; is longer.  If it is longer, then it is more precise.
-	    (when (< (length (oref shortans :directory))
+	    (when (< (length (oref shortans directory))
 		     (length pd))
 	      (setq shortans (car all))))
 	  )
@@ -208,7 +208,7 @@ If optional EXACT is non-nil, only return exact matches for DIR."
 	      (setq shortans (car all))
 	    ;; We already have a short answer, so see if pd (the match we found)
 	    ;; is longer.  If it is longer, then it is more precise.
-	    (when (< (length (expand-file-name (oref shortans :directory)))
+	    (when (< (length (expand-file-name (oref shortans directory)))
 		     (length pd))
 	      (setq shortans (car all))))
 	  )))
@@ -217,7 +217,7 @@ If optional EXACT is non-nil, only return exact matches for DIR."
     ;; the short answer we found -> ie - we are in a subproject.
     (or ans shortans)))
 
-(defmethod ede-find-subproject-for-directory ((proj ede-project-placeholder)
+(cl-defmethod ede-find-subproject-for-directory ((proj ede-project-placeholder)
 					      dir)
   "Find a subproject of PROJ that corresponds to DIR."
   (if ede--disable-inode
@@ -228,7 +228,7 @@ If optional EXACT is non-nil, only return exact matches for DIR."
 	 proj
 	 (lambda (SP)
 	   (when (not ans)
-	     (if (string= fulldir (file-truename (oref SP :directory)))
+	     (if (string= fulldir (file-truename (oref SP directory)))
 		 (setq ans SP)
 	       (ede-find-subproject-for-directory SP dir)))))
 	ans)
@@ -304,7 +304,7 @@ Do this whenever a new project is created, as opposed to loaded."
 ;; instead so that -P can be obsoleted.
 (defun ede-directory-project-p (dir &optional force)
   "Return a project description object if DIR is in a project.
-Optional argument FORCE means to ignore a hash-hit of 'nomatch.
+Optional argument FORCE means to ignore a hash-hit of `nomatch'.
 This depends on an up to date `ede-project-class-files' variable.
 Any directory that contains the file .ede-ignore will always
 return nil.
@@ -358,11 +358,11 @@ If DIR is not part of a project, return nil."
      ((and (string= dir default-directory)
 	   ede-object-root-project)
       ;; Try the local buffer cache first.
-      (oref ede-object-root-project :directory))
+      (oref ede-object-root-project directory))
 
      ;; See if there is an existing project in DIR.
      ((setq ans (ede-directory-get-toplevel-open-project dir))
-      (oref ans :directory))
+      (oref ans directory))
 
      ;; Detect using our file system detector.
      ((setq ans (ede-detect-directory-for-project dir))
@@ -374,7 +374,7 @@ If DIR is not part of a project, return nil."
 
 ;;; DIRECTORY CONVERSION STUFF
 ;;
-(defmethod ede-convert-path ((this ede-project) path)
+(cl-defmethod ede-convert-path ((this ede-project) path)
   "Convert path in a standard way for a given project.
 Default to making it project relative.
 Argument THIS is the project to convert PATH to."
@@ -388,7 +388,7 @@ Argument THIS is the project to convert PATH to."
 	    (substring fptf (match-end 0))
 	  (error "Cannot convert relativize path %s" fp))))))
 
-(defmethod ede-convert-path ((this ede-target) path &optional project)
+(cl-defmethod ede-convert-path ((this ede-target) path &optional project)
   "Convert path in a standard way for a given project.
 Default to making it project relative.
 Argument THIS is the project to convert PATH to.
@@ -419,13 +419,13 @@ Get it from the toplevel project.  If it doesn't have one, make one."
       (oref top locate-obj)
       )))
 
-(defmethod ede-expand-filename ((this ede-project) filename &optional force)
+(cl-defmethod ede-expand-filename ((this ede-project) filename &optional force)
   "Return a fully qualified file name based on project THIS.
 FILENAME should be just a filename which occurs in a directory controlled
 by this project.
 Optional argument FORCE forces the default filename to be provided even if it
 doesn't exist.
-If FORCE equals 'newfile, then the cache is ignored and a new file in THIS
+If FORCE equals `newfile', then the cache is ignored and a new file in THIS
 is returned."
   (require 'ede/locate)
   (let* ((loc (ede-get-locator-object this))
@@ -476,7 +476,7 @@ is returned."
 
     ans))
 
-(defmethod ede-expand-filename-impl ((this ede-project) filename &optional force)
+(cl-defmethod ede-expand-filename-impl ((this ede-project) filename &optional force)
   "Return a fully qualified file name based on project THIS.
 FILENAME should be just a filename which occurs in a directory controlled
 by this project.
@@ -496,7 +496,7 @@ doesn't exist."
     ;; Return it
     found))
 
-(defmethod ede-expand-filename-local ((this ede-project) filename)
+(cl-defmethod ede-expand-filename-local ((this ede-project) filename)
   "Expand filename locally to project THIS with filesystem tests."
   (let ((path (ede-project-root-directory this)))
     (cond ((file-exists-p (expand-file-name filename path))
@@ -504,7 +504,7 @@ doesn't exist."
 	  ((file-exists-p (expand-file-name  (concat "include/" filename) path))
 	   (expand-file-name (concat "include/" filename) path)))))
 
-(defmethod ede-expand-filename-impl-via-subproj ((this ede-project) filename)
+(cl-defmethod ede-expand-filename-impl-via-subproj ((this ede-project) filename)
   "Return a fully qualified file name based on project THIS.
 FILENAME should be just a filename which occurs in a directory controlled
 by this project."
@@ -520,7 +520,7 @@ by this project."
     ;; Return it
     found))
 
-(defmethod ede-expand-filename ((this ede-target) filename &optional force)
+(cl-defmethod ede-expand-filename ((this ede-target) filename &optional force)
   "Return a fully qualified file name based on target THIS.
 FILENAME should be a filename which occurs in a directory in which THIS works.
 Optional argument FORCE forces the default filename to be provided even if it

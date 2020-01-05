@@ -1,6 +1,6 @@
 ;;; pgg-gpg.el --- GnuPG support for PGG.
 
-;; Copyright (C) 1999-2000, 2002-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2000, 2002-2020 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Symmetric encryption and gpg-agent support added by:
@@ -23,12 +23,11 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 
-(eval-when-compile
-  (require 'cl))
+(eval-when-compile (require 'cl-lib))
 
 (require 'pgg)
 
@@ -122,7 +121,7 @@
 		  (insert-file-contents output-file-name)))
 	    (set-buffer errors-buffer)
 	    (if (memq status '(stop signal))
-		(error "%s exited abnormally: '%s'" program exit-status))
+		(error "%s exited abnormally: `%s'" program exit-status))
 	    (if (= 127 exit-status)
 		(error "%s could not be found" program))))
       (if passphrase-with-newline
@@ -303,7 +302,7 @@ passphrase cache or user."
 
 (defun pgg-gpg-select-matching-key (message-keys secret-keys)
   "Choose a key from MESSAGE-KEYS that matches one of the keys in SECRET-KEYS."
-  (loop for message-key in message-keys
+  (cl-loop for message-key in message-keys
 	for message-key-id = (and (equal (car message-key) 1)
 				  (cdr (assq 'key-identifier
 					     (cdr message-key))))

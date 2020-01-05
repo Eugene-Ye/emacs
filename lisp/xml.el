@@ -1,8 +1,8 @@
-;;; xml.el --- XML parser
+;;; xml.el --- XML parser -*- lexical-binding: t -*-
 
-;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
-;; Author: Emmanuel Briot  <briot@gnat.com>
+;; Author: Emmanuel Briot <briot@gnat.com>
 ;; Maintainer: Mark A. Hershberger <mah@everybody.org>
 ;; Keywords: xml, data
 
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -126,9 +126,9 @@ tag.  For example,
 
 would be represented by
 
-    '(\"\" . \"foo\").
+    (\"\" . \"foo\").
 
-If you'd just like a plain symbol instead, use 'symbol-qnames in
+If you'd just like a plain symbol instead, use `symbol-qnames' in
 the PARSE-NS argument."
 
   (car node))
@@ -176,11 +176,11 @@ See also `xml-get-attribute-or-nil'."
 
 ;; [4] NameStartChar
 ;; See the definition of word syntax in `xml-syntax-table'.
-(defconst xml-name-start-char-re (concat "[[:word:]:_]"))
+(defconst xml-name-start-char-re "[[:word:]:_]")
 
 ;; [4a] NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7
 ;;                 | [#x0300-#x036F] | [#x203F-#x2040]
-(defconst xml-name-char-re (concat "[-0-9.[:word:]:_·̀-ͯ‿-⁀]"))
+(defconst xml-name-char-re "[[:word:]:_.0-9\u00B7\u0300-\u036F\u203F\u2040-]")
 
 ;; [5] Name     ::= NameStartChar (NameChar)*
 (defconst xml-name-re (concat xml-name-start-char-re xml-name-char-re "*"))
@@ -194,13 +194,13 @@ See also `xml-get-attribute-or-nil'."
 ;; [8] Nmtokens ::= Nmtoken (#x20 Nmtoken)*
 (defconst xml-nmtokens-re (concat xml-nmtoken-re "\\(?: " xml-name-re "\\)*"))
 
-;; [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
-(defconst xml-char-ref-re  "\\(?:&#[0-9]+;\\|&#x[0-9a-fA-F]+;\\)")
+;; [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [[:xdigit:]]+ ';'
+(defconst xml-char-ref-re  "\\(?:&#[0-9]+;\\|&#x[[:xdigit:]]+;\\)")
 
 ;; [68] EntityRef   ::= '&' Name ';'
 (defconst xml-entity-ref (concat "&" xml-name-re ";"))
 
-(defconst xml-entity-or-char-ref-re (concat "&\\(?:#\\(x\\)?\\([0-9a-fA-F]+\\)\\|\\("
+(defconst xml-entity-or-char-ref-re (concat "&\\(?:#\\(x\\)?\\([[:xdigit:]]+\\)\\|\\("
 					    xml-name-re "\\)\\);"))
 
 ;; [69] PEReference ::= '%' Name ';'
@@ -245,7 +245,6 @@ See also `xml-get-attribute-or-nil'."
 ;; [54] AttType    ::= StringType | TokenizedType | EnumeratedType
 ;; [55] StringType ::= 'CDATA'
 (defconst xml-att-type-re (concat "\\(?:CDATA\\|" xml-tokenized-type-re
-				  "\\|" xml-notation-type-re
 				  "\\|" xml-enumerated-type-re "\\)"))
 
 ;; [60] DefaultDecl ::= '#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)
@@ -326,8 +325,8 @@ URIs, and expanded names will be returned as a cons
 If PARSE-NS is an alist, it will be used as the mapping from
 namespace to URIs instead.
 
-If it is the symbol 'symbol-qnames, expanded names will be
-returned as a plain symbol 'namespace:foo instead of a cons.
+If it is the symbol `symbol-qnames', expanded names will be
+returned as a plain symbol `namespace:foo' instead of a cons.
 
 Both features can be combined by providing a cons cell
 
@@ -356,8 +355,8 @@ URIs, and expanded names will be returned as a cons
 If PARSE-NS is an alist, it will be used as the mapping from
 namespace to URIs instead.
 
-If it is the symbol 'symbol-qnames, expanded names will be
-returned as a plain symbol 'namespace:foo instead of a cons.
+If it is the symbol `symbol-qnames', expanded names will be
+returned as a plain symbol `namespace:foo' instead of a cons.
 
 Both features can be combined by providing a cons cell
 
@@ -401,9 +400,9 @@ Both features can be combined by providing a cons cell
 		     parse-dtd)
 		(setq dtd (car result))
 		(if (cdr result)	; possible leading comment
-		    (add-to-list 'xml (cdr result))))
+		    (push (cdr result) xml)))
 	       (t
-		(add-to-list 'xml result))))
+		(push result xml))))
 	  (goto-char (point-max))))
       (if parse-dtd
 	  (cons dtd (nreverse xml))
@@ -437,6 +436,7 @@ in the XML-NS argument."
                                  (if symbol-qnames (cdr xml-ns) xml-ns)))
                      "")))
 	(if (and symbol-qnames
+                 (not special)
 		 (not (string= prefix "xmlns")))
 	    (intern (concat ns lname))
 	  (cons ns (if special "" lname))))
@@ -579,7 +579,14 @@ Return one of:
 	(error "XML: (Well-Formed) Invalid character"))
       ;; However, if we're parsing incrementally, then we need to deal
       ;; with stray CDATA.
-      (xml-parse-string)))))
+      (let ((s (xml-parse-string)))
+        (when (zerop (length s))
+          ;; We haven't consumed any input! We must throw an error in
+          ;; order to prevent looping forever.
+          (error "XML: (Not Well-Formed) Could not parse: %s"
+                 (buffer-substring-no-properties
+                  (point) (min (+ (point) 10) (point-max)))))
+        s)))))
 
 (defun xml-parse-string ()
   "Parse character data at point, and return it as a string.
@@ -640,7 +647,7 @@ surpassed `xml-entity-expansion-limit'"))))
   "Return the attribute-list after point.
 Leave point at the first non-blank character after the tag."
   (let ((attlist ())
-	end-pos name)
+        end-pos name)
     (skip-syntax-forward " ")
     (while (looking-at (eval-when-compile
 			 (concat "\\(" xml-name-re "\\)\\s-*=\\s-*")))
@@ -710,10 +717,10 @@ This follows the rule [28] in the XML specifications."
     (cond ((looking-at "PUBLIC\\s-+")
 	   (goto-char (match-end 0))
 	   (unless (or (re-search-forward
-			"\\=\"\\([[:space:][:alnum:]-'()+,./:=?;!*#@$_%]*\\)\""
+			"\\=\"\\([[:space:][:alnum:]'()+,./:=?;!*#@$_%-]*\\)\""
 			nil t)
 		       (re-search-forward
-			"\\='\\([[:space:][:alnum:]-()+,./:=?;!*#@$_%]*\\)'"
+			"\\='\\([[:space:][:alnum:]()+,./:=?;!*#@$_%-]*\\)'"
 			nil t))
 	     (error "XML: Missing Public ID"))
 	   (let ((pubid (match-string-no-properties 1)))
@@ -882,7 +889,7 @@ This follows the rule [28] in the XML specifications."
 The replacement text is obtained by replacing character
 references and parameter-entity references."
   (let ((ref-re (eval-when-compile
-		  (concat "\\(?:&#\\([0-9]+\\)\\|&#x\\([0-9a-fA-F]+\\)\\|%\\("
+		  (concat "\\(?:&#\\([0-9]+\\)\\|&#x\\([[:xdigit:]]+\\)\\|%\\("
 			  xml-name-re "\\)\\);")))
 	children)
     (while (string-match ref-re string)
@@ -1010,12 +1017,12 @@ The first line is indented with the optional INDENT-STRING."
 
 (defun xml-escape-string (string)
   "Convert STRING into a string containing valid XML character data.
-Replace occurrences of &<>'\" in STRING with their default XML
-entity references (e.g. replace each & with &amp;).
+Replace occurrences of &<>\\='\" in STRING with their default XML
+entity references (e.g., replace each & with &amp;).
 
 XML character data must not contain & or < characters, nor the >
 character under some circumstances.  The XML spec does not impose
-restriction on \" or ', but we just substitute for these too
+restriction on \" or \\=', but we just substitute for these too
 \(as is permitted by the spec)."
   (with-temp-buffer
     (insert string)
@@ -1064,6 +1071,19 @@ The first line is indented with INDENT-STRING."
 		      (stringp (car tree))))
 	(insert ?\n indent-string))
       (insert ?< ?/ (symbol-name (xml-node-name xml)) ?>))))
+
+;;;###autoload
+(defun xml-remove-comments (beg end)
+  "Remove XML/HTML comments in the region between BEG and END.
+All text between the <!-- ... --> markers will be removed."
+  (save-excursion
+    (save-restriction
+      (narrow-to-region beg end)
+      (goto-char beg)
+      (while (search-forward "<!--" nil t)
+        (let ((start (match-beginning 0)))
+          (when (search-forward "-->" nil t)
+            (delete-region start (point))))))))
 
 (provide 'xml)
 

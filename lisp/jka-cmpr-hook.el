@@ -1,7 +1,7 @@
 ;;; jka-cmpr-hook.el --- preloaded code to enable jka-compr.el
 
-;; Copyright (C) 1993-1995, 1997, 1999-2000, 2002-2014
-;;   Free Software Foundation, Inc.
+;; Copyright (C) 1993-1995, 1997, 1999-2000, 2002-2020 Free Software
+;; Foundation, Inc.
 
 ;; Author: Jay K. Adams <jka@ece.cmu.edu>
 ;; Maintainer: emacs-devel@gnu.org
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -244,7 +244,15 @@ options through Custom does this automatically."
     ["\\.dz\\'"
      nil              nil            nil
      "uncompressing"      "gzip"         ("-c" "-q" "-d")
-     nil t "\037\213"]))
+     nil t "\037\213"]
+    ["\\.zst\\'"
+     "zstd compressing"   "zstd"         ("-c" "-q")
+     "zstd uncompressing" "zstd"         ("-c" "-q" "-d")
+     t t "\050\265\057\375"]
+    ["\\.tzst\\'"
+     "zstd compressing"   "zstd"         ("-c" "-q")
+     "zstd uncompressing" "zstd"         ("-c" "-q" "-d")
+     t nil "\050\265\057\375"]))
 
   "List of vectors that describe available compression techniques.
 Each element, which describes a compression technique, is a vector of
@@ -308,7 +316,8 @@ variables.  Setting this through Custom does that automatically."
 (defcustom jka-compr-mode-alist-additions
   (purecopy '(("\\.tgz\\'" . tar-mode)
               ("\\.tbz2?\\'" . tar-mode)
-              ("\\.txz\\'" . tar-mode)))
+              ("\\.txz\\'" . tar-mode)
+              ("\\.tzst\\'" . tar-mode)))
   "List of pairs added to `auto-mode-alist' when installing jka-compr.
 Uninstalling jka-compr removes all pairs from `auto-mode-alist' that
 installing added.
@@ -338,9 +347,6 @@ variables.  Setting this through Custom does that automatically."
 
 (define-minor-mode auto-compression-mode
   "Toggle Auto Compression mode.
-With a prefix argument ARG, enable Auto Compression mode if ARG
-is positive, and disable it otherwise.  If called from Lisp,
-enable the mode if ARG is omitted or nil.
 
 Auto Compression mode is a global minor mode.  When enabled,
 compressed files are automatically uncompressed for reading, and

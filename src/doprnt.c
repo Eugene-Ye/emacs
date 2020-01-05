@@ -1,14 +1,14 @@
-/* Output like sprintf to a buffer of specified size.
+/* Output like sprintf to a buffer of specified size.    -*- coding: utf-8 -*-
    Also takes args differently: pass one pointer to the end
    of the format string in addition to the format string itself.
-   Copyright (C) 1985, 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 1985, 2001-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,7 +16,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 /* If you think about replacing this with some similar standard C function of
    the printf family (such as vsnprintf), please note that this function
@@ -35,7 +35,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
      sequence.
 
    . It accepts a pointer to the end of the format string, so the format string
-     could include embedded null characters.
+     could include embedded NUL characters.
 
    . It signals an error if the length of the formatted string is about to
      overflow ptrdiff_t or size_t, to avoid producing strings longer than what
@@ -46,14 +46,15 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    ignored %s and %c conversions.  (See below for the detailed documentation of
    what is supported.)  However, this is okay, as this function is supposed to
    be called from `error' and similar functions, and thus does not need to
-   support features beyond those in `Fformat', which is used by `error' on the
-   Lisp level.  */
+   support features beyond those in `Fformat_message', which is used
+   by `error' on the Lisp level.  */
 
-/* This function supports the following %-sequences in the `format'
-   argument:
+/* In the FORMAT argument this function supports ` and ' as directives
+   that output left and right quotes as per ‘text-quoting style’.  It
+   also supports the following %-sequences:
 
    %s means print a string argument.
-   %S is silently treated as %s, for loose compatibility with `Fformat'.
+   %S is treated as %s, for loose compatibility with `Fformat_message'.
    %d means print a `signed int' argument in decimal.
    %o means print an `unsigned int' argument in octal.
    %x means print an `unsigned int' argument in hex.
@@ -70,7 +71,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
      %<flags><width><precision><length>character
 
    where flags is [+ -0], width is [0-9]+, precision is .[0-9]+, and length
-   is empty or l or the value of the pD or pI or pMd (sans "d") macros.
+   is empty or l or the value of the pD or pI or PRIdMAX (sans "d") macros.
    Also, %% in a format stands for a single % in the output.  A % that
    does not introduce a valid %-sequence causes undefined behavior.
 
@@ -87,7 +88,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    the respective argument is to be treated as `long int' or `unsigned long
    int'.  Similarly, the value of the pD macro means to use ptrdiff_t,
    the value of the pI macro means to use EMACS_INT or EMACS_UINT, the
-   value of the pMd etc. macros means to use intmax_t or uintmax_t,
+   value of the PRIdMAX etc. macros means to use intmax_t or uintmax_t,
    and the empty length modifier means `int' or `unsigned int'.
 
    The width specifier supplies a lower limit for the length of the printed
@@ -102,6 +103,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <config.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <float.h>
 #include <unistd.h>
 #include <limits.h>
@@ -121,7 +123,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    to fit and return BUFSIZE - 1; if this truncates a multibyte
    sequence, store '\0' into the sequence's first byte.
    Returns the number of bytes stored into BUFFER, excluding
-   the terminating null byte.  Output is always null-terminated.
+   the terminating NUL byte.  Output is always NUL-terminated.
    String arguments are passed as C strings.
    Integers are passed as C integers.  */
 
@@ -132,8 +134,11 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
   const char *fmt = format;	/* Pointer into format string.  */
   char *bufptr = buffer;	/* Pointer into output buffer.  */
 
+  /* Enough to handle floating point formats with large numbers.  */
+  enum { SIZE_BOUND_EXTRA = DBL_MAX_10_EXP + 50 };
+
   /* Use this for sprintf unless we need something really big.  */
-  char tembuf[DBL_MAX_10_EXP + 100];
+  char tembuf[SIZE_BOUND_EXTRA + 50];
 
   /* Size of sprintf_buffer.  */
   ptrdiff_t size_allocated = sizeof (tembuf);
@@ -144,6 +149,7 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
   /* Buffer we have got with malloc.  */
   char *big_buffer = NULL;
 
+  enum text_quoting_style quoting_style = text_quoting_style ();
   ptrdiff_t tem = -1;
   char *string;
   char fixed_buffer[20];	/* Default buffer for small formatting. */
@@ -164,14 +170,16 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
   /* Loop until end of format string or buffer full. */
   while (fmt < format_end && bufsize > 0)
     {
-      if (*fmt == '%')	/* Check for a '%' character */
+      char const *fmt0 = fmt;
+      char fmtchar = *fmt++;
+      if (fmtchar == '%')
 	{
 	  ptrdiff_t size_bound = 0;
 	  ptrdiff_t width;  /* Columns occupied by STRING on display.  */
 	  enum {
 	    pDlen = sizeof pD - 1,
 	    pIlen = sizeof pI - 1,
-	    pMlen = sizeof pMd - 2
+	    pMlen = sizeof PRIdMAX - 2
 	  };
 	  enum {
 	    no_modifier, long_modifier, pD_modifier, pI_modifier, pM_modifier
@@ -180,7 +188,6 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 	  int maxmlen = max (max (1, pDlen), max (pIlen, pMlen));
 	  int mlen;
 
-	  fmt++;
 	  /* Copy this one %-spec into fmtcpy.  */
 	  string = fmtcpy;
 	  *string++ = '%';
@@ -193,21 +200,19 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 		     This might be a field width or a precision; e.g.
 		     %1.1000f and %1000.1f both might need 1000+ bytes.
 		     Parse the width or precision, checking for overflow.  */
-		  ptrdiff_t n = *fmt - '0';
+		  int n = *fmt - '0';
+		  bool overflow = false;
 		  while (fmt + 1 < format_end
 			 && '0' <= fmt[1] && fmt[1] <= '9')
 		    {
-		      /* Avoid ptrdiff_t, size_t, and int overflow, as
-			 many sprintfs mishandle widths greater than INT_MAX.
-			 This test is simple but slightly conservative: e.g.,
-			 (INT_MAX - INT_MAX % 10) is reported as an overflow
-			 even when it's not.  */
-		      if (n >= min (INT_MAX, min (PTRDIFF_MAX, SIZE_MAX)) / 10)
-			error ("Format width or precision too large");
-		      n = n * 10 + fmt[1] - '0';
+		      overflow |= INT_MULTIPLY_WRAPV (n, 10, &n);
+		      overflow |= INT_ADD_WRAPV (n, fmt[1] - '0', &n);
 		      *string++ = *++fmt;
 		    }
 
+		  if (overflow
+		      || min (PTRDIFF_MAX, SIZE_MAX) - SIZE_BOUND_EXTRA < n)
+		    error ("Format width or precision too large");
 		  if (size_bound < n)
 		    size_bound = n;
 		}
@@ -229,7 +234,7 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 		length_modifier = pD_modifier;
 	      if (mlen == pIlen && memcmp (fmt, pI, pIlen) == 0)
 		length_modifier = pI_modifier;
-	      if (mlen == pMlen && memcmp (fmt, pMd, pMlen) == 0)
+	      if (mlen == pMlen && memcmp (fmt, PRIdMAX, pMlen) == 0)
 		length_modifier = pM_modifier;
 	    }
 
@@ -241,9 +246,7 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 
 	  /* Make the size bound large enough to handle floating point formats
 	     with large numbers.  */
-	  if (size_bound > min (PTRDIFF_MAX, SIZE_MAX) - DBL_MAX_10_EXP - 50)
-	    error ("Format width or precision too large");
-	  size_bound += DBL_MAX_10_EXP + 50;
+	  size_bound += SIZE_BOUND_EXTRA;
 
 	  /* Make sure we have that much.  */
 	  if (size_bound > size_allocated)
@@ -349,12 +352,13 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 
 	    case 'S':
 	      string[-1] = 's';
+	      FALLTHROUGH;
 	    case 's':
 	      if (fmtcpy[1] != 's')
 		minlen = atoi (&fmtcpy[1]);
 	      string = va_arg (ap, char *);
-	      tem = strlen (string);
-	      if (STRING_BYTES_BOUND < tem)
+	      tem = strnlen (string, STRING_BYTES_BOUND + 1);
+	      if (tem == STRING_BYTES_BOUND + 1)
 		error ("String for %%s or %%S format is too long");
 	      width = strwidth (string, tem);
 	      goto doit1;
@@ -434,26 +438,42 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 	      }
 
 	    case '%':
-	      fmt--;    /* Drop thru and this % will be treated as normal */
+	      /* Treat this '%' as normal.  */
+	      fmt0 = fmt - 1;
+	      break;
 	    }
 	}
 
-      {
-	/* Just some character; Copy it if the whole multi-byte form
-	   fit in the buffer.  */
-	char *save_bufptr = bufptr;
+      char const *src;
+      ptrdiff_t srclen;
+      if (quoting_style == CURVE_QUOTING_STYLE && fmtchar == '`')
+	src = uLSQM, srclen = sizeof uLSQM - 1;
+      else if (quoting_style == CURVE_QUOTING_STYLE && fmtchar == '\'')
+	src = uRSQM, srclen = sizeof uRSQM - 1;
+      else if (quoting_style == STRAIGHT_QUOTING_STYLE && fmtchar == '`')
+	src = "'", srclen = 1;
+      else
+	{
+	  while (fmt < format_end && !CHAR_HEAD_P (*fmt))
+	    fmt++;
+	  src = fmt0, srclen = fmt - fmt0;
+	}
 
-	do { *bufptr++ = *fmt++; }
-	while (fmt < format_end && --bufsize > 0 && !CHAR_HEAD_P (*fmt));
-	if (!CHAR_HEAD_P (*fmt))
-	  {
-	    /* Truncate, but return value that will signal to caller
-	       that the buffer was too small.  */
-	    *save_bufptr = 0;
-	    break;
-	  }
-      }
-    };
+      if (bufsize < srclen)
+	{
+	  /* Truncate, but return value that will signal to caller
+	     that the buffer was too small.  */
+	  do
+	    *bufptr++ = '\0';
+	  while (--bufsize != 0);
+	}
+      else
+	{
+	  do
+	    *bufptr++ = *src++;
+	  while (--srclen != 0);
+	}
+    }
 
   /* If we had to malloc something, free it.  */
   xfree (big_buffer);
@@ -467,7 +487,8 @@ doprnt (char *buffer, ptrdiff_t bufsize, const char *format,
 /* Format to an unbounded buffer BUF.  This is like sprintf, except it
    is not limited to returning an 'int' so it doesn't have a silly 2
    GiB limit on typical 64-bit hosts.  However, it is limited to the
-   Emacs-style formats that doprnt supports.
+   Emacs-style formats that doprnt supports, and it requotes ` and '
+   as per ‘text-quoting-style’.
 
    Return the number of bytes put into BUF, excluding the terminating
    '\0'.  */

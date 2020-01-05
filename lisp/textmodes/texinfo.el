@@ -1,6 +1,6 @@
-;;; texinfo.el --- major mode for editing Texinfo files -*- coding: utf-8 -*-
+;;; texinfo.el --- major mode for editing Texinfo files
 
-;; Copyright (C) 1985, 1988-1993, 1996-1997, 2000-2014 Free Software
+;; Copyright (C) 1985, 1988-1993, 1996-1997, 2000-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Robert J. Chassell
@@ -21,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Todo:
 
@@ -86,7 +86,7 @@ command to gain use of `next-error'."
   "Make Info file from current buffer.
 
 Use the \\[next-error] command to move to the next error
-\(if there are errors\)."
+\(if there are errors)."
   t nil)
 
 (autoload 'kill-compilation
@@ -351,8 +351,6 @@ Subexpression 1 is what goes into the corresponding `@end' statement.")
   '((t (:inherit font-lock-function-name-face)))
   "Face used for section headings in `texinfo-mode'."
   :group 'texinfo)
-(define-obsolete-face-alias 'texinfo-heading-face 'texinfo-heading "22.1")
-(defvar texinfo-heading-face 'texinfo-heading)
 
 (defvar texinfo-font-lock-keywords
   `(;; All but the first had an OVERRIDE of t.
@@ -368,8 +366,10 @@ Subexpression 1 is what goes into the corresponding `@end' statement.")
     ;; their arguments frequently include a @@, and we don't want that
     ;; to overwrite the normal fontification of the argument.
     ("@\\(file\\|email\\){\\([^}]+\\)" 2 font-lock-string-face keep)
-    ("@\\(samp\\|code\\|var\\|math\\|env\\|command\\|option\\){\\([^}]+\\)"
+    ("@\\(samp\\|code\\|var\\|env\\|command\\|option\\){\\([^}]+\\)"
      2 font-lock-variable-name-face keep)
+    ;; @math allows nested braces like @math{2^{12}}
+    ("@math{\\([^{}]*{?[^{}]*}?[^{}]*\\)}" 1 font-lock-variable-name-face)
     ("@\\(cite\\|x?ref\\|pxref\\|dfn\\|inforef\\){\\([^}]+\\)"
      2 font-lock-constant-face)
     ("@\\(anchor\\){\\([^}]+\\)" 2 font-lock-type-face)
@@ -378,7 +378,8 @@ Subexpression 1 is what goes into the corresponding `@end' statement.")
     ;; (,texinfo-environment-regexp
     ;;  1 (texinfo-clone-environment (match-beginning 1) (match-end 1)) keep)
     (,(concat "^@" (regexp-opt (mapcar 'car texinfo-section-list) t)
-	       ".*\n") 0 texinfo-heading-face t))
+	       ".*\n")
+     0 'texinfo-heading t))
   "Additional expressions to highlight in Texinfo mode.")
 
 (defun texinfo-clone-environment (start end)
@@ -391,7 +392,7 @@ Subexpression 1 is what goes into the corresponding `@end' statement.")
 	(unless (get-char-property start 'text-clones)
 	  (if endp
 	      (texinfo-last-unended-begin)
-	    (forward-word 1)
+	    (forward-word-strictly 1)
 	    (texinfo-next-unmatched-end))
 	  (skip-syntax-forward "^w")
 	  (when (looking-at
@@ -469,6 +470,7 @@ Subexpression 1 is what goes into the corresponding `@end' statement.")
     (define-key map "\C-c\C-cu"    'texinfo-insert-@uref)
     (define-key map "\C-c\C-ct"    'texinfo-insert-@table)
     (define-key map "\C-c\C-cs"    'texinfo-insert-@samp)
+    (define-key map "\C-c\C-cr"    'texinfo-insert-dwim-@ref)
     (define-key map "\C-c\C-cq"    'texinfo-insert-@quotation)
     (define-key map "\C-c\C-co"    'texinfo-insert-@noindent)
     (define-key map "\C-c\C-cn"    'texinfo-insert-@node)
@@ -595,9 +597,9 @@ value of `texinfo-mode-hook'."
   (setq-local require-final-newline mode-require-final-newline)
   (setq-local indent-tabs-mode nil)
   (setq-local paragraph-separate
-	      (concat "\b\\|@[a-zA-Z]*[ \n]\\|"
+	      (concat "@[a-zA-Z]*[ \n]\\|"
 		      paragraph-separate))
-  (setq-local paragraph-start (concat "\b\\|@[a-zA-Z]*[ \n]\\|"
+  (setq-local paragraph-start (concat "@[a-zA-Z]*[ \n]\\|"
 				      paragraph-start))
   (setq-local sentence-end-base "\\(@\\(end\\)?dots{}\\|[.?!]\\)[]\"'”)}]*")
   (setq-local fill-column 70)
@@ -609,7 +611,6 @@ value of `texinfo-mode-hook'."
   (setq font-lock-defaults
 	'(texinfo-font-lock-keywords nil nil nil backward-paragraph))
   (setq-local syntax-propertize-function texinfo-syntax-propertize-function)
-  (setq-local parse-sexp-lookup-properties t)
   (setq-local add-log-current-defun-function #'texinfo-current-defun-name)
 
   ;; Outline settings.
@@ -689,8 +690,8 @@ Puts point on a blank line between them."
   '("example\\>" "smallexample\\>" "lisp\\>"))
 (defun texinfo-insert-quote (&optional arg)
   "Insert the appropriate quote mark for Texinfo.
-Usually inserts the value of `texinfo-open-quote' (normally ``) or
-`texinfo-close-quote' (normally ''), depending on the context.
+Usually inserts the value of `texinfo-open-quote' (normally \\=`\\=`) or
+`texinfo-close-quote' (normally \\='\\='), depending on the context.
 With prefix argument or inside @code or @example, inserts a plain \"."
   (interactive "*P")
   (let ((top (or (save-excursion (re-search-backward "@node\\>" nil t))
@@ -736,7 +737,7 @@ With prefix argument or inside @code or @example, inserts a plain \"."
   "Insert the matching `@end' for the last Texinfo command that needs one."
 	 (ignore-errors
 	   (save-excursion
-      (backward-word 1)
+             (backward-word-strictly 1)
 	     (texinfo-last-unended-begin)
       (or (match-string 1) '-)))
   \n "@end " str \n \n)
@@ -824,6 +825,38 @@ Leave point after `@node'."
 (define-skeleton texinfo-insert-@quotation
   "Insert the string `@quotation' in a Texinfo buffer."
   \n "@quotation" \n _ \n)
+
+(define-skeleton texinfo-insert-dwim-@ref
+  "Insert appropriate `@pxref{...}', `@xref{}', or `@ref{}' command.
+
+Looks at text around point to decide what to insert; an unclosed
+preceding open parenthesis results in '@pxref{}', point at the
+beginning of a sentence or at (point-min) yields '@xref{}', any
+other location (including inside a word), will result in '@ref{}'
+at the nearest previous whitespace or beginning-of-line.  A
+numeric argument says how many words the braces should surround.
+The default is not to surround any existing words with the
+braces."
+  nil
+  (cond
+   ;; parenthesis
+   ((looking-back "([^)]*" (point-at-bol 0))
+    "@pxref{")
+   ;; beginning of sentence or buffer
+   ((or (looking-back (sentence-end) (point-at-bol 0))
+        (= (point) (point-min)))
+    "@xref{")
+   ;; bol or eol
+   ((looking-at "^\\|$")
+    "@ref{")
+   ;; inside word
+   ((not (eq (char-syntax (char-after)) ? ))
+    (skip-syntax-backward "^ " (point-at-bol))
+    "@ref{")
+   ;; everything else
+   (t
+    "@ref{"))
+  _ "}")
 
 (define-skeleton texinfo-insert-@samp
   "Insert a `@samp{...}' command in a Texinfo buffer.

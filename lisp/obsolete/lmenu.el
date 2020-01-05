@@ -1,6 +1,6 @@
 ;;; lmenu.el --- emulate Lucid's menubar support
 
-;; Copyright (C) 1992-1994, 1997, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1992-1994, 1997, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Keywords: emulations obsolete
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -160,9 +160,9 @@ The syntax, more precisely:
    active-p	:=  <t, nil, or a form to evaluate to decide whether this
 		    button should be selectable>
    name		:=  <string>
-   partition	:=  'nil'
-   button	:=  '['  name callback active-p ']'
-   dialog	:=  '(' name [ button ]+ [ partition [ button ]+ ] ')'"
+   partition	:=  `nil'
+   button	:=  `['  name callback active-p `]'
+   dialog	:=  `(' name [ button ]+ [ partition [ button ]+ ] `)'"
   (let ((name (car data))
 	(tail (cdr data))
 	converted

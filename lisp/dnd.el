@@ -1,6 +1,6 @@
-;;; dnd.el --- drag and drop support.  -*- coding: utf-8 -*-
+;;; dnd.el --- drag and drop support
 
-;; Copyright (C) 2005-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2020 Free Software Foundation, Inc.
 
 ;; Author: Jan Djärv <jan.h.d@swipnet.se>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -63,12 +63,12 @@ if some action was made, or nil if the URL is ignored."
       'dnd-open-local-file
     'dnd-open-remote-url)
   "The function to call when opening a file on a remote machine.
-The function will be called with two arguments; URI and ACTION. See
-`dnd-open-file' for details.
+The function will be called with two arguments, URI and ACTION.
+See `dnd-open-file' for details.
 If nil, then dragging remote files into Emacs will result in an error.
 Predefined functions are `dnd-open-local-file' and `dnd-open-remote-url'.
 `dnd-open-local-file' attempts to open a remote file using its UNC name and
-is the  default on MS-Windows.  `dnd-open-remote-url' uses `url-handler-mode'
+is the default on MS-Windows.  `dnd-open-remote-url' uses `url-handler-mode'
 and is the default except for MS-Windows."
   :version "22.1"
   :type 'function
@@ -122,28 +122,30 @@ Return nil if URI is not a local file."
 
   ;; The hostname may be our hostname, in that case, convert to a local
   ;; file.  Otherwise return nil.  TODO:  How about an IP-address as hostname?
-  (let ((hostname (when (string-match "^file://\\([^/]*\\)" uri)
+  (let ((sysname (system-name)))
+    (let ((hostname (when (string-match "^file://\\([^/]*\\)" uri)
 		      (downcase (match-string 1 uri))))
-	(system-name-no-dot
-	 (downcase (if (string-match "^[^\\.]+" system-name)
-		       (match-string 0 system-name)
-		     system-name))))
-    (when (and hostname
-	     (or (string-equal "localhost" hostname)
-		 (string-equal (downcase system-name) hostname)
-		 (string-equal system-name-no-dot hostname)))
-	(concat "file://" (substring uri (+ 7 (length hostname)))))))
+	  (sysname-no-dot
+	   (downcase (if (string-match "^[^\\.]+" sysname)
+			 (match-string 0 sysname)
+		       sysname))))
+      (when (and hostname
+                 (not (eq system-type 'windows-nt))
+		 (or (string-equal "localhost" hostname)
+		     (string-equal (downcase sysname) hostname)
+		     (string-equal sysname-no-dot hostname)))
+	(concat "file://" (substring uri (+ 7 (length hostname))))))))
 
 (defsubst dnd-unescape-uri (uri)
   (replace-regexp-in-string
-   "%[A-Fa-f0-9][A-Fa-f0-9]"
+   "%[[:xdigit:]][[:xdigit:]]"
    (lambda (arg)
      (let ((str (make-string 1 0)))
        (aset str 0 (string-to-number (substring arg 1) 16))
        str))
    uri t t))
 
-;; http://lists.gnu.org/archive/html/emacs-devel/2006-05/msg01060.html
+;; https://lists.gnu.org/r/emacs-devel/2006-05/msg01060.html
 (defun dnd-get-local-file-name (uri &optional must-exist)
   "Return file name converted from file:/// or file: syntax.
 URI is the uri for the file.  If MUST-EXIST is given and non-nil,
@@ -172,7 +174,7 @@ The last / in file:/// is part of the file name.  If the system
 natively supports unc file names, then remote urls of the form
 file://server-name/file-name will also be handled by this function.
 An alternative for systems that do not support unc file names is
-`dnd-open-remote-url'. ACTION is ignored."
+`dnd-open-remote-url'.  ACTION is ignored."
 
   (let* ((f (dnd-get-local-file-name uri t)))
     (if (and f (file-readable-p f))

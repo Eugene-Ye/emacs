@@ -1,6 +1,6 @@
 ;;; face-remap.el --- Functions for managing `face-remapping-alist'  -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2020 Free Software Foundation, Inc.
 ;;
 ;; Author: Miles Bader <miles@gnu.org>
 ;; Keywords: faces, face remapping, display, user commands
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 ;;
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 ;;
 
 ;;; Commentary:
@@ -64,12 +64,14 @@
 ;; Names of face attributes corresponding to lisp face-vector positions.
 ;; This variable should probably be defined in C code where the actual
 ;; definitions are available.
+;; :vector must be always at the end as a guard
 ;;
 (defvar internal-lisp-face-attributes
   [nil
-   :family :foundry :swidth :height :weight :slant :underline :inverse
-   :foreground :background :stipple :overline :strike :box
-   :font :inherit :fontset :vector])
+   :family :foundry :width :height :weight :slant :underline
+   :inverse-video
+   :foreground :background :stipple :overline :strike-through :box
+   :font :inherit :fontset :distant-foreground :extend :vector])
 
 (defun face-attrs-more-relative-p (attrs1 attrs2)
   "Return true if ATTRS1 contains a greater number of relative
@@ -187,7 +189,7 @@ of face attribute/value pairs, like in a `face' text property.
 
 If SPECS is empty, call `face-remap-reset-base' to use the normal
 definition of FACE as the base remapping; note that this is
-different from SPECS containing a single value `nil', which means
+different from SPECS containing a single value nil, which means
 not to inherit from the global definition of FACE at all."
   (while (and (consp specs) (not (null (car specs))) (null (cdr specs)))
     (setq specs (car specs)))
@@ -229,9 +231,6 @@ Each positive or negative step scales the default face height by this amount."
 
 (define-minor-mode text-scale-mode
   "Minor mode for displaying buffer text in a larger/smaller font.
-With a prefix argument ARG, enable the mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable the mode
-if ARG is omitted or nil.
 
 The amount of scaling is determined by the variable
 `text-scale-mode-amount': one step scales the global default
@@ -256,6 +255,23 @@ disable `text-scale-mode' as necessary)."
 						text-scale-mode-amount))))
   (force-window-update (current-buffer)))
 
+(defun text-scale-min-amount ()
+  "Return the minimum amount of text-scaling we allow."
+  ;; When the resulting pixel-height of characters will become smaller
+  ;; than 1 pixel, we can expect trouble from the display engine.
+  ;; E.g., it requires that the character glyph's ascent is
+  ;; non-negative.
+  (log (/ 1.0 (frame-char-height)) text-scale-mode-step))
+
+(defun text-scale-max-amount ()
+  "Return the maximum amount of text-scaling we allow."
+  ;; The display engine uses a 16-bit short for pixel-width of
+  ;; characters, thus the 0xffff limitation.  It also makes no sense
+  ;; to have characters wider than the display.
+  (log (/ (min (display-pixel-width) #xffff)
+          (frame-char-width))
+       text-scale-mode-step))
+
 ;;;###autoload
 (defun text-scale-set (level)
   "Set the scale factor of the default face in the current buffer to LEVEL.
@@ -266,7 +282,8 @@ Each step scales the height of the default face by the variable
 `text-scale-mode-step' (a negative number decreases the height by
 the same amount)."
   (interactive "p")
-  (setq text-scale-mode-amount level)
+  (setq text-scale-mode-amount
+        (max (min level (text-scale-max-amount)) (text-scale-min-amount)))
   (text-scale-mode (if (zerop text-scale-mode-amount) -1 1)))
 
 ;;;###autoload
@@ -279,8 +296,13 @@ Each step scales the height of the default face by the variable
 height by the same amount).  As a special case, an argument of 0
 will remove any scaling currently active."
   (interactive "p")
-  (setq text-scale-mode-amount
-	(if (= inc 0) 0 (+ (if text-scale-mode text-scale-mode-amount 0) inc)))
+  (let* ((current-value (if text-scale-mode text-scale-mode-amount 0))
+         (new-value (if (= inc 0) 0 (+ current-value inc))))
+    (if (or (> new-value (text-scale-max-amount))
+            (< new-value (text-scale-min-amount)))
+        (user-error "Cannot %s the default face height more than it already is"
+                    (if (> inc 0) "increase" "decrease")))
+    (setq text-scale-mode-amount new-value))
   (text-scale-mode (if (zerop text-scale-mode-amount) -1 1)))
 
 ;;;###autoload
@@ -330,7 +352,7 @@ a top-level keymap, `text-scale-increase' or
               ((or ?+ ?=) inc)
               (?- (- inc))
               (?0 0)
-              (t inc))))
+              (_ inc))))
       (text-scale-increase step)
       ;; (unless (zerop step)
       (message "Use +,-,0 for further adjustment")
@@ -364,10 +386,9 @@ plist, etc."
 ;;;###autoload
 (define-minor-mode buffer-face-mode
   "Minor mode for a buffer-specific default face.
-With a prefix argument ARG, enable the mode if ARG is positive,
-and disable it otherwise.  If called from Lisp, enable the mode
-if ARG is omitted or nil.  When enabled, the face specified by the
-variable `buffer-face-mode-face' is used to display the buffer text."
+
+When enabled, the face specified by the variable
+`buffer-face-mode-face' is used to display the buffer text."
   :lighter " BufFace"
   (when buffer-face-mode-remapping
     (face-remap-remove-relative buffer-face-mode-remapping))
@@ -455,7 +476,7 @@ may be more appropriate."
 An interface to `buffer-face-mode' which uses the `variable-pitch' face.
 Besides the choice of face, it is the same as `buffer-face-mode'."
   (interactive (list (or current-prefix-arg 'toggle)))
-  (buffer-face-mode-invoke 'variable-pitch arg
+  (buffer-face-mode-invoke 'variable-pitch (or arg t)
 			   (called-interactively-p 'interactive)))
 
 

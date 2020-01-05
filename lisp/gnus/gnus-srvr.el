@@ -1,6 +1,6 @@
 ;;; gnus-srvr.el --- virtual server support for Gnus
 
-;; Copyright (C) 1995-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: news
@@ -18,13 +18,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib))
 
 (require 'gnus)
 (require 'gnus-start)
@@ -32,13 +32,9 @@
 (require 'gnus-group)
 (require 'gnus-int)
 (require 'gnus-range)
+(require 'gnus-cloud)
 
 (autoload 'gnus-group-make-nnir-group "nnir")
-
-(defcustom gnus-server-mode-hook nil
-  "Hook run in `gnus-server-mode' buffers."
-  :group 'gnus-server
-  :type 'hook)
 
 (defcustom gnus-server-exit-hook nil
   "Hook run when exiting the server buffer."
@@ -91,7 +87,7 @@ If nil, a faster, but more primitive, buffer is used instead."
 (defvar gnus-inserted-opened-servers nil)
 
 (defvar gnus-server-line-format-alist
-  `((?h gnus-tmp-how ?s)
+  '((?h gnus-tmp-how ?s)
     (?n gnus-tmp-name ?s)
     (?w gnus-tmp-where ?s)
     (?s gnus-tmp-status ?s)
@@ -99,7 +95,7 @@ If nil, a faster, but more primitive, buffer is used instead."
     (?c gnus-tmp-cloud ?s)))
 
 (defvar gnus-server-mode-line-format-alist
-  `((?S gnus-tmp-news-server ?s)
+  '((?S gnus-tmp-news-server ?s)
     (?M gnus-tmp-news-method ?s)
     (?u gnus-tmp-user-defined ?s)))
 
@@ -107,10 +103,12 @@ If nil, a faster, but more primitive, buffer is used instead."
 (defvar gnus-server-mode-line-format-spec nil)
 (defvar gnus-server-killed-servers nil)
 
-(defvar gnus-server-mode-map)
+(defvar gnus-server-mode-map nil)
 
-(defvar gnus-server-menu-hook nil
-  "*Hook run after the creation of the server mode menu.")
+(defcustom gnus-server-menu-hook nil
+  "Hook run after the creation of the server mode menu."
+  :type 'hook
+  :group 'gnus-server)
 
 (defun gnus-server-make-menu-bar ()
   (gnus-turn-off-edit-menu 'server)
@@ -138,7 +136,8 @@ If nil, a faster, but more primitive, buffer is used instead."
        ["Close" gnus-server-close-server t]
        ["Offline" gnus-server-offline-server t]
        ["Deny" gnus-server-deny-server t]
-       ["Toggle Cloud" gnus-server-toggle-cloud-server t]
+       ["Toggle Cloud Sync for this server" gnus-server-toggle-cloud-server t]
+       ["Toggle Cloud Sync Host" gnus-server-set-cloud-method-server t]
        "---"
        ["Open All" gnus-server-open-all-servers t]
        ["Close All" gnus-server-close-all-servers t]
@@ -146,17 +145,14 @@ If nil, a faster, but more primitive, buffer is used instead."
 
     (gnus-run-hooks 'gnus-server-menu-hook)))
 
-(defvar gnus-server-mode-map nil)
-(put 'gnus-server-mode 'mode-class 'special)
-
 (unless gnus-server-mode-map
-  (setq gnus-server-mode-map (make-sparse-keymap))
+  (setq gnus-server-mode-map (make-keymap))
   (suppress-keymap gnus-server-mode-map)
 
   (gnus-define-keys gnus-server-mode-map
     " " gnus-server-read-server-in-server-buffer
     "\r" gnus-server-read-server
-    gnus-mouse-2 gnus-server-pick-server
+    [mouse-2] gnus-server-pick-server
     "q" gnus-server-exit
     "l" gnus-server-list-servers
     "k" gnus-server-kill-server
@@ -185,6 +181,7 @@ If nil, a faster, but more primitive, buffer is used instead."
     "z" gnus-server-compact-server
 
     "i" gnus-server-toggle-cloud-server
+    "I" gnus-server-set-cloud-method-server
 
     "\C-c\C-i" gnus-info-find-node
     "\C-c\C-b" gnus-bug))
@@ -193,71 +190,63 @@ If nil, a faster, but more primitive, buffer is used instead."
   '((((class color) (background light)) (:foreground "PaleTurquoise" :bold t))
     (((class color) (background dark)) (:foreground "PaleTurquoise" :bold t))
     (t (:bold t)))
-  "Face used for displaying AGENTIZED servers"
+  "Face used for displaying AGENTIZED servers."
   :group 'gnus-server-visual)
-;; backward-compatibility alias
-(put 'gnus-server-agent-face 'face-alias 'gnus-server-agent)
-(put 'gnus-server-agent-face 'obsolete-face "22.1")
 
 (defface gnus-server-cloud
   '((((class color) (background light)) (:foreground "ForestGreen" :bold t))
     (((class color) (background dark)) (:foreground "PaleGreen" :bold t))
     (t (:bold t)))
-  "Face used for displaying AGENTIZED servers"
+  "Face used for displaying Cloud-synced servers."
+  :group 'gnus-server-visual)
+
+(defface gnus-server-cloud-host
+  '((((class color) (background light)) (:foreground "ForestGreen" :inverse-video t :italic t))
+    (((class color) (background dark)) (:foreground "PaleGreen" :inverse-video t :italic t))
+    (t (:inverse-video t :italic t)))
+  "Face used for displaying the Cloud Host"
   :group 'gnus-server-visual)
 
 (defface gnus-server-opened
   '((((class color) (background light)) (:foreground "Green3" :bold t))
     (((class color) (background dark)) (:foreground "Green1" :bold t))
     (t (:bold t)))
-  "Face used for displaying OPENED servers"
+  "Face used for displaying OPENED servers."
   :group 'gnus-server-visual)
-;; backward-compatibility alias
-(put 'gnus-server-opened-face 'face-alias 'gnus-server-opened)
-(put 'gnus-server-opened-face 'obsolete-face "22.1")
 
 (defface gnus-server-closed
   '((((class color) (background light)) (:foreground "Steel Blue" :italic t))
     (((class color) (background dark))
      (:foreground "LightBlue" :italic t))
     (t (:italic t)))
-  "Face used for displaying CLOSED servers"
+  "Face used for displaying CLOSED servers."
   :group 'gnus-server-visual)
-;; backward-compatibility alias
-(put 'gnus-server-closed-face 'face-alias 'gnus-server-closed)
-(put 'gnus-server-closed-face 'obsolete-face "22.1")
 
 (defface gnus-server-denied
   '((((class color) (background light)) (:foreground "Red" :bold t))
     (((class color) (background dark)) (:foreground "Pink" :bold t))
     (t (:inverse-video t :bold t)))
-  "Face used for displaying DENIED servers"
+  "Face used for displaying DENIED servers."
   :group 'gnus-server-visual)
-;; backward-compatibility alias
-(put 'gnus-server-denied-face 'face-alias 'gnus-server-denied)
-(put 'gnus-server-denied-face 'obsolete-face "22.1")
 
 (defface gnus-server-offline
   '((((class color) (background light)) (:foreground "Orange" :bold t))
     (((class color) (background dark)) (:foreground "Yellow" :bold t))
     (t (:inverse-video t :bold t)))
-  "Face used for displaying OFFLINE servers"
+  "Face used for displaying OFFLINE servers."
   :group 'gnus-server-visual)
-;; backward-compatibility alias
-(put 'gnus-server-offline-face 'face-alias 'gnus-server-offline)
-(put 'gnus-server-offline-face 'obsolete-face "22.1")
 
 (defvar gnus-server-font-lock-keywords
   '(("(\\(agent\\))" 1 'gnus-server-agent)
-    ("(\\(cloud\\))" 1 'gnus-server-cloud)
+    ("(\\(cloud[-]sync\\))" 1 'gnus-server-cloud)
+    ("(\\(CLOUD[-]HOST\\))" 1 'gnus-server-cloud-host)
     ("(\\(opened\\))" 1 'gnus-server-opened)
     ("(\\(closed\\))" 1 'gnus-server-closed)
     ("(\\(offline\\))" 1 'gnus-server-offline)
     ("(\\(denied\\))" 1 'gnus-server-denied)))
 
-(defun gnus-server-mode ()
+(define-derived-mode gnus-server-mode gnus-mode "Server"
   "Major mode for listing and editing servers.
-
 All normal editing commands are switched off.
 \\<gnus-server-mode-map>
 For more in-depth information on this mode, read the manual
@@ -266,25 +255,16 @@ For more in-depth information on this mode, read the manual
 The following commands are available:
 
 \\{gnus-server-mode-map}"
-  ;; FIXME: Use define-derived-mode.
-  (interactive)
   (when (gnus-visual-p 'server-menu 'menu)
     (gnus-server-make-menu-bar))
-  (kill-all-local-variables)
   (gnus-simplify-mode-line)
-  (setq major-mode 'gnus-server-mode)
-  (setq mode-name "Server")
   (gnus-set-default-directory)
   (setq mode-line-process nil)
-  (use-local-map gnus-server-mode-map)
   (buffer-disable-undo)
   (setq truncate-lines t)
-  (setq buffer-read-only t)
-  (if (featurep 'xemacs)
-      (put 'gnus-server-mode 'font-lock-defaults '(gnus-server-font-lock-keywords t))
-    (set (make-local-variable 'font-lock-defaults)
-	 '(gnus-server-font-lock-keywords t)))
-  (gnus-run-mode-hooks 'gnus-server-mode-hook))
+  (set (make-local-variable 'font-lock-defaults)
+       '(gnus-server-font-lock-keywords t)))
+
 
 (defun gnus-server-insert-server-line (name method)
   (let* ((gnus-tmp-name name)
@@ -306,11 +286,15 @@ The following commands are available:
 				  (gnus-agent-method-p method))
 			     " (agent)"
 			   ""))
-	 (gnus-tmp-cloud (if (gnus-cloud-server-p gnus-tmp-name)
-			     " (cloud)"
-			   "")))
+	 (gnus-tmp-cloud (concat
+                          (if (gnus-cloud-host-server-p gnus-tmp-name)
+                              " (CLOUD-HOST)"
+                            "")
+                          (if (gnus-cloud-server-p gnus-tmp-name)
+			     " (cloud-sync)"
+                            ""))))
     (beginning-of-line)
-    (gnus-add-text-properties
+    (add-text-properties
      (point)
      (prog1 (1+ (point))
        ;; Insert the text.
@@ -320,20 +304,14 @@ The following commands are available:
 
 (defun gnus-enter-server-buffer ()
   "Set up the server buffer."
-  (gnus-server-setup-buffer)
   (gnus-configure-windows 'server)
   ;; Usually `gnus-configure-windows' will finish with the
   ;; `gnus-server-buffer' selected as the current buffer, but not always (I
   ;; bumped into it when starting from a dedicated *Group* frame, and
   ;; gnus-configure-windows opened *Server* into its own dedicated frame).
-  (with-current-buffer (get-buffer gnus-server-buffer)
+  (with-current-buffer (get-buffer-create gnus-server-buffer)
+    (gnus-server-mode)
     (gnus-server-prepare)))
-
-(defun gnus-server-setup-buffer ()
-  "Initialize the server buffer."
-  (unless (get-buffer gnus-server-buffer)
-    (with-current-buffer (gnus-get-buffer-create gnus-server-buffer)
-      (gnus-server-mode))))
 
 (defun gnus-server-prepare ()
   (gnus-set-format 'server-mode)
@@ -389,7 +367,7 @@ The following commands are available:
       (when entry
 	(gnus-dribble-enter
 	 (concat "(gnus-server-set-info \"" server "\" '"
-		 (gnus-prin1-to-string (cdr entry)) ")\n")
+		 (gnus-prin1-to-string (cdr entry)) ")")
 	 (concat "^(gnus-server-set-info \"" (regexp-quote server) "\"")))
       (when (or entry oentry)
 	;; Buffer may be narrowed.
@@ -437,7 +415,8 @@ The following commands are available:
     (if server (error "No such server: %s" server)
       (error "No server on the current line")))
   (unless (assoc server gnus-server-alist)
-    (error "Read-only server %s" server))
+    (error "Server %s must be deleted from your configuration files"
+	   server))
   (gnus-dribble-touch)
   (let ((buffer-read-only nil))
     (gnus-delete-line))
@@ -593,7 +572,7 @@ The following commands are available:
     (error "%s already exists" to))
   (unless (gnus-server-to-method from)
     (error "%s: no such server" from))
-  (let ((to-entry (cons from (gnus-copy-sequence
+  (let ((to-entry (cons from (copy-tree
 			      (gnus-server-to-method from)))))
     (setcar to-entry to)
     (setcar (nthcdr 2 to-entry) to)
@@ -627,7 +606,8 @@ The following commands are available:
   (unless server
     (error "No server on current line"))
   (unless (assoc server gnus-server-alist)
-    (error "This server can't be edited"))
+    (error "Server %s must be edited in your configuration files"
+	   server))
   (let ((info (cdr (assoc server gnus-server-alist))))
     (gnus-close-server info)
     (gnus-edit-form
@@ -646,8 +626,8 @@ The following commands are available:
   (let ((info (gnus-server-to-method server)))
     (gnus-edit-form
      info "Showing the server."
-     `(lambda (form)
-	(gnus-server-position-point))
+     (lambda (form)
+       (gnus-server-position-point))
      'edit-server)))
 
 (defun gnus-server-scan-server (server)
@@ -686,8 +666,10 @@ The following commands are available:
 ;;; Browse Server Mode
 ;;;
 
-(defvar gnus-browse-menu-hook nil
-  "*Hook run after the creation of the browse mode menu.")
+(defcustom gnus-browse-menu-hook nil
+  "Hook run after the creation of the browse mode menu."
+  :group 'gnus-server
+  :type 'hook)
 
 (defcustom gnus-browse-subscribe-newsgroup-method
   'gnus-subscribe-alphabetically
@@ -713,9 +695,7 @@ claim them."
 		function
 		(repeat function)))
 
-(defvar gnus-browse-mode-hook nil)
 (defvar gnus-browse-mode-map nil)
-(put 'gnus-browse-mode 'mode-class 'special)
 
 (unless gnus-browse-mode-map
   (setq gnus-browse-mode-map (make-keymap))
@@ -804,12 +784,13 @@ claim them."
 	      (while (not (eobp))
 		(ignore-errors
 		  (push (cons
-			 (mm-string-as-unibyte
+			 (decode-coding-string
 			  (buffer-substring
 			   (point)
 			   (progn
 			     (skip-chars-forward "^ \t")
-			     (point))))
+			     (point)))
+			  'utf-8-emacs)
 			 (let ((last (read cur)))
 			   (cons (read cur) last)))
 			groups))
@@ -817,7 +798,7 @@ claim them."
 	    (while (not (eobp))
 	      (ignore-errors
 		(push (cons
-		       (mm-string-as-unibyte
+		       (decode-coding-string
 			(if (eq (char-after) ?\")
 			    (read cur)
 			  (let ((p (point)) (name ""))
@@ -829,7 +810,8 @@ claim them."
 			      (skip-chars-forward "^ \t\\\\")
 			      (setq name (concat name (buffer-substring
 						       p (point)))))
-			    name)))
+			    name))
+			'utf-8-emacs)
 		       (let ((last (read cur)))
 			 (cons (read cur) last)))
 		      groups))
@@ -865,7 +847,7 @@ claim them."
 	      (prefix (let ((gnus-select-method orig-select-method))
 			(gnus-group-prefixed-name "" method))))
 	  (while (setq group (pop groups))
-	    (gnus-add-text-properties
+	    (add-text-properties
 	     (point)
 	     (prog1 (1+ (point))
 	       (insert
@@ -881,13 +863,7 @@ claim them."
 			   ((= level gnus-level-zombie) ?Z)
 			   (t ?K)))
 			(max 0 (- (1+ (cddr group)) (cadr group)))
-			;; Don't decode if name is ASCII
-			(if (and (fboundp 'detect-coding-string)
-				 (eq (detect-coding-string name t) 'undecided))
-			    name
-			  (mm-decode-coding-string
-			   name
-			   (inline (gnus-group-name-charset method name)))))))
+			name)))
 	     (list 'gnus-group name)
 	     )))
 	(switch-to-buffer (current-buffer)))
@@ -896,9 +872,8 @@ claim them."
       (gnus-message 5 "Connecting to %s...done" (nth 1 method))
       t))))
 
-(define-derived-mode gnus-browse-mode fundamental-mode "Browse Server"
+(define-derived-mode gnus-browse-mode gnus-mode "Browse Server"
   "Major mode for browsing a foreign server.
-
 All normal editing commands are switched off.
 
 \\<gnus-browse-mode-map>
@@ -917,14 +892,17 @@ buffer.
   (setq mode-line-process nil)
   (buffer-disable-undo)
   (setq truncate-lines t)
-  (gnus-set-default-directory)
-  (setq buffer-read-only t))
+  (gnus-set-default-directory))
 
 (defun gnus-browse-read-group (&optional no-article number)
   "Enter the group at the current line.
 If NUMBER, fetch this number of articles."
   (interactive "P")
-  (let ((group (gnus-browse-group-name)))
+  (let* ((full-name (gnus-browse-group-name))
+	 (group (if (gnus-native-method-p
+		     (gnus-find-method-for-group full-name))
+		    (gnus-group-short-name full-name)
+		  full-name)))
     (if (or (not (gnus-get-info group))
 	    (gnus-ephemeral-group-p group))
 	(unless (gnus-group-read-ephemeral-group
@@ -966,7 +944,7 @@ how new groups will be entered into the group buffer."
 		(not (eobp))
 		(gnus-browse-unsubscribe-group)
 		(zerop (gnus-browse-next-group ward)))
-      (decf arg))
+      (cl-decf arg))
     (gnus-group-position-point)
     (when (/= 0 arg)
       (gnus-message 7 "No more newsgroups"))
@@ -1107,11 +1085,10 @@ Requesting compaction of %s... (this may take a long time)"
       ;; Invalidate the original article buffer which might be out of date.
       ;; #### NOTE: Yes, this might be a bit rude, but since compaction
       ;; #### will not happen very often, I think this is acceptable.
-      (let ((original (get-buffer gnus-original-article-buffer)))
-	(and original (gnus-kill-buffer original))))))
+      (gnus-kill-buffer gnus-original-article-buffer))))
 
 (defun gnus-server-toggle-cloud-server ()
-  "Make the server under point be replicated in the Emacs Cloud."
+  "Toggle whether the server under point is replicated in the Emacs Cloud."
   (interactive)
   (let ((server (gnus-server-server-name)))
     (unless server
@@ -1130,6 +1107,25 @@ Requesting compaction of %s... (this may take a long time)"
 			"Replication of %s in the cloud will start"
 		      "Replication of %s in the cloud will stop")
 		  server)))
+
+(defun gnus-server-set-cloud-method-server ()
+  "Set the server under point to host the Emacs Cloud."
+  (interactive)
+  (let ((server (gnus-server-server-name)))
+    (unless server
+      (error "No server on the current line"))
+    (unless (gnus-cloud-host-acceptable-method-p server)
+      (error "The server under point can't host the Emacs Cloud"))
+
+    (when (not (string-equal gnus-cloud-method server))
+      (customize-set-variable 'gnus-cloud-method server)
+      ;; Note we can't use `Custom-save' here.
+      (when (gnus-yes-or-no-p
+             (format "The new cloud host server is %S now. Save it? " server))
+        (customize-save-variable 'gnus-cloud-method server)))
+    (when (gnus-yes-or-no-p (format "Upload Cloud data to %S now? " server))
+      (gnus-message 1 "Uploading all data to Emacs Cloud server %S" server)
+      (gnus-cloud-upload-data t))))
 
 (provide 'gnus-srvr)
 

@@ -1,6 +1,6 @@
 ;;; facemenu.el --- create a face menu for interactively adding fonts to text
 
-;; Copyright (C) 1994-1996, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1996, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Boris Goldowsky <boris@gnu.org>
 ;; Keywords: faces
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -188,6 +188,8 @@ it will remove any faces not explicitly in the list."
   (let ((map (make-sparse-keymap "Special")))
     (define-key map [?s] (cons (purecopy "Remove Special")
 			       'facemenu-remove-special))
+    (define-key map [?c] (cons (purecopy "Charset")
+			       'facemenu-set-charset))
     (define-key map [?t] (cons (purecopy "Intangible")
 			       'facemenu-set-intangible))
     (define-key map [?v] (cons (purecopy "Invisible")
@@ -433,6 +435,28 @@ This sets the `read-only' text property; it can be undone with
   (interactive "r")
   (add-text-properties start end '(read-only t)))
 
+(defun facemenu-set-charset (cset &optional start end)
+  "Apply CHARSET text property to the region or next character typed.
+
+If the region is active (normally true except in Transient
+Mark mode) and nonempty, and there is no prefix argument,
+this command adds CHARSET property to the region.  Otherwise, it
+sets the CHARSET property of the character at point."
+  (interactive (list (progn
+		       (barf-if-buffer-read-only)
+		       (read-charset
+                        (format "Use charset (default %s): " (charset-after))
+                        (charset-after)))
+		     (if (and mark-active (not current-prefix-arg))
+			 (region-beginning))
+		     (if (and mark-active (not current-prefix-arg))
+			 (region-end))))
+  (or start
+      (setq start (min (point) (1- (point-max)))
+            end (1+ start)))
+  (remove-text-properties start end '(charset nil))
+  (put-text-property start end 'charset cset))
+
 (defun facemenu-remove-face-props (start end)
   "Remove `face' and `mouse-face' text properties."
   (interactive "*r") ; error if buffer is read-only despite the next line.
@@ -452,13 +476,13 @@ These special properties include `invisible', `intangible' and `read-only'."
   (interactive "*r") ; error if buffer is read-only despite the next line.
   (let ((inhibit-read-only t))
     (remove-text-properties
-     start end '(invisible nil intangible nil read-only nil))))
+     start end '(invisible nil intangible nil read-only nil charset nil))))
 
 (defalias 'facemenu-read-color 'read-color)
 
 (defcustom list-colors-sort nil
   "Color sort order for `list-colors-display'.
-`nil' means default implementation-dependent order (defined in `x-colors').
+nil means default implementation-dependent order (defined in `x-colors').
 `name' sorts by color name.
 `rgb' sorts by red, green, blue components.
 `(rgb-dist . COLOR)' sorts by the RGB distance to the specified color.
@@ -614,7 +638,7 @@ color.  The function should accept a single argument, the color name."
 	(insert " ")
 	(insert (propertize
 		 (apply 'format "#%02x%02x%02x"
-			(mapcar (lambda (c) (lsh c -8))
+			(mapcar (lambda (c) (ash c -8))
 				color-values))
 		 'mouse-face 'highlight
 		 'help-echo
@@ -637,8 +661,8 @@ color.  The function should accept a single argument, the color name."
 (defun list-colors-duplicates (&optional list)
   "Return a list of colors with grouped duplicate colors.
 If a color has no duplicates, then the element of the returned list
-has the form '(COLOR-NAME).  The element of the returned list with
-duplicate colors has the form '(COLOR-NAME DUPLICATE-COLOR-NAME ...).
+has the form (COLOR-NAME).  The element of the returned list with
+duplicate colors has the form (COLOR-NAME DUPLICATE-COLOR-NAME ...).
 This function uses the predicate `facemenu-color-equal' to compare
 color names.  If the optional argument LIST is non-nil, it should
 be a list of colors to display.  Otherwise, this function uses
@@ -708,7 +732,7 @@ effect.  See `facemenu-remove-face-function'."
     (if facemenu-remove-face-function
         (funcall facemenu-remove-face-function start end)
       (if (and start (< start end))
-          (remove-text-properties start end '(face default))
+          (remove-list-of-text-properties start end '(face))
         (facemenu-set-self-insert-face 'default))))
    (facemenu-add-face-function
     (save-excursion
@@ -732,7 +756,7 @@ effect.  See `facemenu-remove-face-function'."
                                  face
                                (facemenu-active-faces
                                 (cons face
-                                      (if (listp prev)
+                                      (if (face-list-p prev)
                                           prev
                                         (list prev)))
                                 ;; Specify the selected frame

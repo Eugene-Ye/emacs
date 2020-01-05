@@ -1,6 +1,6 @@
 ;;; latin-post.el --- Quail packages for inputting various European characters  -*-coding: utf-8;-*-
 
-;; Copyright (C) 1997-1998, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2001-2020 Free Software Foundation, Inc.
 ;; Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
 ;;   2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -24,7 +24,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; Author: TAKAHASHI Naoto <ntakahas@etl.go.jp>
 
@@ -40,8 +40,8 @@
 
              | postfix | examples
  ------------+---------+----------
-  acute      |    '    | a' -> á
-  grave      |    `    | a` -> à
+  acute      |    \\='    | a\\=' -> á
+  grave      |    \\=`    | a\\=` -> à
   circumflex |    ^    | a^ -> â
   diaeresis  |    \"    | a\" -> ä
   tilde      |    ~    | a~ -> ã
@@ -50,7 +50,7 @@
   others     |    /    | s/ -> ß   ?/ -> ¿   !/ -> ¡   // -> °
              | various | << -> «   >> -> »   o_ -> º   a_ -> ª
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -201,7 +201,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
 
              | postfix | examples
  ------------+---------+----------
-  acute      |    '    | a' -> á
+  acute      |    \\='    | a\\=' -> á
   ogonek     |    ,    | a, -> ą
   diaeresis  |    \"    | a\" -> ä
   circumflex |    ^    | a^ -> â
@@ -214,7 +214,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
   stroke     |    /    | d/ -> đ
   others     |    /    | s/ -> ß
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -389,8 +389,8 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
 
              | postfix | examples
  ------------+---------+----------
-  acute      |    '    | a' -> á
-  grave      |    `    | a` -> à
+  acute      |    \\='    | a\\=' -> á
+  grave      |    \\=`    | a\\=` -> à
   circumflex |    ^    | a^ -> â
   diaeresis  |    \"    | a\" -> ä
   dot        |    .    | c. -> ċ   i. -> ı   I. -> İ
@@ -400,7 +400,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
   stroke     |    /    | h/ -> ħ
   others     |    /    | s/ -> ß
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -555,7 +555,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
 
              | postfix | examples
  ------------+---------+----------
-  acute      |    '    | a' -> á
+  acute      |    \\='    | a\\=' -> á
   circumflex |    ^    | a^ -> â
   diaeresis  |    \"    | a\" -> ä
   ogonek     |    ,    | a, -> ą
@@ -568,7 +568,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
   nordic     |    /    | a/ -> å   e/ -> æ   o/ -> ø
   others     |    /    | s/ -> ß   n/ -> ŋ   k/ -> ĸ
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -739,14 +739,62 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
  ("z~~" ["z~"])
  )
 
+;;; Hawaiian postfix input method.  It's a small subset of Latin-4
+;;; with the addition of an ʻokina mapping.  Hopefully the ʻokina shows
+;;; correctly on most displays.
+
+;;; This reference is an authoritative guide to Hawaiian orthography:
+;;; http://www2.hawaii.edu/~strauch/tips/HawaiianOrthography.html
+
+;;; Initial coding 2018-09-08 Bob Newell, Honolulu, Hawaiʻi
+;;; Comments to bobnewell@bobnewell.net
+
+(quail-define-package
+ "hawaiian-postfix" "Hawaiian Postfix" "H<" t
+ "Hawaiian characters input method with postfix modifiers
+
+             | postfix | examples
+ ------------+---------+----------
+  ʻokina     |    \\=`    | \\=` -> ʻ
+  kahakō     |    -    | a- -> ā
+
+Doubling the postfix separates the letter and postfix. a-- -> a-
+" nil t nil nil nil nil nil nil nil nil t)
+
+(quail-define-rules
+ ("A-" ?Ā)
+ ("E-" ?Ē)
+ ("I~" ?Ĩ)
+ ("O-" ?Ō)
+ ("U-" ?Ū)
+ ("a-" ?ā)
+ ("e-" ?ē)
+ ("i-" ?ī)
+ ("o-" ?ō)
+ ("u-" ?ū)
+ ("`" ?ʻ)
+
+ ("A--" ["A-"])
+ ("E--" ["E-"])
+ ("I--" ["I-"])
+ ("O--" ["O-"])
+ ("U--" ["U-"])
+ ("a--" ["a-"])
+ ("e--" ["e-"])
+ ("i--" ["i-"])
+ ("o--" ["o-"])
+ ("u--" ["u-"])
+ ("``"  ["`"])
+ )
+
 (quail-define-package
  "latin-5-postfix" "Latin-5" "5<" t
  "Latin-5 characters input method with postfix modifiers
 
              | postfix | examples
  ------------+---------+----------
-  acute      |    '    | a' -> á
-  grave      |    `    | a` -> à
+  acute      |    \\='    | a\\=' -> á
+  grave      |    \\=`    | a\\=` -> à
   circumflex |    ^    | a^ -> â
   diaeresis  |    \"    | a\" -> ä
   tilde      |    ~    | a~ -> ã
@@ -756,7 +804,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
   nordic     |    /    | a/ -> å   e/ -> æ   o/ -> ø
   others     |    /    | s/ -> ß
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -889,7 +937,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
 
 (quail-define-package
  "danish-postfix" "Latin-1" "DA<" t
- "Danish input method (rule: AE -> Æ, OE -> Ø, AA -> Å, E' -> É)
+ "Danish input method (rule: AE -> Æ, OE -> Ø, AA -> Å, E\\=' -> É)
 
 Doubling the postfix separates the letter and postfix: e.g. aee -> ae
 "
@@ -923,7 +971,7 @@ A following ^ or x will produce an accented character,
 e.g. c^ -> ĉ   gx -> ĝ   u^ -> ŭ.
 
 Doubling the postfix separates the letter and postfix,
-e.g. a'' -> a'.
+e.g. a\\='\\=' -> a\\='.
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -1005,13 +1053,13 @@ OEE -> OE
  "french-postfix" "French" "FR<" t
  "French (Français) input method with postfix modifiers
 
-` pour grave, ' pour aigu, ^ pour circonflexe, et \" pour tréma.
-Par exemple: a` -> à   e' -> é.
+\\=` pour grave, \\=' pour aigu, ^ pour circonflexe, et \" pour tréma.
+Par exemple: a\\=` -> à   e\\=' -> é.
 
 Ç, «, et » sont produits par C,, <<, et >>.
 
 En doublant la frappe des diacritiques, ils s'isoleront de la lettre.
-Par exemple: e'' -> e'
+Par exemple: e\\='\\=' -> e\\='
 
 Œ est produit par O/."
  nil t nil nil nil nil nil nil nil nil t)
@@ -1103,6 +1151,7 @@ szz -> sz
  ("UE" ?Ü)
  ("ue" ?ü)
  ("sz" ?ß)
+ ("SZ" ?ẞ)
 
  ("AEE" ["AE"])
  ("aee" ["ae"])
@@ -1111,31 +1160,32 @@ szz -> sz
  ("UEE" ["UE"])
  ("uee" ["ue"])
  ("szz" ["sz"])
+ ("SZZ" ["SZ"])
  ("ge" ["ge"])
  ("eue" ["eue"])
  ("Eue" ["Eue"])
  ("aue" ["aue"])
  ("Aue" ["Aue"])
  ("que" ["que"])
- ("Que" ["Que"]) 
+ ("Que" ["Que"])
 )
 
 (quail-define-package
  "icelandic-postfix" "Latin-1" "IS<" t
  "Icelandic (Íslenska) input method with postfix modifiers
 
-A' -> Á
-E' -> É
-I' -> Í
-O' -> Ó
-U' -> Ú
-Y' -> Ý
+A\\=' -> Á
+E\\=' -> É
+I\\=' -> Í
+O\\=' -> Ó
+U\\=' -> Ú
+Y\\=' -> Ý
 AE -> Æ
 OE -> Ö
 D/ -> Ð (eth)
 T/ -> Þ (thorn)
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -1186,15 +1236,15 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
  "italian-postfix" "Latin-1" "IT<" t
  "Italian (Italiano) input method with postfix modifiers
 
-a` -> à    A` -> À    e' -> é    << -> «
-e` -> è    E` -> È    E' -> É    >> -> »
-i` -> ì    I` -> Ì               o_ -> º
-o` -> ò    O` -> Ò               a_ -> ª
-u` -> ù    U` -> Ù
+a\\=` -> à    A\\=` -> À    e\\=' -> é    << -> «
+e\\=` -> è    E\\=` -> È    E\\=' -> É    >> -> »
+i\\=` -> ì    I\\=` -> Ì               o_ -> º
+o\\=` -> ò    O\\=` -> Ò               a_ -> ª
+u\\=` -> ù    U\\=` -> Ù
 
 Typewriter-style italian characters.
 
-Doubling the postfix separates the letter and postfix: e.g. a`` -> a`
+Doubling the postfix separates the letter and postfix: e.g. a\\=`\\=` -> a\\=`
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -1235,7 +1285,7 @@ Doubling the postfix separates the letter and postfix: e.g. a`` -> a`
 
 (quail-define-package
  "norwegian-postfix" "Latin-1" "NO<" t
- "Norwegian (Norsk) input method (rule: AE->Æ   OE->Ø   AA->Å   E'->É)
+ "Norwegian (Norsk) input method (rule: AE->Æ   OE->Ø   AA->Å   E\\='->É)
 
 Doubling the postfix separates the letter and postfix: e.g. aee -> ae
 "
@@ -1271,7 +1321,7 @@ oe -> ø
 aa -> å
 a\" -> ä
 o\" -> ö
-e' -> é
+e\\=' -> é
 
 Doubling the postfix separates the letter and postfix:
 aee -> ae   o\"\" -> o\"   etc.
@@ -1309,17 +1359,17 @@ aee -> ae   o\"\" -> o\"   etc.
  "spanish-postfix" "Spanish" "ES<" t
  "Spanish (Español) input method with postfix modifiers
 
-A' -> Á
-E' -> É
-I' -> Í
-O' -> Ó
-U' -> Ú
+A\\=' -> Á
+E\\=' -> É
+I\\=' -> Í
+O\\=' -> Ó
+U\\=' -> Ú
 N~ -> Ñ
 !/ -> ¡
 ?/ -> ¿
 
 Doubling the postfix separates the letter and postfix:
-a'' -> a'   n~~ -> n~, etc.
+a\\='\\=' -> a\\='   n~~ -> n~, etc.
 " nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -1360,7 +1410,7 @@ a'' -> a'   n~~ -> n~, etc.
 
 (quail-define-package
  "swedish-postfix" "Latin-1" "SV<" t
- "Swedish (Svenska) input method (rule: AA -> Å   AE -> Ä   OE -> Ö   E' -> É)
+ "Swedish (Svenska) input method (rule: AA -> Å   AE -> Ä   OE -> Ö   E\\=' -> É)
 
 Doubling the postfix separates the letter and postfix: e.g. aee -> ae
 " nil t nil nil nil nil nil nil nil nil t)
@@ -2089,8 +2139,8 @@ of characters from a single Latin-N charset.
 
              | postfix | examples
  ------------+---------+----------
-  acute      |    '    | a' -> á
-  grave      |    `    | a` -> à
+  acute      |    \\='    | a\\=' -> á
+  grave      |    \\=`    | a\\=` -> à
   circumflex |    ^    | a^ -> â
   diaeresis  |    \"    | a\" -> ä
   tilde      |    ~    | a~ -> ã
@@ -2106,7 +2156,7 @@ of characters from a single Latin-N charset.
   others     |    /    | s/ -> ß   ?/ -> ¿   !/ -> ¡   // -> °   o/ -> œ
              | various | << -> «   >> -> »   o_ -> º   a_ -> ª
 
-Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
+Doubling the postfix separates the letter and postfix: e.g. a\\='\\=' -> a\\='
 " nil t nil nil nil nil nil nil nil nil t)
 
 ;; Fixme: ¦ § ¨ © ¬ ­ ® ¯ ± ² ³ ´ µ ¶ · ¸ ¹ ¼ ½ ¾ × ÷
@@ -2184,6 +2234,7 @@ Doubling the postfix separates the letter and postfix: e.g. a'' -> a'
  ("R~" ?Ř)
  ("S'" ?Ś)
  ("S," ?Ş)
+ ("S/" ?ẞ)
  ("S^" ?Ŝ)
  ("S~" ?Š)
  ("T," ?Ţ)

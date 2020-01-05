@@ -1,9 +1,8 @@
 ;;; vera-mode.el --- major mode for editing Vera files
 
-;; Copyright (C) 1997-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1997-2020 Free Software Foundation, Inc.
 
 ;; Author:      Reto Zimmermann <reto@gnu.org>
-;; Maintainer:  Reto Zimmermann <reto@gnu.org>
 ;; Version:     2.28
 ;; Keywords:    languages vera
 ;; WWW:         http://www.iis.ee.ethz.ch/~zimmi/emacs/vera-mode.html
@@ -32,7 +31,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Commentary:
@@ -259,7 +258,7 @@ Usage:
 
   INDENTATION:  Typing `TAB' at the beginning of a line indents the line.
     The amount of indentation is specified by option `vera-basic-offset'.
-    Indentation can be done for an entire region \(`M-C-\\') or buffer (menu).
+    Indentation can be done for an entire region (`M-C-\\') or buffer (menu).
     `TAB' always indents the line if option `vera-intelligent-tab' is nil.
 
   WORD/COMMAND COMPLETION:  Typing `TAB' after a (not completed) word looks
@@ -636,7 +635,7 @@ Adapted from `font-lock-match-c-style-declaration-item-and-skip-to-next'."
    (list (concat "^\\s-*" vera-rvm-types-regexp "\\s-*\\(\\[[^]]+\\]\\s-+\\)?")
 	 '(vera-font-lock-match-item nil nil (1 font-lock-variable-name-face)))
    ;; highlight numbers
-   '("\\([0-9]*'[bdoh][0-9a-fA-FxXzZ_]+\\)" 1 vera-font-lock-number)
+   '("\\([0-9]*'[bdoh][[:xdigit:]xXzZ_]+\\)" 1 vera-font-lock-number)
    ;; highlight filenames in #include directives
    '("^#\\s-*include\\s-*\\(<[^>\"\n]*>?\\)"
      1 font-lock-string-face)
@@ -870,7 +869,7 @@ This function does not modify point or mark."
 	    (beginning-of-line)))))))
 
 (defmacro vera-prepare-search (&rest body)
-  "Execute BODY with a syntax table that includes '_'."
+  "Execute BODY with a syntax table that includes `_'."
   `(with-syntax-table vera-mode-ext-syntax-table ,@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1109,7 +1108,7 @@ try to increase performance by using this macro."
        ((and (save-excursion
 	       (vera-backward-syntactic-ws nil t)
 	       ;; previous line ends with a block opening?
-	       (or (/= (skip-chars-backward "{") 0) (backward-word 1))
+	       (or (/= (skip-chars-backward "{") 0) (backward-word-strictly 1))
 	       (when (looking-at vera-beg-block-re)
 		 ;; go to beginning of substatement
 		 (vera-beginning-of-substatement)
@@ -1162,7 +1161,7 @@ try to increase performance by using this macro."
        ;; is this line preceded by a substatement opening statement?
        ((save-excursion (vera-backward-syntactic-ws nil t)
 			(when (= (preceding-char) ?\)) (backward-sexp))
-			(backward-word 1)
+			(backward-word-strictly 1)
 			(setq placeholder (point))
 			(looking-at vera-beg-substatement-re))
 	(goto-char placeholder)
@@ -1225,7 +1224,7 @@ Calls `indent-region' for whole buffer."
   "If previous word is a block closing or `else', indent line again."
   (when (= (char-syntax (preceding-char)) ?w)
     (save-excursion
-      (backward-word 1)
+      (backward-word-strictly 1)
       (when (and (not (vera-in-literal))
 		 (looking-at (concat vera-end-block-re "\\|\\<else\\>")))
 	(indent-according-to-mode)))))

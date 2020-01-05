@@ -1,6 +1,6 @@
 /* update-game-score.c --- Update a score file
 
-Copyright (C) 2002-2014 Free Software Foundation, Inc.
+Copyright (C) 2002-2020 Free Software Foundation, Inc.
 
 Author: Colin Walters <walters@debian.org>
 
@@ -8,8 +8,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,12 +17,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 
 /* This program allows a game to securely and atomically update a
-   score file.  It should be installed setuid, owned by an appropriate
-   user like `games'.
+   score file.  It should be installed either setuid or setgid, owned
+   by an appropriate user or group like `games'.
 
    Alternatively, it can be compiled without HAVE_SHARED_GAME_DIR
    defined, and in that case it will store scores in the user's home
@@ -37,16 +37,16 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <time.h>
 #include <pwd.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <getopt.h>
+
+#include <unlocked-io.h>
 
 #ifdef WINDOWSNT
 #include "ntlib.h"
@@ -88,7 +88,7 @@ static int push_score (struct score_entry **scores, ptrdiff_t *count,
 		       ptrdiff_t *size, struct score_entry const *newscore);
 static void sort_scores (struct score_entry *scores, ptrdiff_t count,
 			 bool reverse);
-static int write_scores (const char *filename,
+static int write_scores (const char *filename, mode_t mode,
 			 const struct score_entry *scores, ptrdiff_t count);
 
 static _Noreturn void
@@ -122,18 +122,19 @@ get_user_id (void)
 }
 
 static const char *
-get_prefix (bool running_suid, const char *user_prefix)
+get_prefix (bool privileged, const char *user_prefix)
 {
-  if (!running_suid && user_prefix == NULL)
-    lose ("Not using a shared game directory, and no prefix given.");
-  if (running_suid)
+  if (privileged)
     {
 #ifdef HAVE_SHARED_GAME_DIR
       return HAVE_SHARED_GAME_DIR;
 #else
-      lose ("This program was compiled without HAVE_SHARED_GAME_DIR,\n and should not be suid.");
+      lose ("This program was compiled without HAVE_SHARED_GAME_DIR,\n"
+	    "and should not run with elevated privileges.");
 #endif
     }
+  if (user_prefix == NULL)
+    lose ("Not using a shared game directory, and no prefix given.");
   return user_prefix;
 }
 
@@ -173,7 +174,7 @@ int
 main (int argc, char **argv)
 {
   int c;
-  bool running_suid;
+  bool running_suid, running_sgid;
   void *lockstate;
   char *scorefile;
   char *end, *nl, *user, *data;
@@ -214,16 +215,19 @@ main (int argc, char **argv)
     usage (EXIT_FAILURE);
 
   running_suid = (getuid () != geteuid ());
+  running_sgid = (getgid () != getegid ());
+  if (running_suid && running_sgid)
+    lose ("This program can run either suid or sgid, but not both.");
 
-  prefix = get_prefix (running_suid, user_prefix);
+  prefix = get_prefix (running_suid || running_sgid, user_prefix);
 
   scorefile = malloc (strlen (prefix) + strlen (argv[optind]) + 2);
   if (!scorefile)
     lose_syserr ("Couldn't allocate score file");
 
-  strcpy (scorefile, prefix);
-  strcat (scorefile, "/");
-  strcat (scorefile, argv[optind]);
+  char *z = stpcpy (scorefile, prefix);
+  *z++ = '/';
+  strcpy (z, argv[optind]);
 
   newscore.score = normalize_integer (argv[optind + 1]);
   if (! newscore.score)
@@ -236,7 +240,7 @@ main (int argc, char **argv)
   if (! user)
     lose_syserr ("Couldn't determine user id");
   data = argv[optind + 2];
-  if (strlen (data) > MAX_DATA_LEN)
+  if (strnlen (data, MAX_DATA_LEN + 1) == MAX_DATA_LEN + 1)
     data[MAX_DATA_LEN] = '\0';
   nl = strchr (data, '\n');
   if (nl)
@@ -270,7 +274,8 @@ main (int argc, char **argv)
 	scores += scorecount - max_scores;
       scorecount = max_scores;
     }
-  if (write_scores (scorefile, scores, scorecount) < 0)
+  if (write_scores (scorefile, running_sgid ? 0664 : 0644,
+		    scores, scorecount) < 0)
     {
       unlock_file (scorefile, lockstate);
       lose_syserr ("Failed to write scores file");
@@ -421,8 +426,8 @@ sort_scores (struct score_entry *scores, ptrdiff_t count, bool reverse)
 }
 
 static int
-write_scores (const char *filename, const struct score_entry *scores,
-	      ptrdiff_t count)
+write_scores (const char *filename, mode_t mode,
+	      const struct score_entry *scores, ptrdiff_t count)
 {
   int fd;
   FILE *f;
@@ -430,13 +435,12 @@ write_scores (const char *filename, const struct score_entry *scores,
   char *tempfile = malloc (strlen (filename) + strlen (".tempXXXXXX") + 1);
   if (!tempfile)
     return -1;
-  strcpy (tempfile, filename);
-  strcat (tempfile, ".tempXXXXXX");
+  strcpy (stpcpy (tempfile, filename), ".tempXXXXXX");
   fd = mkostemp (tempfile, 0);
   if (fd < 0)
     return -1;
 #ifndef DOS_NT
-  if (fchmod (fd, 0644) != 0)
+  if (fchmod (fd, mode) != 0)
     return -1;
 #endif
   f = fdopen (fd, "w");
@@ -462,8 +466,7 @@ lock_file (const char *filename, void **state)
   char *lockpath = malloc (strlen (filename) + strlen (lockext) + 60);
   if (!lockpath)
     return -1;
-  strcpy (lockpath, filename);
-  strcat (lockpath, lockext);
+  strcpy (stpcpy (lockpath, filename), lockext);
   *state = lockpath;
 
   while ((fd = open (lockpath, O_CREAT | O_EXCL, 0600)) < 0)

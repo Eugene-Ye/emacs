@@ -1,8 +1,8 @@
 ;;; gnus-ml.el --- Mailing list minor mode for Gnus
 
-;; Copyright (C) 2000-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
-;; Author: Julien Gilles  <jgilles@free.fr>
+;; Author: Julien Gilles <jgilles@free.fr>
 ;; Keywords: news, mail
 
 ;; This file is part of GNU Emacs.
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -28,10 +28,6 @@
 
 (require 'gnus)
 (require 'gnus-msg)
-(eval-when-compile (require 'cl))
-(eval-when-compile
-  (when (featurep 'xemacs)
-    (require 'easy-mmode))) ; for `define-minor-mode'
 
 ;;; Mailing list minor mode
 
@@ -62,7 +58,9 @@
 
 ;;;###autoload
 (defun turn-on-gnus-mailing-list-mode ()
-  (when (gnus-group-find-parameter gnus-newsgroup-name 'to-list)
+  (when (or (gnus-group-find-parameter gnus-newsgroup-name 'to-list)
+            (and gnus-mailing-list-groups
+                 (string-match gnus-mailing-list-groups gnus-newsgroup-name)))
     (gnus-mailing-list-mode 1)))
 
 ;;;###autoload
@@ -83,12 +81,6 @@ If FORCE is non-nil, replace the old ones."
 				    (cons 'to-list list-post))
 	  (gnus-mailing-list-mode 1))
       (gnus-message 1 "no list-post in this message."))))
-
-(eval-when-compile
-  (when (featurep 'xemacs)
-    (defvar gnus-mailing-list-mode-hook)
-    (defvar gnus-mailing-list-mode-on-hook)
-    (defvar gnus-mailing-list-mode-off-hook)))
 
 ;;;###autoload
 (define-minor-mode gnus-mailing-list-mode
@@ -160,7 +152,7 @@ If FORCE is non-nil, replace the old ones."
 	 (with-current-buffer gnus-original-article-buffer
 	   (gnus-fetch-field "list-archive"))))
     (cond (list-archive
-	   (if (string-match "<\\(http:[^>]*\\)>" list-archive)
+	   (if (string-match "<\\(https?:[^>]*\\)>" list-archive)
 	       (browse-url (match-string 1 list-archive))
 	     (browse-url list-archive)))
 	  (t (gnus-message 1 "no list-archive in this group")))))

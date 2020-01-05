@@ -1,6 +1,6 @@
-;;; gnus.el --- a newsreader for GNU Emacs
+;;; gnus.el --- a newsreader for GNU Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1987-1990, 1993-1998, 2000-2014 Free Software
+;; Copyright (C) 1987-1990, 1993-1998, 2000-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Masanobu UMEDA <umerin@flab.flab.fujitsu.junet>
@@ -21,18 +21,20 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;;; Code:
 
-(eval '(run-hooks 'gnus-load-hook))
+(run-hooks 'gnus-load-hook)
 
-(eval-when-compile (require 'cl))
+(eval-when-compile (require 'cl-lib)
+		   (require 'subr-x))
 (require 'wid-edit)
 (require 'mm-util)
 (require 'nnheader)
+(require 'seq)
 
 ;; These are defined afterwards with gnus-define-group-parameter
 (defvar gnus-ham-process-destinations)
@@ -303,26 +305,9 @@ be set in `.emacs' instead."
   :group 'gnus-start
   :type 'boolean)
 
-(unless (featurep 'gnus-xmas)
-  (defalias 'gnus-make-overlay 'make-overlay)
-  (defalias 'gnus-copy-overlay 'copy-overlay)
-  (defalias 'gnus-delete-overlay 'delete-overlay)
-  (defalias 'gnus-overlay-get 'overlay-get)
-  (defalias 'gnus-overlay-put 'overlay-put)
-  (defalias 'gnus-move-overlay 'move-overlay)
-  (defalias 'gnus-overlay-buffer 'overlay-buffer)
-  (defalias 'gnus-overlay-start 'overlay-start)
-  (defalias 'gnus-overlay-end 'overlay-end)
-  (defalias 'gnus-overlays-at 'overlays-at)
-  (defalias 'gnus-overlays-in 'overlays-in)
-  (defalias 'gnus-extent-detached-p 'ignore)
-  (defalias 'gnus-extent-start-open 'ignore)
-  (defalias 'gnus-mail-strip-quoted-names 'mail-strip-quoted-names)
-  (defalias 'gnus-character-to-event 'identity)
-  (defalias 'gnus-assq-delete-all 'assq-delete-all)
-  (defalias 'gnus-add-text-properties 'add-text-properties)
-  (defalias 'gnus-put-text-property 'put-text-property)
-  (defvar gnus-mode-line-image-cache t)
+(defvar gnus-mode-line-image-cache t)
+
+(eval-and-compile
   (if (fboundp 'find-image)
       (defun gnus-mode-line-buffer-identification (line)
 	(let ((str (car-safe line))
@@ -347,30 +332,10 @@ be set in `.emacs' instead."
 		      str)
 		     (list str))
 	    line)))
-    (defalias 'gnus-mode-line-buffer-identification 'identity))
-  (defalias 'gnus-deactivate-mark 'deactivate-mark)
-  (defalias 'gnus-window-edges 'window-edges)
-  (defalias 'gnus-key-press-event-p 'numberp)
-  ;;(defalias 'gnus-decode-rfc1522 'ignore)
-  )
+    (defalias 'gnus-mode-line-buffer-identification 'identity)))
 
 ;; We define these group faces here to avoid the display
 ;; update forced when creating new faces.
-
-(defface gnus-group-news-1
-  '((((class color)
-      (background dark))
-     (:foreground "PaleTurquoise" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "ForestGreen" :bold t))
-    (t
-     ()))
-  "Level 1 newsgroup face."
-  :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-1-face 'face-alias 'gnus-group-news-1)
-(put 'gnus-group-news-1-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-1-empty
   '((((class color)
@@ -383,24 +348,11 @@ be set in `.emacs' instead."
      ()))
   "Level 1 empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-1-empty-face 'face-alias 'gnus-group-news-1-empty)
-(put 'gnus-group-news-1-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-news-2
-  '((((class color)
-      (background dark))
-     (:foreground "turquoise" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "CadetBlue4" :bold t))
-    (t
-     ()))
-  "Level 2 newsgroup face."
+(defface gnus-group-news-1
+  '((t (:inherit gnus-group-news-1-empty :bold t)))
+  "Level 1 newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-2-face 'face-alias 'gnus-group-news-2)
-(put 'gnus-group-news-2-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-2-empty
   '((((class color)
@@ -413,24 +365,11 @@ be set in `.emacs' instead."
      ()))
   "Level 2 empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-2-empty-face 'face-alias 'gnus-group-news-2-empty)
-(put 'gnus-group-news-2-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-news-3
-  '((((class color)
-      (background dark))
-     (:bold t))
-    (((class color)
-      (background light))
-     (:bold t))
-    (t
-     ()))
-  "Level 3 newsgroup face."
+(defface gnus-group-news-2
+  '((t (:inherit gnus-group-news-2-empty :bold t)))
+  "Level 2 newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-3-face 'face-alias 'gnus-group-news-3)
-(put 'gnus-group-news-3-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-3-empty
   '((((class color)
@@ -443,24 +382,11 @@ be set in `.emacs' instead."
      ()))
   "Level 3 empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-3-empty-face 'face-alias 'gnus-group-news-3-empty)
-(put 'gnus-group-news-3-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-news-4
-  '((((class color)
-      (background dark))
-     (:bold t))
-    (((class color)
-      (background light))
-     (:bold t))
-    (t
-     ()))
-  "Level 4 newsgroup face."
+(defface gnus-group-news-3
+  '((t (:inherit gnus-group-news-3-empty :bold t)))
+  "Level 3 newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-4-face 'face-alias 'gnus-group-news-4)
-(put 'gnus-group-news-4-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-4-empty
   '((((class color)
@@ -473,24 +399,11 @@ be set in `.emacs' instead."
      ()))
   "Level 4 empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-4-empty-face 'face-alias 'gnus-group-news-4-empty)
-(put 'gnus-group-news-4-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-news-5
-  '((((class color)
-      (background dark))
-     (:bold t))
-    (((class color)
-      (background light))
-     (:bold t))
-    (t
-     ()))
-  "Level 5 newsgroup face."
+(defface gnus-group-news-4
+  '((t (:inherit gnus-group-news-4-empty :bold t)))
+  "Level 4 newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-5-face 'face-alias 'gnus-group-news-5)
-(put 'gnus-group-news-5-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-5-empty
   '((((class color)
@@ -503,24 +416,11 @@ be set in `.emacs' instead."
      ()))
   "Level 5 empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-5-empty-face 'face-alias 'gnus-group-news-5-empty)
-(put 'gnus-group-news-5-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-news-6
-  '((((class color)
-      (background dark))
-     (:bold t))
-    (((class color)
-      (background light))
-     (:bold t))
-    (t
-     ()))
-  "Level 6 newsgroup face."
+(defface gnus-group-news-5
+  '((t (:inherit gnus-group-news-5-empty :bold t)))
+  "Level 5 newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-6-face 'face-alias 'gnus-group-news-6)
-(put 'gnus-group-news-6-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-6-empty
   '((((class color)
@@ -533,24 +433,11 @@ be set in `.emacs' instead."
      ()))
   "Level 6 empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-6-empty-face 'face-alias 'gnus-group-news-6-empty)
-(put 'gnus-group-news-6-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-news-low
-  '((((class color)
-      (background dark))
-     (:foreground "DarkTurquoise" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "DarkGreen" :bold t))
-    (t
-     ()))
-  "Low level newsgroup face."
+(defface gnus-group-news-6
+  '((t (:inherit gnus-group-news-6-empty :bold t)))
+  "Level 6 newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-low-face 'face-alias 'gnus-group-news-low)
-(put 'gnus-group-news-low-face 'obsolete-face "22.1")
 
 (defface gnus-group-news-low-empty
   '((((class color)
@@ -563,24 +450,11 @@ be set in `.emacs' instead."
      ()))
   "Low level empty newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-news-low-empty-face 'face-alias 'gnus-group-news-low-empty)
-(put 'gnus-group-news-low-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-mail-1
-  '((((class color)
-      (background dark))
-     (:foreground "#e1ffe1" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "DeepPink3" :bold t))
-    (t
-     (:bold t)))
-  "Level 1 mailgroup face."
+(defface gnus-group-news-low
+  '((t (:inherit gnus-group-news-low-empty :bold t)))
+  "Low level newsgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-1-face 'face-alias 'gnus-group-mail-1)
-(put 'gnus-group-mail-1-face 'obsolete-face "22.1")
 
 (defface gnus-group-mail-1-empty
   '((((class color)
@@ -590,27 +464,14 @@ be set in `.emacs' instead."
       (background light))
      (:foreground "DeepPink3"))
     (t
-     (:italic t :bold t)))
+     (:italic t)))
   "Level 1 empty mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-1-empty-face 'face-alias 'gnus-group-mail-1-empty)
-(put 'gnus-group-mail-1-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-mail-2
-  '((((class color)
-      (background dark))
-     (:foreground "DarkSeaGreen1" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "HotPink3" :bold t))
-    (t
-     (:bold t)))
-  "Level 2 mailgroup face."
+(defface gnus-group-mail-1
+  '((t (:inherit gnus-group-mail-1-empty :bold t)))
+  "Level 1 mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-2-face 'face-alias 'gnus-group-mail-2)
-(put 'gnus-group-mail-2-face 'obsolete-face "22.1")
 
 (defface gnus-group-mail-2-empty
   '((((class color)
@@ -620,27 +481,14 @@ be set in `.emacs' instead."
       (background light))
      (:foreground "HotPink3"))
     (t
-     (:bold t)))
+     (:italic t)))
   "Level 2 empty mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-2-empty-face 'face-alias 'gnus-group-mail-2-empty)
-(put 'gnus-group-mail-2-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-mail-3
-  '((((class color)
-      (background dark))
-     (:foreground "aquamarine1" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "magenta4" :bold t))
-    (t
-     (:bold t)))
-  "Level 3 mailgroup face."
+(defface gnus-group-mail-2
+  '((t (:inherit gnus-group-mail-2-empty :bold t)))
+  "Level 2 mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-3-face 'face-alias 'gnus-group-mail-3)
-(put 'gnus-group-mail-3-face 'obsolete-face "22.1")
 
 (defface gnus-group-mail-3-empty
   '((((class color)
@@ -653,24 +501,11 @@ be set in `.emacs' instead."
      ()))
   "Level 3 empty mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-3-empty-face 'face-alias 'gnus-group-mail-3-empty)
-(put 'gnus-group-mail-3-empty-face 'obsolete-face "22.1")
 
-(defface gnus-group-mail-low
-  '((((class color)
-      (background dark))
-     (:foreground "aquamarine2" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "DeepPink4" :bold t))
-    (t
-     (:bold t)))
-  "Low level mailgroup face."
+(defface gnus-group-mail-3
+  '((t (:inherit gnus-group-mail-3-empty :bold t)))
+  "Level 3 mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-low-face 'face-alias 'gnus-group-mail-low)
-(put 'gnus-group-mail-low-face 'obsolete-face "22.1")
 
 (defface gnus-group-mail-low-empty
   '((((class color)
@@ -683,57 +518,23 @@ be set in `.emacs' instead."
      (:bold t)))
   "Low level empty mailgroup face."
   :group 'gnus-group)
-;; backward-compatibility alias
-(put 'gnus-group-mail-low-empty-face 'face-alias 'gnus-group-mail-low-empty)
-(put 'gnus-group-mail-low-empty-face 'obsolete-face "22.1")
+
+(defface gnus-group-mail-low
+  '((t (:inherit gnus-group-mail-low-empty :bold t)))
+  "Low level mailgroup face."
+  :group 'gnus-group)
 
 ;; Summary mode faces.
 
 (defface gnus-summary-selected '((t (:underline t)))
   "Face used for selected articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-selected-face 'face-alias 'gnus-summary-selected)
-(put 'gnus-summary-selected-face 'obsolete-face "22.1")
 
 (defface gnus-summary-cancelled
   '((((class color))
      (:foreground "yellow" :background "black")))
   "Face used for canceled articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-cancelled-face 'face-alias 'gnus-summary-cancelled)
-(put 'gnus-summary-cancelled-face 'obsolete-face "22.1")
-
-(defface gnus-summary-high-ticked
-  '((((class color)
-      (background dark))
-     (:foreground "pink" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "firebrick" :bold t))
-    (t
-     (:bold t)))
-  "Face used for high interest ticked articles."
-  :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-high-ticked-face 'face-alias 'gnus-summary-high-ticked)
-(put 'gnus-summary-high-ticked-face 'obsolete-face "22.1")
-
-(defface gnus-summary-low-ticked
-  '((((class color)
-      (background dark))
-     (:foreground "pink" :italic t))
-    (((class color)
-      (background light))
-     (:foreground "firebrick" :italic t))
-    (t
-     (:italic t)))
-  "Face used for low interest ticked articles."
-  :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-low-ticked-face 'face-alias 'gnus-summary-low-ticked)
-(put 'gnus-summary-low-ticked-face 'obsolete-face "22.1")
 
 (defface gnus-summary-normal-ticked
   '((((class color)
@@ -746,39 +547,16 @@ be set in `.emacs' instead."
      ()))
   "Face used for normal interest ticked articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-normal-ticked-face 'face-alias 'gnus-summary-normal-ticked)
-(put 'gnus-summary-normal-ticked-face 'obsolete-face "22.1")
 
-(defface gnus-summary-high-ancient
-  '((((class color)
-      (background dark))
-     (:foreground "SkyBlue" :bold t))
-    (((class color)
-      (background light))
-     (:foreground "RoyalBlue" :bold t))
-    (t
-     (:bold t)))
-  "Face used for high interest ancient articles."
+(defface gnus-summary-high-ticked
+  '((t (:inherit gnus-summary-normal-ticked :bold t)))
+  "Face used for high interest ticked articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-high-ancient-face 'face-alias 'gnus-summary-high-ancient)
-(put 'gnus-summary-high-ancient-face 'obsolete-face "22.1")
 
-(defface gnus-summary-low-ancient
-  '((((class color)
-      (background dark))
-     (:foreground "SkyBlue" :italic t))
-    (((class color)
-      (background light))
-     (:foreground "RoyalBlue" :italic t))
-    (t
-     (:italic t)))
-  "Face used for low interest ancient articles."
+(defface gnus-summary-low-ticked
+  '((t (:inherit gnus-summary-normal-ticked :italic t)))
+  "Face used for low interest ticked articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-low-ancient-face 'face-alias 'gnus-summary-low-ancient)
-(put 'gnus-summary-low-ancient-face 'obsolete-face "22.1")
 
 (defface gnus-summary-normal-ancient
   '((((class color)
@@ -791,35 +569,16 @@ be set in `.emacs' instead."
      ()))
   "Face used for normal interest ancient articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-normal-ancient-face 'face-alias 'gnus-summary-normal-ancient)
-(put 'gnus-summary-normal-ancient-face 'obsolete-face "22.1")
 
-(defface gnus-summary-high-undownloaded
-   '((((class color)
-       (background light))
-      (:bold t :foreground "cyan4"))
-     (((class color) (background dark))
-      (:bold t :foreground "LightGray"))
-     (t (:inverse-video t :bold t)))
-  "Face used for high interest uncached articles."
+(defface gnus-summary-high-ancient
+  '((t (:inherit gnus-summary-normal-ancient :bold t)))
+  "Face used for high interest ancient articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-high-undownloaded-face 'face-alias 'gnus-summary-high-undownloaded)
-(put 'gnus-summary-high-undownloaded-face 'obsolete-face "22.1")
 
-(defface gnus-summary-low-undownloaded
-   '((((class color)
-       (background light))
-      (:italic t :foreground "cyan4" :bold nil))
-     (((class color) (background dark))
-      (:italic t :foreground "LightGray" :bold nil))
-     (t (:inverse-video t :italic t)))
-  "Face used for low interest uncached articles."
+(defface gnus-summary-low-ancient
+  '((t (:inherit gnus-summary-normal-ancient :italic t)))
+  "Face used for low interest ancient articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-low-undownloaded-face 'face-alias 'gnus-summary-low-undownloaded)
-(put 'gnus-summary-low-undownloaded-face 'obsolete-face "22.1")
 
 (defface gnus-summary-normal-undownloaded
    '((((class color)
@@ -830,70 +589,32 @@ be set in `.emacs' instead."
      (t (:inverse-video t)))
   "Face used for normal interest uncached articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-normal-undownloaded-face 'face-alias 'gnus-summary-normal-undownloaded)
-(put 'gnus-summary-normal-undownloaded-face 'obsolete-face "22.1")
 
-(defface gnus-summary-high-unread
-  '((t
-     (:bold t)))
-  "Face used for high interest unread articles."
+(defface gnus-summary-high-undownloaded
+  '((t (:inherit gnus-summary-normal-undownloaded :bold t)))
+  "Face used for high interest uncached articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-high-unread-face 'face-alias 'gnus-summary-high-unread)
-(put 'gnus-summary-high-unread-face 'obsolete-face "22.1")
 
-(defface gnus-summary-low-unread
-  '((t
-     (:italic t)))
-  "Face used for low interest unread articles."
+(defface gnus-summary-low-undownloaded
+  '((t (:inherit gnus-summary-normal-undownloaded :italic t)))
+  "Face used for low interest uncached articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-low-unread-face 'face-alias 'gnus-summary-low-unread)
-(put 'gnus-summary-low-unread-face 'obsolete-face "22.1")
 
 (defface gnus-summary-normal-unread
   '((t
      ()))
   "Face used for normal interest unread articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-normal-unread-face 'face-alias 'gnus-summary-normal-unread)
-(put 'gnus-summary-normal-unread-face 'obsolete-face "22.1")
 
-(defface gnus-summary-high-read
-  '((((class color)
-      (background dark))
-     (:foreground "PaleGreen"
-		  :bold t))
-    (((class color)
-      (background light))
-     (:foreground "DarkGreen"
-		  :bold t))
-    (t
-     (:bold t)))
-  "Face used for high interest read articles."
+(defface gnus-summary-high-unread
+  '((t (:inherit gnus-summary-normal-unread :bold t)))
+  "Face used for high interest unread articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-high-read-face 'face-alias 'gnus-summary-high-read)
-(put 'gnus-summary-high-read-face 'obsolete-face "22.1")
 
-(defface gnus-summary-low-read
-  '((((class color)
-      (background dark))
-     (:foreground "PaleGreen"
-		  :italic t))
-    (((class color)
-      (background light))
-     (:foreground "DarkGreen"
-		  :italic t))
-    (t
-     (:italic t)))
-  "Face used for low interest read articles."
+(defface gnus-summary-low-unread
+  '((t (:inherit gnus-summary-normal-unread :italic t)))
+  "Face used for low interest unread articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-low-read-face 'face-alias 'gnus-summary-low-read)
-(put 'gnus-summary-low-read-face 'obsolete-face "22.1")
 
 (defface gnus-summary-normal-read
   '((((class color)
@@ -906,10 +627,23 @@ be set in `.emacs' instead."
      ()))
   "Face used for normal interest read articles."
   :group 'gnus-summary)
-;; backward-compatibility alias
-(put 'gnus-summary-normal-read-face 'face-alias 'gnus-summary-normal-read)
-(put 'gnus-summary-normal-read-face 'obsolete-face "22.1")
 
+(defface gnus-summary-high-read
+  '((t (:inherit gnus-summary-normal-read :bold t)))
+  "Face used for high interest read articles."
+  :group 'gnus-summary)
+
+(defface gnus-summary-low-read
+  '((t (:inherit gnus-summary-normal-read :italic t)))
+  "Face used for low interest read articles."
+  :group 'gnus-summary)
+
+;;; Base gnus-mode
+
+(define-derived-mode gnus-mode special-mode nil
+  "Base mode from which all other gnus modes derive.
+This does nothing but derive from `special-mode', and should not
+be used directly.")
 
 ;;;
 ;;; Gnus buffers
@@ -925,26 +659,21 @@ be set in `.emacs' instead."
 
 (defun gnus-add-buffer ()
   "Add the current buffer to the list of Gnus buffers."
+  (gnus-prune-buffers)
   (push (current-buffer) gnus-buffers))
 
 (defmacro gnus-kill-buffer (buffer)
   "Kill BUFFER and remove from the list of Gnus buffers."
   `(let ((buf ,buffer))
-     (when (gnus-buffer-exists-p buf)
-       (setq gnus-buffers (delete (get-buffer buf) gnus-buffers))
-       (kill-buffer buf))))
+     (when (gnus-buffer-live-p buf)
+       (kill-buffer buf)
+       (gnus-prune-buffers))))
 
 (defun gnus-buffers ()
   "Return a list of live Gnus buffers."
-  (while (and gnus-buffers
-	      (not (buffer-name (car gnus-buffers))))
-    (pop gnus-buffers))
-  (let ((buffers gnus-buffers))
-    (while (cdr buffers)
-      (if (buffer-name (cadr buffers))
-	  (pop buffers)
-	(setcdr buffers (cddr buffers)))))
-  gnus-buffers)
+  (setq gnus-buffers (seq-filter #'buffer-live-p gnus-buffers)))
+
+(defalias 'gnus-prune-buffers #'gnus-buffers)
 
 ;;; Splash screen.
 
@@ -962,9 +691,6 @@ be set in `.emacs' instead."
      ()))
   "Face for the splash screen."
   :group 'gnus-start)
-;; backward-compatibility alias
-(put 'gnus-splash-face 'face-alias 'gnus-splash)
-(put 'gnus-splash-face 'obsolete-face "22.1")
 
 (defun gnus-splash ()
   (save-excursion
@@ -1013,7 +739,7 @@ be set in `.emacs' instead."
   "Color alist used for the Gnus logo.")
 
 (defcustom gnus-logo-color-style 'ma
-  "*Color styles used for the Gnus logo."
+  "Color styles used for the Gnus logo."
   :type `(choice ,@(mapcar (lambda (elem) (list 'const (car elem)))
 			   gnus-logo-color-alist))
   :group 'gnus-xmas)
@@ -1022,6 +748,7 @@ be set in `.emacs' instead."
   (cdr (assq gnus-logo-color-style gnus-logo-color-alist))
   "Colors used for the Gnus logo.")
 
+(defvar image-load-path)
 (declare-function image-size "image.c" (spec &optional pixels frame))
 
 (defun gnus-group-startup-message (&optional x y)
@@ -1122,12 +849,11 @@ be set in `.emacs' instead."
           (cons (car list) (list :type type :data data)))
        list)))
 
-(eval-when (load)
-  (let ((command (format "%s" this-command)))
-    (when (string-match "gnus" command)
-      (if (string-match "gnus-other-frame" command)
-	  (gnus-get-buffer-create gnus-group-buffer)
-	(gnus-splash)))))
+(let ((command (format "%s" this-command)))
+  (when (string-match "gnus" command)
+    (if (eq 'gnus-other-frame this-command)
+	(gnus-get-buffer-create gnus-group-buffer)
+      (gnus-splash))))
 
 ;;; Do the rest.
 
@@ -1256,7 +982,7 @@ in `.gnus.el'.  Set this variable in `.emacs' instead."
 
 (defcustom gnus-directory (or (getenv "SAVEDIR")
 			      (nnheader-concat gnus-home-directory "News/"))
-  "*Directory variable from which all other Gnus file variables are derived.
+  "Directory variable from which all other Gnus file variables are derived.
 
 Note that Gnus is mostly loaded when the `.gnus.el' file is read.
 This means that other directory variables that are initialized from
@@ -1266,7 +992,7 @@ Set this variable in `.emacs' instead."
   :type 'directory)
 
 (defcustom gnus-default-directory nil
-  "*Default directory for all Gnus buffers."
+  "Default directory for all Gnus buffers."
   :group 'gnus-files
   :type '(choice (const :tag "current" nil)
 		 directory))
@@ -1319,11 +1045,11 @@ news is to be fetched, the second is the address.
 For instance, if you want to get your news via \"flab.flab.edu\" using
 NNTP, you could say:
 
-\(setq gnus-select-method '(nntp \"flab.flab.edu\"))
+\(setq gnus-select-method \\='(nntp \"flab.flab.edu\"))
 
 If you want to use your local spool, say:
 
-\(setq gnus-select-method (list 'nnspool (system-name)))
+\(setq gnus-select-method (list \\='nnspool (system-name)))
 
 If you use this variable, you must set `gnus-nntp-server' to nil.
 
@@ -1337,7 +1063,7 @@ see the manual for details."
   :type 'gnus-select-method)
 
 (defcustom gnus-message-archive-method "archive"
-  "*Method used for archiving messages you've sent.
+  "Method used for archiving messages you've sent.
 This should be a mail method.
 
 See also `gnus-update-message-archive-method'."
@@ -1363,7 +1089,7 @@ saved \"archive\" method to be updated whenever you change the value of
   :type 'boolean)
 
 (defcustom gnus-message-archive-group '((format-time-string "sent.%Y-%m"))
-  "*Name of the group in which to save the messages you've written.
+  "Name of the group in which to save the messages you've written.
 This can either be a string; a list of strings; or an alist
 of regexps/functions/forms to be evaluated to return a string (or a list
 of strings).  The functions are called with the name of the current
@@ -1372,8 +1098,8 @@ group (or nil) as a parameter.
 If you want to save your mail in one group and the news articles you
 write in another group, you could say something like:
 
- \(setq gnus-message-archive-group
-	'((if (message-news-p)
+  (setq gnus-message-archive-group
+	\\='((if (message-news-p)
 	      \"misc-news\"
 	    \"misc-mail\")))
 
@@ -1408,7 +1134,7 @@ This is a list where each element is a complete select method (see
 If, for instance, you want to read your mail with the nnml back end,
 you could set this variable:
 
-\(setq gnus-secondary-select-methods '((nnml \"\")))"
+\(setq gnus-secondary-select-methods \\='((nnml \"\")))"
   :group 'gnus-server
   :type '(repeat gnus-select-method))
 
@@ -1449,7 +1175,7 @@ list, Gnus will try all the methods in the list until it finds a match."
 				 gnus-select-method))))
 
 (defcustom gnus-use-cross-reference t
-  "*Non-nil means that cross referenced articles will be marked as read.
+  "Non-nil means that cross referenced articles will be marked as read.
 If nil, ignore cross references.  If t, mark articles as read in
 subscribed newsgroups.  If neither t nor nil, mark as read in all
 newsgroups."
@@ -1460,13 +1186,13 @@ newsgroups."
 		       :value always)))
 
 (defcustom gnus-process-mark ?#
-  "*Process mark."
+  "Process mark."
   :group 'gnus-group-visual
   :group 'gnus-summary-marks
   :type 'character)
 
 (defcustom gnus-large-newsgroup 200
-  "*The number of articles which indicates a large newsgroup.
+  "The number of articles which indicates a large newsgroup.
 If the number of articles in a newsgroup is greater than this value,
 confirmation is required for selecting the newsgroup.
 If it is nil, no confirmation is required.
@@ -1500,24 +1226,24 @@ on all other systems it defaults to t."
 			   (const not-kill))))
 
 (defcustom gnus-kill-files-directory gnus-directory
-  "*Name of the directory where kill files will be stored (default \"~/News\")."
+  "Name of the directory where kill files will be stored (default \"~/News\")."
   :group 'gnus-score-files
   :group 'gnus-score-kill
   :type 'directory)
 
 (defcustom gnus-save-score nil
-  "*If non-nil, save group scoring info."
+  "If non-nil, save group scoring info."
   :group 'gnus-score-various
   :group 'gnus-start
   :type 'boolean)
 
 (defcustom gnus-use-undo t
-  "*If non-nil, allow undoing in Gnus group mode buffers."
+  "If non-nil, allow undoing in Gnus group mode buffers."
   :group 'gnus-meta
   :type 'boolean)
 
 (defcustom gnus-use-adaptive-scoring nil
-  "*If non-nil, use some adaptive scoring scheme.
+  "If non-nil, use some adaptive scoring scheme.
 If a list, then the values `word' and `line' are meaningful.  The
 former will perform adaption on individual words in the subject
 header while `line' will perform adaption on several headers."
@@ -1526,7 +1252,7 @@ header while `line' will perform adaption on several headers."
   :type '(set (const word) (const line)))
 
 (defcustom gnus-use-cache 'passive
-  "*If nil, Gnus will ignore the article cache.
+  "If nil, Gnus will ignore the article cache.
 If `passive', it will allow entering (and reading) articles
 explicitly entered into the cache.  If anything else, use the
 cache to the full extent of the law."
@@ -1537,12 +1263,12 @@ cache to the full extent of the law."
 		 (const :tag "active" t)))
 
 (defcustom gnus-use-trees nil
-  "*If non-nil, display a thread tree buffer."
+  "If non-nil, display a thread tree buffer."
   :group 'gnus-meta
   :type 'boolean)
 
 (defcustom gnus-keep-backlog 20
-  "*If non-nil, Gnus will keep read articles for later re-retrieval.
+  "If non-nil, Gnus will keep read articles for later re-retrieval.
 If it is a number N, then Gnus will only keep the last N articles
 read.  If it is neither nil nor a number, Gnus will keep all read
 articles.  This is not a good idea."
@@ -1553,43 +1279,43 @@ articles.  This is not a good idea."
 		       :value t)))
 
 (defcustom gnus-suppress-duplicates nil
-  "*If non-nil, Gnus will mark duplicate copies of the same article as read."
+  "If non-nil, Gnus will mark duplicate copies of the same article as read."
   :group 'gnus-meta
   :type 'boolean)
 
 (defcustom gnus-use-scoring t
-  "*If non-nil, enable scoring."
+  "If non-nil, enable scoring."
   :group 'gnus-meta
   :type 'boolean)
 
 (defcustom gnus-summary-prepare-exit-hook
   '(gnus-summary-expire-articles)
-  "*A hook called when preparing to exit from the summary buffer.
+  "A hook called when preparing to exit from the summary buffer.
 It calls `gnus-summary-expire-articles' by default."
   :group 'gnus-summary-exit
   :type 'hook)
 
 (defcustom gnus-novice-user t
-  "*Non-nil means that you are a Usenet novice.
+  "Non-nil means that you are a Usenet novice.
 If non-nil, verbose messages may be displayed and confirmations may be
 required."
   :group 'gnus-meta
   :type 'boolean)
 
 (defcustom gnus-expert-user nil
-  "*Non-nil means that you will never be asked for confirmation about anything.
+  "Non-nil means that you will never be asked for confirmation about anything.
 That doesn't mean *anything* anything; particularly destructive
 commands will still require prompting."
   :group 'gnus-meta
   :type 'boolean)
 
 (defcustom gnus-interactive-catchup t
-  "*If non-nil, require your confirmation when catching up a group."
+  "If non-nil, require your confirmation when catching up a group."
   :group 'gnus-group-select
   :type 'boolean)
 
 (defcustom gnus-interactive-exit t
-  "*If non-nil, require your confirmation when exiting Gnus.
+  "If non-nil, require your confirmation when exiting Gnus.
 If `quiet', update any active summary buffers automatically
 first before exiting."
   :group 'gnus-exit
@@ -1597,7 +1323,7 @@ first before exiting."
 		 (const quiet)))
 
 (defcustom gnus-extract-address-components 'gnus-extract-address-components
-  "*Function for extracting address components from a From header.
+  "Function for extracting address components from a From header.
 Two pre-defined function exist: `gnus-extract-address-components',
 which is the default, quite fast, and too simplistic solution, and
 `mail-extract-address-components', which works much better, but is
@@ -1633,7 +1359,7 @@ slower."
      server-marks cloud)
     ("nnmaildir" mail respool address server-marks)
     ("nnnil" none))
-  "*An alist of valid select methods.
+  "An alist of valid select methods.
 The first element of each list lists should be a string with the name
 of the select method.  The other elements may be the category of
 this method (i. e., `post', `mail', `none' or whatever) or other
@@ -1648,6 +1374,7 @@ this variable.  I think."
 					     (const post-mail))
 			(checklist :inline t :greedy t
 				   (const :format "%v " address)
+				   (const cloud)
 				   (const global)
 				   (const :format "%v " prompt-address)
 				   (const :format "%v " physical-address)
@@ -1691,7 +1418,7 @@ If this variable is nil, screen refresh may be quicker."
 	      (const tree)))
 
 (defcustom gnus-mode-non-string-length 30
-  "*Max length of mode-line non-string contents.
+  "Max length of mode-line non-string contents.
 If this is nil, Gnus will take space as is needed, leaving the rest
 of the mode line intact."
   :version "24.1"
@@ -1708,7 +1435,7 @@ of the mode line intact."
  :function-document
  "Return GROUP's to-address."
  :variable-document
- "*Alist of group regexps and correspondent to-addresses."
+ "Alist of group regexps and correspondent to-addresses."
  :variable-group gnus-group-parameter
  :parameter-type '(gnus-email-address :tag "To Address")
  :parameter-document "\
@@ -1735,7 +1462,7 @@ address was listed in gnus-group-split Addresses (see below).")
  :function-document
  "Return GROUP's to-list."
  :variable-document
- "*Alist of group regexps and correspondent to-lists."
+ "Alist of group regexps and correspondent to-lists."
  :variable-group gnus-group-parameter
  :parameter-type '(gnus-email-address :tag "To List")
  :parameter-document "\
@@ -1754,7 +1481,7 @@ address was listed in gnus-group-split Addresses (see below).")
  :function-document
  "Return GROUP's subscription status."
  :variable-document
- "*Groups which are automatically considered subscribed."
+ "Groups which are automatically considered subscribed."
  :variable-group gnus-group-parameter
  :parameter-type '(const :tag "Subscribed" t)
  :parameter-document "\
@@ -1773,7 +1500,7 @@ above, or the list address (if the To address has not been set).")
  :variable gnus-auto-expirable-newsgroups
  :variable-default nil
  :variable-document
- "*Groups in which to automatically mark read articles as expirable.
+ "Groups in which to automatically mark read articles as expirable.
 If non-nil, this should be a regexp that should match all groups in
 which to perform auto-expiry.  This only makes sense for mail groups."
  :variable-group nnmail-expire
@@ -1792,7 +1519,7 @@ which to perform auto-expiry.  This only makes sense for mail groups."
  :variable gnus-total-expirable-newsgroups
  :variable-default nil
  :variable-document
- "*Groups in which to perform expiry of all read articles.
+ "Groups in which to perform expiry of all read articles.
 Use with extreme caution.  All groups that match this regexp will be
 expiring - which means that all read articles will be deleted after
 \(say) one week.  (This only goes for mail groups and the like, of
@@ -1861,7 +1588,7 @@ posting an article."
  :function-document
  "Return GROUP's initial input of the number of articles."
  :variable-document
- "*Alist of group regexps and its initial input of the number of articles."
+ "Alist of group regexps and its initial input of the number of articles."
  :variable-group gnus-group-parameter
  :parameter-type '(choice :tag "Initial Input for Large Newsgroup"
 			  (const :tag "All" nil)
@@ -1885,7 +1612,7 @@ total number of articles in the group.")
                     '("delayed$" "drafts$" "queue$" "INBOX$"
                       "^nnmairix:" "^nnir:" "archive"))
  :variable-document
- "*Groups in which the registry should be turned off."
+ "Groups in which the registry should be turned off."
  :variable-group gnus-registry
  :variable-type '(repeat
 		  (list
@@ -1898,7 +1625,7 @@ total number of articles in the group.")
 
 ;; group parameters for spam processing added by Ted Zlatanov <tzz@lifelogs.com>
 (defcustom gnus-install-group-spam-parameters t
-  "*Disable the group parameters for spam detection.
+  "Disable the group parameters for spam detection.
 Enable if `G c' in XEmacs is giving you trouble, and make sure to submit a bug report."
   :version "22.1"
   :type 'boolean
@@ -1928,7 +1655,7 @@ registry.")
    :variable gnus-spam-newsgroup-contents
    :variable-default nil
    :variable-document
-   "*Group classification (spam, ham, or neither).  Only
+   "Group classification (spam, ham, or neither).  Only
 meaningful when spam.el is loaded.  If non-nil, this should be a
 list of group name regexps associated with a classification for
 each one.  In spam groups, new articles are marked as spam on
@@ -2085,7 +1812,7 @@ Only applicable to non-spam (unclassified and ham) groups.")
    :variable gnus-spam-process-newsgroups
    :variable-default nil
    :variable-document
-   "*Groups in which to automatically process spam or ham articles with
+   "Groups in which to automatically process spam or ham articles with
 a backend on summary exit.  If non-nil, this should be a list of group
 name regexps that should match all groups in which to do automatic
 spam processing, associated with the appropriate processor."
@@ -2144,7 +1871,7 @@ spam processing, associated with the appropriate processor."
    :variable gnus-spam-autodetect
    :variable-default nil
    :variable-document
-   "*Groups in which spam should be autodetected when they are entered.
+   "Groups in which spam should be autodetected when they are entered.
    Only unseen articles will be examined, unless
    spam-autodetect-recheck-messages is set."
    :variable-group spam
@@ -2190,7 +1917,7 @@ spam-autodetect-recheck-messages is set.")
    :variable gnus-spam-autodetect-methods
    :variable-default nil
    :variable-document
-   "*Methods for autodetecting spam per group.
+   "Methods for autodetecting spam per group.
 Requires the spam-autodetect parameter.  Only unseen articles
 will be examined, unless spam-autodetect-recheck-messages is
 set."
@@ -2242,7 +1969,7 @@ set.")
    :variable gnus-spam-process-destinations
    :variable-default nil
    :variable-document
-   "*Groups in which to explicitly send spam-processed articles to
+   "Groups in which to explicitly send spam-processed articles to
 another group, or expire them (the default).  If non-nil, this should
 be a list of group name regexps that should match all groups in which
 to do spam-processed article moving, associated with the destination
@@ -2279,7 +2006,7 @@ mail groups."
    :variable gnus-ham-process-destinations
    :variable-default nil
    :variable-document
-   "*Groups in which to explicitly send ham articles to
+   "Groups in which to explicitly send ham articles to
 another group, or do nothing (the default).  If non-nil, this should
 be a list of group name regexps that should match all groups in which
 to do ham article moving, associated with the destination
@@ -2324,7 +2051,7 @@ spam-ham-marks variable takes precedence."
 			       gnus-low-score-mark))))
    :variable-group spam
    :variable-document
-   "*Groups in which to explicitly set the ham marks to some value.")
+   "Groups in which to explicitly set the ham marks to some value.")
 
   (gnus-define-group-parameter
    spam-marks
@@ -2343,7 +2070,7 @@ spam-spam-marks variable takes precedence."
    :variable-default '((".*" ((gnus-spam-mark))))
    :variable-group spam
    :variable-document
-   "*Groups in which to explicitly set the spam marks to some value."))
+   "Groups in which to explicitly set the spam marks to some value."))
 
 (defcustom gnus-group-uncollapsed-levels 1
   "Number of group name elements to leave alone when making a short group name."
@@ -2351,7 +2078,7 @@ spam-spam-marks variable takes precedence."
   :type 'integer)
 
 (defcustom gnus-group-use-permanent-levels nil
-  "*If non-nil, once you set a level, Gnus will use this level."
+  "If non-nil, once you set a level, Gnus will use this level."
   :group 'gnus-group-levels
   :type 'boolean)
 
@@ -2399,7 +2126,7 @@ It is called with three parameters -- GROUP, LEVEL and OLDLEVEL."
 		      tree-highlight menu highlight
 		      browse-menu server-menu
 		      page-marker tree-menu binary-menu pick-menu)
-  "*Enable visual features.
+  "Enable visual features.
 If `visual' is disabled, there will be no menus and few faces.  Most of
 the visual customization options below will be ignored.  Gnus will use
 less space and be faster as a result.
@@ -2407,7 +2134,7 @@ less space and be faster as a result.
 This variable can also be a list of visual elements to switch on.  For
 instance, to switch off all visual things except menus, you can say:
 
-   (setq gnus-visual '(menu))
+   (setq gnus-visual \\='(menu))
 
 Valid elements include `summary-highlight', `group-highlight',
 `article-highlight', `mouse-face', `summary-menu', `group-menu',
@@ -2452,14 +2179,14 @@ Valid elements include `summary-highlight', `group-highlight',
 	    'highlight)
 	'default)
     (error 'highlight))
-  "*Face used for group or summary buffer mouse highlighting.
+  "Face used for group or summary buffer mouse highlighting.
 The line beneath the mouse pointer will be highlighted with this
 face."
   :group 'gnus-visual
   :type 'face)
 
 (defcustom gnus-article-save-directory gnus-directory
-  "*Name of the directory articles will be saved in (default \"~/News\")."
+  "Name of the directory articles will be saved in (default \"~/News\")."
   :group 'gnus-article-saving
   :type 'directory)
 
@@ -2494,7 +2221,7 @@ Disabling the agent may result in noticeable loss of performance."
   :group 'gnus-agent
   :type 'boolean)
 
-(defcustom gnus-other-frame-function 'gnus
+(defcustom gnus-other-frame-function #'gnus
   "Function called by the command `gnus-other-frame' when starting Gnus."
   :group 'gnus-start
   :type '(choice (function-item gnus)
@@ -2502,7 +2229,9 @@ Disabling the agent may result in noticeable loss of performance."
 		 (function-item gnus-slave)
 		 (function-item gnus-slave-no-server)))
 
-(defcustom gnus-other-frame-resume-function 'gnus-group-get-new-news
+(declare-function gnus-group-get-new-news "gnus-group")
+
+(defcustom gnus-other-frame-resume-function #'gnus-group-get-new-news
   "Function called by the command `gnus-other-frame' when resuming Gnus."
   :version "24.4"
   :group 'gnus-start
@@ -2513,25 +2242,20 @@ Disabling the agent may result in noticeable loss of performance."
 		 (function-item gnus-slave-no-server)))
 
 (defcustom gnus-other-frame-parameters nil
-  "Frame parameters used by `gnus-other-frame' to create a Gnus frame.
-This should be an alist for Emacs, or a plist for XEmacs."
+  "Frame parameters used by `gnus-other-frame' to create a Gnus frame."
   :group 'gnus-start
-  :type (if (featurep 'xemacs)
-	    '(repeat (list :inline t :format "%v"
-			   (symbol :tag "Property")
-			   (sexp :tag "Value")))
-	  '(repeat (cons :format "%v"
-			 (symbol :tag "Parameter")
-			 (sexp :tag "Value")))))
+  :type '(repeat (cons :format "%v"
+		       (symbol :tag "Parameter")
+		       (sexp :tag "Value"))))
 
 (defcustom gnus-user-agent '(emacs gnus type)
   "Which information should be exposed in the User-Agent header.
 
 Can be a list of symbols or a string.  Valid symbols are `gnus'
-\(show Gnus version\) and `emacs' \(show Emacs version\).  In
+\(show Gnus version) and `emacs' \(show Emacs version).  In
 addition to the Emacs version, you can add `codename' \(show
-\(S\)XEmacs codename\) or either `config' \(show system
-configuration\) or `type' \(show system type\).  If you set it to
+\(S)XEmacs codename) or either `config' \(show system
+configuration) or `type' \(show system type).  If you set it to
 a string, be sure to use a valid format, see RFC 2616."
 
   :version "22.1"
@@ -2575,7 +2299,7 @@ a string, be sure to use a valid format, see RFC 2616."
   )
 (defvar gnus-agent-target-move-group-header "X-Gnus-Agent-Move-To")
 (defvar gnus-draft-meta-information-header "X-Draft-From")
-(defvar gnus-group-get-parameter-function 'gnus-group-get-parameter)
+(defvar gnus-group-get-parameter-function #'gnus-group-get-parameter)
 (defvar gnus-original-article-buffer " *Original Article*")
 (defvar gnus-newsgroup-name nil)
 (defvar gnus-ephemeral-servers nil)
@@ -2612,11 +2336,13 @@ a string, be sure to use a valid format, see RFC 2616."
 (defvar gnus-group-history nil)
 
 (defvar gnus-server-alist nil
-  "List of available servers.")
+  "Servers created by Gnus, or via the server buffer.
+Servers defined in the user's config files do not appear here.
+This variable is persisted in the user's .newsrc.eld file.")
 
 (defcustom gnus-cache-directory
   (nnheader-concat gnus-directory "cache/")
-  "*The directory where cached articles will be stored."
+  "The directory where cached articles will be stored."
   :group 'gnus-cache
   :type 'directory)
 
@@ -2649,11 +2375,11 @@ a string, be sure to use a valid format, see RFC 2616."
 
 ;; Propagate flags to server, with the following exceptions:
 ;; `seen' is private to each gnus installation
-;; `cache' is a internal gnus flag for each gnus installation
-;; `download' is a agent flag private to each gnus installation
+;; `cache' is an internal gnus flag for each gnus installation
+;; `download' is an agent flag private to each gnus installation
 ;; `unsend' are for nndraft groups only
 ;; `score' is not a proper mark
-;; `bookmark': don't propagated it, or fix the bug in update-mark.
+;; `bookmark': don't propagate it, or fix the bug in update-mark.
 (defconst gnus-article-unpropagated-mark-lists
   '(seen cache download unsend score bookmark unexist)
   "Marks that shouldn't be propagated to back ends.
@@ -2675,7 +2401,7 @@ such as a mark that says whether an article is stored in the cache
   "The mail address of the Gnus maintainers.")
 
 (defconst gnus-bug-package
-  "gnus"
+  "emacs,gnus"
   "The package to use in the bug submission.")
 
 (defvar gnus-info-nodes
@@ -2717,28 +2443,37 @@ such as a mark that says whether an article is stored in the cache
 gnus-registry.el will populate this if it's loaded.")
 
 (defvar gnus-newsrc-hashtb nil
-  "Hashtable of `gnus-newsrc-alist'.")
+  "Hash table of `gnus-newsrc-alist'.")
+
+(defvar gnus-group-list nil
+  "Ordered list of group names as strings.
+This variable only exists to provide easy access to the ordering
+of `gnus-newsrc-alist'.")
 
 (defvar gnus-killed-list nil
   "List of killed newsgroups.")
 
 (defvar gnus-killed-hashtb nil
-  "Hash table equivalent of `gnus-killed-list'.")
+  "Hash table equivalent of `gnus-killed-list'.
+This is a hash table purely for the fast membership test: values
+are always t.")
 
 (defvar gnus-zombie-list nil
   "List of almost dead newsgroups.")
 
 (defvar gnus-description-hashtb nil
-  "Descriptions of newsgroups.")
+  "Hash table mapping group names to their descriptions.")
 
 (defvar gnus-list-of-killed-groups nil
   "List of newsgroups that have recently been killed by the user.")
 
 (defvar gnus-active-hashtb nil
-  "Hashtable of active articles.")
+  "Hash table mapping group names to their active entry.")
 
 (defvar gnus-moderated-hashtb nil
-  "Hashtable of moderated newsgroups.")
+  "Hash table of moderated groups.
+This is a hash table purely for the fast membership test: values
+are always t.")
 
 ;; Save window configuration.
 (defvar gnus-prev-winconf nil)
@@ -2765,17 +2500,16 @@ gnus-registry.el will populate this if it's loaded.")
      (let ((interactive (nth 1 (memq ':interactive package))))
        (mapcar
 	(lambda (function)
-	  (let (keymap)
+	  (let (type)
 	    (when (consp function)
-	      (setq keymap (car (memq 'keymap function)))
+	      (setq type (cadr function))
 	      (setq function (car function)))
 	    (unless (fboundp function)
-	      (autoload function (car package) nil interactive keymap))))
+	      (autoload function (car package) nil interactive type))))
 	(if (eq (nth 1 package) ':interactive)
 	    (nthcdr 3 package)
 	  (cdr package)))))
    '(("info" :interactive t Info-goto-node)
-     ("pp" pp-to-string)
      ("qp" quoted-printable-decode-region quoted-printable-decode-string)
      ("ps-print" ps-print-preprint)
      ("message" :interactive t
@@ -2922,7 +2656,6 @@ gnus-registry.el will populate this if it's loaded.")
       gnus-check-reasonable-setup)
      ("gnus-dup" gnus-dup-suppress-articles gnus-dup-unsuppress-article
       gnus-dup-enter-articles)
-     ("gnus-range" gnus-copy-sequence)
      ("gnus-eform" gnus-edit-form)
      ("gnus-logic" gnus-score-advanced)
      ("gnus-undo" gnus-undo-mode gnus-undo-register)
@@ -2950,7 +2683,7 @@ gnus-registry.el will populate this if it's loaded.")
 
 
 (defcustom gnus-summary-line-format "%U%R%z%I%(%[%4L: %-23,23f%]%) %s\n"
-  "*The format specification of the lines in the summary buffer.
+  "The format specification of the lines in the summary buffer.
 
 It works along the same lines as a normal formatting string,
 with some simple extensions.
@@ -3000,15 +2733,15 @@ with some simple extensions.
 %O          Download mark (character).
 %*          If present, indicates desired cursor position
             (instead of after first colon).
-%u          User defined specifier. The next character in the
-            format string should be a letter. Gnus will call the
+%u          User defined specifier.  The next character in the
+            format string should be a letter.  Gnus will call the
             function gnus-user-format-function-X, where X is the
-            letter following %u. The function will be passed the
-            current header as argument. The function should
+            letter following %u.  The function will be passed the
+            current header as argument.  The function should
             return a string, which will be inserted into the
             summary just like information from any other summary
             specifier.
-&user-date; Age sensitive date format. Various date format is
+&user-date; Age sensitive date format.  Various date format is
             defined in `gnus-user-date-format-alist'.
 
 
@@ -3036,7 +2769,7 @@ See Info node `(gnus)Formatting Variables'."
 
 (defun gnus-suppress-keymap (keymap)
   (suppress-keymap keymap)
-  (let ((keys `([delete] "\177" "\M-u"))) ;gnus-mouse-2
+  (let ((keys '([delete] "\177" "\M-u"))) ;[mouse-2]
     (while keys
       (define-key keymap (pop keys) 'undefined))))
 
@@ -3066,108 +2799,76 @@ See Info node `(gnus)Formatting Variables'."
 (defun gnus-header-from (header)
   (mail-header-from header))
 
-(defmacro gnus-gethash (string hashtable)
-  "Get hash value of STRING in HASHTABLE."
-  `(symbol-value (intern-soft ,string ,hashtable)))
-
-(defmacro gnus-gethash-safe (string hashtable)
-  "Get hash value of STRING in HASHTABLE.
-Return nil if not defined."
-  `(let ((sym (intern-soft ,string ,hashtable)))
-     (and (boundp sym) (symbol-value sym))))
-
-(defmacro gnus-sethash (string value hashtable)
-  "Set hash value.  Arguments are STRING, VALUE, and HASHTABLE."
-  `(set (intern ,string ,hashtable) ,value))
-(put 'gnus-sethash 'edebug-form-spec '(form form form))
-
 (defmacro gnus-group-unread (group)
   "Get the currently computed number of unread articles in GROUP."
-  `(car (gnus-gethash ,group gnus-newsrc-hashtb)))
+  `(car (gethash ,group gnus-newsrc-hashtb)))
 
 (defmacro gnus-group-entry (group)
   "Get the newsrc entry for GROUP."
-  `(gnus-gethash ,group gnus-newsrc-hashtb))
+  `(gethash ,group gnus-newsrc-hashtb))
 
 (defmacro gnus-active (group)
   "Get active info on GROUP."
-  `(gnus-gethash ,group gnus-active-hashtb))
+  `(gethash ,group gnus-active-hashtb))
 
 (defmacro gnus-set-active (group active)
   "Set GROUP's active info."
-  `(gnus-sethash ,group ,active gnus-active-hashtb))
+  `(puthash ,group ,active gnus-active-hashtb))
 
 ;; Info access macros.
 
-(defmacro gnus-info-group (info)
-  `(nth 0 ,info))
-(defmacro gnus-info-rank (info)
-  `(nth 1 ,info))
-(defmacro gnus-info-read (info)
-  `(nth 2 ,info))
-(defmacro gnus-info-marks (info)
-  `(nth 3 ,info))
-(defmacro gnus-info-method (info)
-  `(nth 4 ,info))
-(defmacro gnus-info-params (info)
-  `(nth 5 ,info))
+(cl-defstruct (gnus-info
+               (:constructor gnus-info-make
+                (group rank read &optional marks method params))
+               (:constructor nil)
+               ;; FIMXE: gnus-newsrc-alist contains a list of those,
+               ;; so changing them to a real struct will take more work!
+               (:type list))
+  group rank read marks method params)
 
-(defmacro gnus-info-level (info)
-  `(let ((rank (gnus-info-rank ,info)))
-     (if (consp rank)
-	 (car rank)
-       rank)))
-(defmacro gnus-info-score (info)
-  `(let ((rank (gnus-info-rank ,info)))
-     (or (and (consp rank) (cdr rank)) 0)))
+(defsubst gnus-info-level (info)
+  (declare (gv-setter gnus-info--set-level))
+  (let ((rank (gnus-info-rank info)))
+    (if (consp rank)
+	(car rank)
+      rank)))
+(defsubst gnus-info-score (info)
+  (declare (gv-setter gnus-info--set-score))
+  (let ((rank (gnus-info-rank info)))
+    (or (and (consp rank) (cdr rank)) 0)))
 
-(defmacro gnus-info-set-group (info group)
-  `(setcar ,info ,group))
-(defmacro gnus-info-set-rank (info rank)
-  `(setcar (nthcdr 1 ,info) ,rank))
-(defmacro gnus-info-set-read (info read)
-  `(setcar (nthcdr 2 ,info) ,read))
-(defmacro gnus-info-set-marks (info marks &optional extend)
-  (if extend
-      `(gnus-info-set-entry ,info ,marks 3)
-    `(setcar (nthcdr 3 ,info) ,marks)))
-(defmacro gnus-info-set-method (info method &optional extend)
-  (if extend
-      `(gnus-info-set-entry ,info ,method 4)
-    `(setcar (nthcdr 4 ,info) ,method)))
-(defmacro gnus-info-set-params (info params &optional extend)
-  (if extend
-      `(gnus-info-set-entry ,info ,params 5)
-    `(setcar (nthcdr 5 ,info) ,params)))
+(defsubst gnus-info-set-marks (info marks &optional extend)
+  (if extend (gnus-info--grow-entry info 3))
+  (setf (gnus-info-marks info) marks))
+(defsubst gnus-info-set-method (info method &optional extend)
+  (if extend (gnus-info--grow-entry info 4))
+  (setf (gnus-info-method info) method))
+(defsubst gnus-info-set-params (info params &optional extend)
+  (if extend (gnus-info--grow-entry info 5))
+  (setf (gnus-info-params info) params))
 
-(defun gnus-info-set-entry (info entry number)
+(defun gnus-info--grow-entry (info number)
   ;; Extend the info until we have enough elements.
   (while (<= (length info) number)
-    (nconc info (list nil)))
-  ;; Set the entry.
-  (setcar (nthcdr number info) entry))
+    (nconc info (list nil))))
 
-(defmacro gnus-info-set-level (info level)
-  `(let ((rank (cdr ,info)))
-     (if (consp (car rank))
-	 (setcar (car rank) ,level)
-       (setcar rank ,level))))
-(defmacro gnus-info-set-score (info score)
-  `(let ((rank (cdr ,info)))
-     (if (consp (car rank))
-	 (setcdr (car rank) ,score)
-       (setcar rank (cons (car rank) ,score)))))
+(defsubst gnus-info--set-level (info level)
+  (let ((rank (gnus-info-rank info)))
+    (if (consp rank)
+        (setcar rank level)
+      (setf (gnus-info-rank info) level))))
+(defsubst gnus-info--set-score (info score)
+  (let ((rank (gnus-info-rank info)))
+     (if (consp rank)
+	 (setcdr rank score)
+       (setf (gnus-info-rank info) (cons rank score)))))
 
-(defmacro gnus-get-info (group)
-  `(nth 2 (gnus-gethash ,group gnus-newsrc-hashtb)))
+(defsubst gnus-get-info (group)
+  (nth 1 (gethash group gnus-newsrc-hashtb)))
 
 (defun gnus-set-info (group info)
-  (setcar (nthcdr 2 (gnus-gethash group gnus-newsrc-hashtb))
-	  info))
-
-;;; Load the compatibility functions.
-
-(require 'gnus-ems)
+  (setcdr (gethash group gnus-newsrc-hashtb)
+	  (list info)))
 
 
 ;;;
@@ -3203,9 +2904,9 @@ with a `subscribed' parameter."
 		       (or (gnus-group-fast-parameter group 'to-address)
 			   (gnus-group-fast-parameter group 'to-list))))
 	(when address
-	  (add-to-list 'addresses address))))
+	  (cl-pushnew address addresses :test #'equal))))
     (when addresses
-      (list (mapconcat 'regexp-quote addresses "\\|")))))
+      (list (mapconcat #'regexp-quote addresses "\\|")))))
 
 (defmacro gnus-string-or (&rest strings)
   "Return the first element of STRINGS that is a non-blank string.
@@ -3253,11 +2954,12 @@ If ARG, insert string at point."
 			 4.99
 		       (+ 5 (* 0.02
 			       (abs
-				(- (mm-char-int (aref (downcase alpha) 0))
-				   (mm-char-int ?t))))
+				(- (aref (downcase alpha) 0) ?t)))
 			  -0.01))
 		     minor least)
 	 (format "%d.%02d%02d" major minor least))))))
+
+(defvar gnus-info-buffer)
 
 (defun gnus-info-find-node (&optional nodename)
   "Find Info documentation of Gnus."
@@ -3278,7 +2980,7 @@ If ARG, insert string at point."
 (defvar gnus-current-prefix-symbols nil
   "List of current prefix symbols.")
 
-(defun gnus-interactive (string &optional params)
+(defun gnus-interactive (string)
   "Return a list that can be fed to `interactive'.
 See `interactive' for full documentation.
 
@@ -3370,9 +3072,9 @@ g -- Group name."
     (setq out (delq 'gnus-prefix-nil out))
     (nreverse out)))
 
-(defun gnus-symbolic-argument (&optional arg)
+(defun gnus-symbolic-argument ()
   "Read a symbolic argument and a command, and then execute command."
-  (interactive "P")
+  (interactive)
   (let* ((in-command (this-command-keys))
 	 (command in-command)
 	 gnus-current-prefix-symbols
@@ -3417,7 +3119,7 @@ that that variable is buffer-local to the summary buffers."
 	 t)				    ;is news of course.
 	((not (gnus-member-of-valid 'post-mail group)) ;Non-combined.
 	 nil)				;must be mail then.
-	((vectorp article)		;Has header info.
+	((mail-header-p article)		;Has header info.
 	 (eq (gnus-request-type group (mail-header-id article)) 'news))
 	((null article)			       ;Hasn't header info
 	 (eq (gnus-request-type group) 'news)) ;(unknown ==> mail)
@@ -3454,11 +3156,11 @@ that that variable is buffer-local to the summary buffers."
 
 (defun gnus-kill-ephemeral-group (group)
   "Remove ephemeral GROUP from relevant structures."
-  (gnus-sethash group nil gnus-newsrc-hashtb))
+  (remhash group gnus-newsrc-hashtb))
 
 (defun gnus-simplify-mode-line ()
   "Make mode lines a bit simpler."
-  (setq mode-line-modified (cdr gnus-mode-line-modified))
+  (setq mode-line-modified "--")
   (when (listp mode-line-format)
     (make-local-variable 'mode-line-format)
     (setq mode-line-format (copy-sequence mode-line-format))
@@ -3488,16 +3190,15 @@ that that variable is buffer-local to the summary buffers."
 		  (throw 'server-name (car name-method))))
 	    gnus-server-method-cache))
 
-    (mapc
-     (lambda (server-alist)
-       (mapc (lambda (name-method)
-	       (when (gnus-methods-equal-p (cdr name-method) method)
-		 (unless (member name-method gnus-server-method-cache)
-		   (push name-method gnus-server-method-cache))
-		 (throw 'server-name (car name-method))))
-	     server-alist))
-     (list gnus-server-alist
-	   gnus-predefined-server-alist))
+    (dolist (server-alist
+             (list gnus-server-alist
+	           gnus-predefined-server-alist))
+      (mapc (lambda (name-method)
+	      (when (gnus-methods-equal-p (cdr name-method) method)
+		(unless (member name-method gnus-server-method-cache)
+		  (push name-method gnus-server-method-cache))
+		(throw 'server-name (car name-method))))
+	    server-alist))
 
     (let* ((name (if (member (cadr method) '(nil ""))
 		     (format "%s" (car method))
@@ -3599,26 +3300,26 @@ that that variable is buffer-local to the summary buffers."
   (let ((p1 (copy-sequence (cddr m1)))
 	(p2 (copy-sequence (cddr m2)))
 	e1 e2)
-    (block nil
+    (cl-block nil
       (while (setq e1 (pop p1))
 	(unless (setq e2 (assq (car e1) p2))
 	  ;; The parameter doesn't exist in p2.
-	  (return nil))
+	  (cl-return nil))
 	(setq p2 (delq e2 p2))
 	(unless (equal e1 e2)
 	  (if (not (and (stringp (cadr e1))
 			(stringp (cadr e2))))
-	      (return nil)
+	      (cl-return nil)
 	    ;; Special-case string parameter comparison so that we
 	    ;; can uniquify them.
 	    (let ((s1 (cadr e1))
 		  (s2 (cadr e2)))
-	      (when (string-match "/$" s1)
+	      (when (string-match "/\\'" s1)
 		(setq s1 (directory-file-name s1)))
-	      (when (string-match "/$" s2)
+	      (when (string-match "/\\'" s2)
 		(setq s2 (directory-file-name s2)))
 	      (unless (equal s1 s2)
-		(return nil))))))
+		(cl-return nil))))))
       ;; If p2 now is empty, they were equal.
       (null p2))))
 
@@ -3730,11 +3431,9 @@ server is native)."
   "Return the prefix of the current group name."
   (< 0 (length (gnus-group-real-prefix group))))
 
-(declare-function gnus-group-decoded-name "gnus-group" (string))
-
 (defun gnus-summary-buffer-name (group)
   "Return the summary buffer name of GROUP."
-  (concat "*Summary " (gnus-group-decoded-name group) "*"))
+  (concat "*Summary " group "*"))
 
 (defun gnus-group-method (group)
   "Return the server or method used for selecting GROUP.
@@ -3913,9 +3612,8 @@ If SYMBOL, return the value of that symbol in the group parameters.
 
 If you call this function inside a loop, consider using the faster
 `gnus-group-fast-parameter' instead."
-  (with-current-buffer (if (buffer-live-p (get-buffer gnus-group-buffer))
-			   gnus-group-buffer
-			 (current-buffer))
+  (with-current-buffer (or (gnus-buffer-live-p gnus-group-buffer)
+                           (current-buffer))
     (if symbol
 	(gnus-group-fast-parameter group symbol allow-list)
       (nconc
@@ -3993,21 +3691,20 @@ GROUP can also be an INFO structure."
 	  (setq params (delq name params))
 	  (while (assq name params)
 	    (gnus-alist-pull name params))
-	  (gnus-info-set-params info params))))))
+	  (setf (gnus-info-params info) params))))))
 
 (defun gnus-group-add-score (group &optional score)
   "Add SCORE to the GROUP score.
 If SCORE is nil, add 1 to the score of GROUP."
   (let ((info (gnus-get-info group)))
     (when info
-      (gnus-info-set-score info (+ (gnus-info-score info) (or score 1))))))
+      (setf (gnus-info-score info) (+ (gnus-info-score info) (or score 1))))))
 
 (defun gnus-short-group-name (group &optional levels)
   "Collapse GROUP name LEVELS.
 Select methods are stripped and any remote host name is stripped down to
 just the host name."
-  (let* ((name "")
-	 (foreign "")
+  (let* ((foreign "")
 	 (depth 0)
 	 (skip 1)
 	 (levels (or levels
@@ -4022,7 +3719,7 @@ just the host name."
     ;; otherwise collapse to select method.
     (let* ((colon (string-match ":" group))
 	   (server (and colon (substring group 0 colon)))
-	   (plus (and server (string-match "+" server))))
+	   (plus (and server (string-match "\\+" server))))
       (when server
 	(if plus
 	    (setq foreign (substring server (+ 1 plus)
@@ -4049,13 +3746,13 @@ just the host name."
 		gsep "."))
 	(setq levels (- glen levels))
 	(dolist (g glist)
-	  (push (if (>= (decf levels) 0)
+	  (push (if (>= (cl-decf levels) 0)
 		    (if (zerop (length g))
 			""
 		      (substring g 0 1))
 		  g)
 		res))
-	(concat foreign (mapconcat 'identity (nreverse res) gsep))))))
+	(concat foreign (mapconcat #'identity (nreverse res) gsep))))))
 
 (defun gnus-narrow-to-body ()
   "Narrow to the body of an article."
@@ -4297,7 +3994,7 @@ Allow completion over sensible values."
 		  gnus-server-alist))
 	 (method
 	  (gnus-completing-read
-	   prompt (mapcar 'car servers)
+	   prompt (mapcar #'car servers)
 	   t nil 'gnus-method-history)))
     (cond
      ((equal method "")
@@ -4345,10 +4042,10 @@ Allow completion over sensible values."
 ;;;###autoload
 (defun gnus-no-server (&optional arg slave)
   "Read network news.
-If ARG is a positive number, Gnus will use that as the startup
-level. If ARG is nil, Gnus will be started at level 2.  If ARG is
-non-nil and not a positive number, Gnus will prompt the user for the
-name of an NNTP server to use.
+If ARG is a positive number, Gnus will use that as the startup level.
+If ARG is nil, Gnus will be started at level 2.  If ARG is non-nil
+and not a positive number, Gnus will prompt the user for the name of
+an NNTP server to use.
 As opposed to `gnus', this command will not connect to the local
 server."
   (interactive "P")
@@ -4396,12 +4093,12 @@ current display is used."
 				 (with-current-buffer (window-buffer window)
 				   (string-match "\\`gnus-"
 						 (symbol-name major-mode))))
-			(gnus-select-frame-set-input-focus
+			(select-frame-set-input-focus
 			 (setq gnus-other-frame-object (window-frame window)))
 			(select-window window)
 			(throw 'found t)))
 		    'ignore t)))
-      (gnus-select-frame-set-input-focus
+      (select-frame-set-input-focus
        (setq gnus-other-frame-object
 	     (if display
 		 (make-frame-on-display display gnus-other-frame-parameters)
@@ -4410,13 +4107,13 @@ current display is used."
 	  (progn (switch-to-buffer gnus-group-buffer)
 		 (funcall gnus-other-frame-resume-function arg))
 	(funcall gnus-other-frame-function arg)
-	(add-hook 'gnus-exit-gnus-hook 'gnus-delete-gnus-frame)
+	(add-hook 'gnus-exit-gnus-hook #'gnus-delete-gnus-frame)
   ;; One might argue that `gnus-delete-gnus-frame' should not be called
   ;; from `gnus-suspend-gnus-hook', but, on the other hand, one might
   ;; argue that it should.  No matter what you think, for the sake of
   ;; those who want it to be called from it, please keep (defun
   ;; gnus-delete-gnus-frame) even if you remove the next `add-hook'.
-  (add-hook 'gnus-suspend-gnus-hook 'gnus-delete-gnus-frame)))))
+  (add-hook 'gnus-suspend-gnus-hook #'gnus-delete-gnus-frame)))))
 
 ;;;###autoload
 (defun gnus (&optional arg dont-connect slave)
@@ -4444,10 +4141,6 @@ prompt the user for the name of an NNTP server to use."
   (interactive)
   (require 'debbugs-gnu)
   (debbugs-gnu nil "gnus"))
-
-;; Allow redefinition of Gnus functions.
-
-(gnus-ems-redefine)
 
 (provide 'gnus)
 

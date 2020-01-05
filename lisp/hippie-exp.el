@@ -1,6 +1,6 @@
 ;;; hippie-exp.el --- expand text trying various ways to find its expansion
 
-;; Copyright (C) 1992, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1992, 2001-2020 Free Software Foundation, Inc.
 
 ;; Author: Anders Holst <aho@sans.kth.se>
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -99,10 +99,10 @@
 ;;      from the kill ring.  May be good if you don't know how far up in
 ;;      the kill-ring the required entry is, and don't want to mess with
 ;;      "Choose Next Paste".
-;;    `try-complete-lisp-symbol' : like `lisp-complete-symbol', but goes
+;;    `try-complete-lisp-symbol' : like `elisp-completion-at-point', but goes
 ;;      through all possibilities instead of completing what is unique.
 ;;      Might be tedious (usually a lot of possible completions) and
-;;      since its function is much like `lisp-complete-symbol', which
+;;      since its function is much like `completion-at-point', which
 ;;      already has a key of its own, you might want to remove this.
 ;;    `try-complete-lisp-symbol-partially' : To insert in the list just
 ;;      before `try-complete-lisp-symbol' for those who first want to get
@@ -248,7 +248,7 @@ If nil, all buffers are searched."
 (defcustom hippie-expand-ignore-buffers '("^ \\*.*\\*$" dired-mode)
   "A list specifying which buffers not to search (if not current).
 Can contain both regexps matching buffer names (as strings) and major modes
-\(as atoms)"
+\(as atoms)."
   :type '(repeat (choice regexp (symbol :tag "Major Mode")))
   :group 'hippie-expand)
 

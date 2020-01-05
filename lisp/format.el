@@ -1,6 +1,6 @@
 ;;; format.el --- read and save files in multiple formats
 
-;; Copyright (C) 1994-1995, 1997, 1999, 2001-2014 Free Software
+;; Copyright (C) 1994-1995, 1997, 1999, 2001-2020 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Boris Goldowsky <boris@gnu.org>
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -84,7 +84,7 @@
 	   iso-sgml2iso iso-iso2sgml t nil)
     (rot13 ,(purecopy "rot13")
 	   nil
-	   ,(purecopy "tr a-mn-z n-za-m") ,(purecopy "tr a-mn-z n-za-m") t nil)
+	   rot13-region rot13-region t nil)
     (duden ,(purecopy "Duden Ersatzdarstellung")
 	   nil
 	   ,(purecopy "diac") iso-iso2duden t nil)
@@ -395,8 +395,8 @@ unless you supply a prefix argument."
 				  (cdr (assq 'default-directory
 					     (buffer-local-variables)))
 				  nil nil (buffer-name))))
-	  (fmt (format-read (format "Write file `%s' in format: "
-				    (file-name-nondirectory file)))))
+	  (fmt (format-read (format-message "Write file `%s' in format: "
+                                            (file-name-nondirectory file)))))
      (list file fmt (not current-prefix-arg))))
   (let ((old-formats buffer-file-format)
 	preserve-formats)
@@ -416,8 +416,8 @@ If FORMAT is nil then do not do any format conversion."
   (interactive
    ;; Same interactive spec as write-file, plus format question.
    (let* ((file (read-file-name "Find file: "))
-	  (fmt (format-read (format "Read file `%s' in format: "
-				    (file-name-nondirectory file)))))
+	  (fmt (format-read (format-message "Read file `%s' in format: "
+                                            (file-name-nondirectory file)))))
      (list file fmt)))
   (let ((format-alist nil))
      (find-file filename))
@@ -435,8 +435,8 @@ a list (ABSOLUTE-FILE-NAME SIZE)."
   (interactive
    ;; Same interactive spec as write-file, plus format question.
    (let* ((file (read-file-name "Find file: "))
-	  (fmt (format-read (format "Read file `%s' in format: "
-				    (file-name-nondirectory file)))))
+	  (fmt (format-read (format-message "Read file `%s' in format: "
+                                            (file-name-nondirectory file)))))
      (list file fmt)))
   (let (value size old-undo)
     ;; Record only one undo entry for the insertion.  Inhibit point-motion and
@@ -513,7 +513,7 @@ Optional args BEG and END specify a region of the buffer on which to operate."
 (defun format-delq-cons (cons list)
   "Remove the given CONS from LIST by side effect and return the new LIST.
 Since CONS could be the first element of LIST, write
-`\(setq foo \(format-delq-cons element foo))' to be sure of changing
+\(setq foo \(format-delq-cons element foo)) to be sure of changing
 the value of `foo'."
   (if (eq cons list)
       (cdr list)
@@ -539,13 +539,7 @@ Compare using `equal'."
 	(setq tail next)))
     (cons acopy bcopy)))
 
-(defun format-proper-list-p (list)
-  "Return t if LIST is a proper list.
-A proper list is a list ending with a nil cdr, not with an atom "
-  (when (listp list)
-    (while (consp list)
-      (setq list (cdr list)))
-    (null list)))
+(define-obsolete-function-alias 'format-proper-list-p 'proper-list-p "27.1")
 
 (defun format-reorder (items order)
   "Arrange ITEMS to follow partial ORDER.
@@ -619,7 +613,7 @@ the rest of the arguments are any PARAMETERs found in that region.
 Any annotations that are found by NEXT-FN but not defined by TRANSLATIONS
 are saved as values of the `unknown' text-property \(which is list-valued).
 The TRANSLATIONS list should usually contain an entry of the form
-    \(unknown \(nil format-annotate-value))
+    (unknown (nil format-annotate-value))
 to write these unknown annotations back into the file."
   (save-excursion
     (save-restriction
@@ -827,7 +821,7 @@ in the region, it is treated as though it were DEFAULT."
 Insert each element of the given LIST of buffer annotations at its
 appropriate place.  Use second arg OFFSET if the annotations' locations are
 not relative to the beginning of the buffer: annotations will be inserted
-at their location-OFFSET+1 \(ie, the offset is treated as the position of
+at their location-OFFSET+1 \(i.e., the offset is treated as the position of
 the first character in the buffer)."
   (if (not offset)
       (setq offset 0)
@@ -839,7 +833,7 @@ the first character in the buffer)."
       (setq l (cdr l)))))
 
 (defun format-annotate-value (old new)
-  "Return OLD and NEW as a \(CLOSE . OPEN) annotation pair.
+  "Return OLD and NEW as a (CLOSE . OPEN) annotation pair.
 Useful as a default function for TRANSLATIONS alist when the value of the text
 property is the name of the annotation that you want to use, as it is for the
 `unknown' text property."
@@ -1005,12 +999,10 @@ either strings, or lists of the form (PARAMETER VALUE)."
       ;; If either old or new is a list, have to treat both that way.
       (if (and (or (listp old) (listp new))
 	       (not (get prop 'format-list-atomic-p)))
-	  (if (or (not (format-proper-list-p old))
-		  (not (format-proper-list-p new)))
+          (if (not (and (proper-list-p old)
+                        (proper-list-p new)))
 	      (format-annotate-atomic-property-change prop-alist old new)
-	    (let* ((old (if (listp old) old (list old)))
-		   (new (if (listp new) new (list new)))
-		   close open)
+	    (let (close open)
 	      (while old
 		(setq close
 		      (append (car (format-annotate-atomic-property-change

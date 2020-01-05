@@ -15,7 +15,7 @@
 ## without express or implied warranty.
 
 
-## Copyright (C) 2001-2014 Free Software Foundation, Inc.
+## Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
@@ -28,11 +28,11 @@
 ## GNU General Public License for more details.
 
 ## You should have received a copy of the GNU General Public License
-## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+## along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ### Commentary:
 
-## This file is inserted in oldXMenu/Makefile if AUTO_DEPEND=no.
+## This file is included in oldXMenu/Makefile if AUTO_DEPEND=no.
 ## It defines static dependencies between the various source files.
 
 ### Code:

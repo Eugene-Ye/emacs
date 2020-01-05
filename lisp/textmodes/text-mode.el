@@ -1,6 +1,6 @@
-;;; text-mode.el --- text mode, and its idiosyncratic commands
+;;; text-mode.el --- text mode, and its idiosyncratic commands  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985, 1992, 1994, 2001-2014 Free Software Foundation,
+;; Copyright (C) 1985, 1992, 1994, 2001-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -29,15 +29,17 @@
 
 ;;; Code:
 
-(defcustom text-mode-hook nil
+;; Normally non-nil defaults for hooks are bad, but since this file is
+;; preloaded it's ok/better, and avoids this showing up in customize-rogue.
+(defcustom text-mode-hook '(text-mode-hook-identify)
   "Normal hook run when entering Text mode and many related modes."
   :type 'hook
   :options '(turn-on-auto-fill turn-on-flyspell)
-  :group 'wp)
+  :group 'text)
 
 (defvar text-mode-variant nil
-  "Non-nil if this buffer's major mode is a variant of Text mode.
-Use (derived-mode-p 'text-mode) instead.")
+  "Non-nil if this buffer's major mode is a variant of Text mode.")
+(make-obsolete-variable 'text-mode-variant 'derived-mode-p "27.1")
 
 (defvar text-mode-syntax-table
   (let ((st (make-syntax-table)))
@@ -45,6 +47,23 @@ Use (derived-mode-p 'text-mode) instead.")
     (modify-syntax-entry ?\\ ".   " st)
     ;; We add `p' so that M-c on 'hello' leads to 'Hello' rather than 'hello'.
     (modify-syntax-entry ?' "w p" st)
+    ;; UAX #29 says HEBREW PUNCTUATION GERESH behaves like a letter
+    ;; for the purposes of finding word boundaries.
+    (modify-syntax-entry #x5f3 "w   ") ; GERESH
+    ;; UAX #29 says HEBREW PUNCTUATION GERSHAYIM should not be a word
+    ;; boundary when surrounded by letters.  Our infrastructure for
+    ;; finding a word boundary doesn't support 3-character
+    ;; definitions, so for now simply make this a word-constituent
+    ;; character.  This leaves a problem of having GERSHAYIM at the
+    ;; beginning or end of a word, where it should be a boundary;
+    ;; FIXME.
+    (modify-syntax-entry #x5f4 "w   ") ; GERSHAYIM
+    ;; These all should not be a word boundary when between letters,
+    ;; according to UAX #29, so they again are prone to the same
+    ;; problem as GERSHAYIM; FIXME.
+    (modify-syntax-entry #xb7 "w   ")	; MIDDLE DOT
+    (modify-syntax-entry #x2027 "w   ")	; HYPHENATION POINT
+    (modify-syntax-entry #xff1a "w   ")	; FULLWIDTH COLON
     st)
   "Syntax table used while in `text-mode'.")
 
@@ -85,10 +104,8 @@ You can thus get the full benefit of adaptive filling
  (see the variable `adaptive-fill-mode').
 \\{text-mode-map}
 Turning on Text mode runs the normal hook `text-mode-hook'."
-  (set (make-local-variable 'text-mode-variant) t)
-  (set (make-local-variable 'require-final-newline)
-       mode-require-final-newline)
-  (set (make-local-variable 'indent-line-function) 'indent-relative))
+  (setq-local text-mode-variant t)
+  (setq-local require-final-newline mode-require-final-newline))
 
 (define-derived-mode paragraph-indent-text-mode text-mode "Parindent"
   "Major mode for editing text, with leading spaces starting a paragraph.
@@ -112,14 +129,12 @@ Turning on Paragraph-Indent minor mode runs the normal hook
   :initial-value nil
   ;; Change the definition of a paragraph start.
   (let ((ps-re "[ \t\n\f]\\|"))
-    (if (eq t (compare-strings ps-re nil nil
-                               paragraph-start nil (length ps-re)))
+    (if (string-prefix-p ps-re paragraph-start)
         (if (not paragraph-indent-minor-mode)
-            (set (make-local-variable 'paragraph-start)
-                 (substring paragraph-start (length ps-re))))
+            (setq-local paragraph-start
+                        (substring paragraph-start (length ps-re))))
       (if paragraph-indent-minor-mode
-          (set (make-local-variable 'paragraph-start)
-               (concat ps-re paragraph-start)))))
+          (setq-local paragraph-start (concat ps-re paragraph-start)))))
   ;; Change the indentation function.
   (if paragraph-indent-minor-mode
       (add-function :override (local 'indent-line-function)
@@ -130,13 +145,12 @@ Turning on Paragraph-Indent minor mode runs the normal hook
 (defalias 'indented-text-mode 'text-mode)
 
 ;; This can be made a no-op once all modes that use text-mode-hook
-;; are "derived" from text-mode.
+;; are "derived" from text-mode.  (As of 2015/04, and probably well before,
+;; the only one I can find that doesn't so derive is rmail-edit-mode.)
 (defun text-mode-hook-identify ()
   "Mark that this mode has run `text-mode-hook'.
 This is how `toggle-text-mode-auto-fill' knows which buffers to operate on."
-  (set (make-local-variable 'text-mode-variant) t))
-
-(add-hook 'text-mode-hook 'text-mode-hook-identify)
+  (setq-local text-mode-variant t))
 
 (defun toggle-text-mode-auto-fill ()
   "Toggle whether to use Auto Fill in Text mode and related modes.
@@ -145,8 +159,8 @@ both existing buffers and buffers that you subsequently create."
   (interactive)
   (let ((enable-mode (not (memq 'turn-on-auto-fill text-mode-hook))))
     (if enable-mode
-	(add-hook 'text-mode-hook 'turn-on-auto-fill)
-      (remove-hook 'text-mode-hook 'turn-on-auto-fill))
+        (add-hook 'text-mode-hook #'turn-on-auto-fill)
+      (remove-hook 'text-mode-hook #'turn-on-auto-fill))
     (dolist (buffer (buffer-list))
       (with-current-buffer buffer
 	(if (or (derived-mode-p 'text-mode) text-mode-variant)
@@ -196,15 +210,14 @@ The argument NLINES says how many lines to center."
   (while (not (eq nlines 0))
     (save-excursion
       (let ((lm (current-left-margin))
-	    line-length)
+            space)
 	(beginning-of-line)
 	(delete-horizontal-space)
 	(end-of-line)
 	(delete-horizontal-space)
-	(setq line-length (current-column))
-	(if (> (- fill-column lm line-length) 0)
-	    (indent-line-to
-	     (+ lm (/ (- fill-column lm line-length) 2))))))
+        (setq space (- fill-column lm (current-column)))
+        (if (> space 0)
+            (indent-line-to (+ lm (/ space 2))))))
     (cond ((null nlines)
 	   (setq nlines 0))
 	  ((> nlines 0)
@@ -213,5 +226,7 @@ The argument NLINES says how many lines to center."
 	  ((< nlines 0)
 	   (setq nlines (1+ nlines))
 	   (forward-line -1)))))
+
+(provide 'text-mode)
 
 ;;; text-mode.el ends here

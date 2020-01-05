@@ -1,5 +1,5 @@
 /* Header for charset handler.
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2020 Free Software Foundation, Inc.
    Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
      2005, 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
@@ -13,8 +13,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,12 +22,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #ifndef EMACS_CHARSET_H
 #define EMACS_CHARSET_H
 
 #include <verify.h>
+#include "lisp.h"
 
 INLINE_HEADER_BEGIN
 
@@ -247,14 +248,14 @@ extern Lisp_Object Vcharset_hash_table;
 
 /* Table of struct charset.  */
 extern struct charset *charset_table;
+extern int charset_table_size;
 
 #define CHARSET_FROM_ID(id) (charset_table + (id))
 
 extern Lisp_Object Vcharset_ordered_list;
 extern Lisp_Object Vcharset_non_preferred_head;
 
-/* Incremented everytime we change the priority of charsets.  */
-extern unsigned short charset_ordered_list_tick;
+extern EMACS_UINT charset_ordered_list_tick;
 
 extern Lisp_Object Viso_2022_charset_list;
 extern Lisp_Object Vemacs_mule_charset_list;
@@ -355,7 +356,7 @@ set_charset_attr (struct charset *charset, enum charset_attr_index idx,
 									\
     if (! SYMBOLP (x) || (idx = CHARSET_SYMBOL_HASH_INDEX (x)) < 0)	\
       wrong_type_argument (Qcharsetp, (x));				\
-    id = XINT (AREF (HASH_VALUE (XHASH_TABLE (Vcharset_hash_table), idx), \
+    id = XFIXNUM (AREF (HASH_VALUE (XHASH_TABLE (Vcharset_hash_table), idx), \
 		     charset_id));					\
   } while (false)
 
@@ -416,7 +417,7 @@ extern Lisp_Object Vchar_charset_set;
    : (charset)->method == CHARSET_METHOD_MAP				\
    ? (((charset)->code_linear_p						\
        && VECTORP (CHARSET_DECODER (charset)))				\
-      ? XINT (AREF (CHARSET_DECODER (charset),				\
+      ? XFIXNUM (AREF (CHARSET_DECODER (charset),				\
 		    (code) - (charset)->min_code))			\
       : decode_char ((charset), (code)))				\
    : decode_char ((charset), (code)))
@@ -447,7 +448,7 @@ extern Lisp_Object charset_work;
 	? (charset_work = CHAR_TABLE_REF (CHARSET_ENCODER (charset), c), \
 	   (NILP (charset_work)						\
 	    ? (charset)->invalid_code					\
-	    : (unsigned) XFASTINT (charset_work)))			\
+	    : (unsigned) XFIXNAT (charset_work)))			\
 	: encode_char (charset, c))					\
      : encode_char (charset, c))))
 
@@ -520,9 +521,6 @@ extern int iso_charset_table[ISO_MAX_DIMENSION][ISO_MAX_CHARS][ISO_MAX_FINAL];
 
 
 
-extern Lisp_Object Qcharsetp;
-
-extern Lisp_Object Qascii;
 extern int charset_ascii, charset_eight_bit;
 extern int charset_unicode;
 extern int charset_jisx0201_roman;

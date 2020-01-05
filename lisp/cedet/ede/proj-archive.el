@@ -1,6 +1,6 @@
 ;;; ede/proj-archive.el --- EDE Generic Project archive support
 
-;;  Copyright (C) 1998-2001, 2009-2014 Free Software Foundation, Inc.
+;;  Copyright (C) 1998-2001, 2009-2020 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: project, make
@@ -16,7 +16,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -34,7 +34,6 @@
 
 (defvar ede-archive-linker
   (ede-linker
-   "ede-archive-linker"
    :name "ar"
    :variables  '(("AR" . "ar")
 		 ("AR_CMD" . "$(AR) cr"))
@@ -43,7 +42,7 @@
    :objectextention "")
   "Linker object for creating an archive.")
 
-(defmethod ede-proj-makefile-insert-source-variables :BEFORE
+(cl-defmethod ede-proj-makefile-insert-source-variables :before
   ((this ede-proj-target-makefile-archive) &optional moresource)
   "Insert bin_PROGRAMS variables needed by target THIS.
 We aren't actually inserting SOURCE details, but this is used by the
@@ -52,11 +51,11 @@ Makefile.am generator, so use it to add this important bin program."
       (concat "lib" (ede-name this) "_a_LIBRARIES")
     (insert (concat "lib" (ede-name this) ".a"))))
 
-(defmethod ede-proj-makefile-garbage-patterns
+(cl-defmethod ede-proj-makefile-garbage-patterns
   ((this ede-proj-target-makefile-archive))
   "Add archive name to the garbage patterns.
-This makes sure that the archive is removed with 'make clean'."
-  (let ((garb (call-next-method)))
+This makes sure that the archive is removed with `make clean'."
+  (let ((garb (cl-call-next-method)))
     (append garb (list (concat "lib" (ede-name this) ".a")))))
 
 (provide 'ede/proj-archive)

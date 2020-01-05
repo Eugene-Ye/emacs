@@ -1,10 +1,9 @@
 ;;; info-look.el --- major-mode-sensitive Info index lookup facility -*- lexical-binding: t -*-
 ;; An older version of this was known as libc.el.
 
-;; Copyright (C) 1995-1999, 2001-2014 Free Software Foundation, Inc.
+;; Copyright (C) 1995-1999, 2001-2020 Free Software Foundation, Inc.
 
-;; Author: Ralph Schleicher <rs@nunatak.allgaeu.org>
-;;         (did not show signs of life (Nov 2001)  -stef)
+;; Author: Ralph Schleicher <rs@ralph-schleicher.de>
 ;; Keywords: help languages
 
 ;; This file is part of GNU Emacs.
@@ -20,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -31,13 +30,19 @@
 ;;
 ;; Scheme: <URL:http://groups.csail.mit.edu/mac/ftpdir/scm/r5rs.info.tar.gz>
 ;; LaTeX:
-;;  <URL:ftp://ctan.tug.org/tex-archive/info/latex2e-help-texinfo/latex2e.texi>
+;;  <URL:http://ctan.tug.org/tex-archive/info/latex2e-help-texinfo/latex2e.texi>
 ;;  (or CTAN mirrors)
-;; Perl: <URL:ftp://ftp.cpan.org/pub/CPAN/doc/manual/texinfo/> (or CPAN mirrors)
+;; Perl: <URL:http://ftp.cpan.org/pub/CPAN/doc/manual/texinfo/> (or CPAN mirrors)
+
+;; Traditionally, makeinfo quoted `like this', but version 5 and later
+;; quotes 'like this' or ‘like this’.  Doc specs with patterns
+;; therefore match open and close quotes with ['`‘] and ['’],
+;; respectively.
 
 ;;; Code:
 
 (require 'info)
+(eval-when-compile (require 'subr-x))
 
 (defgroup info-lookup nil
   "Major mode sensitive help agent."
@@ -70,7 +75,7 @@ List elements are cons cells of the form
 
 If a file name matches REGEXP, then use help mode MODE instead of the
 buffer's major mode."
-  :group 'info-lookup :type '(repeat (cons (string :tag "Regexp")
+  :group 'info-lookup :type '(repeat (cons (regexp :tag "Regexp")
 					   (symbol :tag "Mode"))))
 
 (defvar info-lookup-history nil
@@ -137,7 +142,7 @@ OTHER-MODES is a list of cross references to other help modes.")
   "Add or update a help specification.
 Function arguments are specified as keyword/argument pairs:
 
-    \(KEYWORD . ARGUMENT)
+    (KEYWORD . ARGUMENT)
 
 KEYWORD is either `:topic', `:mode', `:regexp', `:ignore-case',
  `:doc-spec', `:parse-rule', or `:other-modes'.
@@ -608,12 +613,13 @@ Return nil if there is nothing appropriate in the buffer near point."
   (condition-case nil
       (save-excursion
 	(let ((case-fold-search t)
-	      (ignored-chars "][()`',:.\" \t\n")
-	      (significant-chars "^][()`',:.\" \t\n")
+	      (ignored-chars "][()`'‘’,:.\" \t\n")
+	      (significant-chars "^][()`'‘’,:.\" \t\n")
 	      beg end)
 	  (cond
 	   ((and (memq (get-char-property (point) 'face)
-			 '(custom-variable-tag custom-variable-tag-face))
+			 '(custom-variable-tag custom-variable-obsolete
+			   custom-variable-tag-face))
 		   (setq beg (previous-single-char-property-change
 			      (point) 'face nil (line-beginning-position)))
 		   (setq end (next-single-char-property-change
@@ -629,7 +635,8 @@ Return nil if there is nothing appropriate in the buffer near point."
 		     (setq end (point))
 		     (> end beg))
 		(and (looking-at "[ \t\n]")
-		     (looking-back (concat "[" significant-chars "]"))
+		     (looking-back (concat "[" significant-chars "]")
+                                   (1- (point)))
 		     (setq end (point))
 		     (skip-chars-backward significant-chars)
 		     (setq beg (point))
@@ -640,6 +647,26 @@ Return nil if there is nothing appropriate in the buffer near point."
 		     (setq end (point))
 		     (> end beg)))
 	    (buffer-substring-no-properties beg end)))))
+    (error nil)))
+
+(defun info-lookup-guess-gdb-script-symbol ()
+  "Get symbol at point in GDB script buffers."
+  (condition-case nil
+      (save-excursion
+        (back-to-indentation)
+        ;; Try to find the current line's full command in the index;
+        ;; and default to the longest subset that is found.
+        (when (looking-at "[-a-z]+\\(\\s-[-a-z]+\\)*")
+          (let ((str-list (split-string (match-string-no-properties 0)
+                                        "\\s-+" t))
+                (completions (info-lookup->completions 'symbol
+                                                       'gdb-script-mode)))
+            (catch 'result
+              (while str-list
+                (let ((str (string-join str-list " ")))
+                  (when (assoc str completions)
+                    (throw 'result str))
+                  (nbutlast str-list)))))))
     (error nil)))
 
 ;;;###autoload
@@ -716,12 +743,12 @@ Return nil if there is nothing appropriate in the buffer near point."
              ;; suffix "\\>" is not used because that sends DBL_MAX to
              ;; DBL_MAX_EXP ("_" is a non-word char)
 	     ("(libc)Variable Index" nil
-              "^\\([ \t]+-+ \\(Variable\\|Macro\\): .*\\<\\|`\\)"
-              "\\( \\|'?$\\)")
+              "^\\([ \t]+-+ \\(Variable\\|Macro\\): .*\\<\\|['`‘]\\)"
+              "\\( \\|['’]?$\\)")
 	     ("(libc)Type Index" nil
 	      "^[ \t]+-+ Data Type: \\<" "\\>")
 	     ("(termcap)Var Index" nil
-	      "^[ \t]*`" "'"))
+	      "^[ \t]*['`‘]" "['’]"))
  :parse-rule 'info-lookup-guess-c-symbol)
 
 (info-lookup-maybe-add-help
@@ -733,7 +760,7 @@ Return nil if there is nothing appropriate in the buffer near point."
  :mode 'bison-mode
  :regexp "[:;|]\\|%\\([%{}]\\|[_a-z]+\\)\\|YY[_A-Z]+\\|yy[_a-z]+"
  :doc-spec '(("(bison)Index" nil
-	      "`" "'"))
+	      "['`‘]" "['’]"))
  :parse-rule "[:;|]\\|%\\([%{}]\\|[_a-zA-Z][_a-zA-Z0-9]*\\)"
  :other-modes '(c-mode))
 
@@ -741,7 +768,7 @@ Return nil if there is nothing appropriate in the buffer near point."
  :mode 'makefile-mode
  :regexp "\\$[^({]\\|\\.[_A-Z]*\\|[_a-zA-Z][_a-zA-Z0-9-]*"
  :doc-spec '(("(make)Name Index" nil
-	      "^[ \t]*`" "'"))
+	      "^[ \t]*['`‘]" "['’]"))
  :parse-rule "\\$[^({]\\|\\.[_A-Z]*\\|[_a-zA-Z0-9-]+")
 
 (info-lookup-maybe-add-help
@@ -756,15 +783,16 @@ Return nil if there is nothing appropriate in the buffer near point."
  :doc-spec   '(
                ;; "(automake)Macro Index" is autoconf macros used in
                ;; configure.ac, not Makefile.am, so don't have that here.
-               ("(automake)Variable Index" nil "^[ \t]*`" "'")
+               ("(automake)Variable Index" nil "^[ \t]*['`‘]" "['’]")
                ;; In automake 1.4 macros and variables were a combined node.
-               ("(automake)Macro and Variable Index" nil "^[ \t]*`" "'")
+               ("(automake)Macro and Variable Index" nil "^[ \t]*['`‘]"
+		"['’]")
                ;; Directives like "if" are in the "General Index".
                ;; Prefix "`" since the text for say `+=' isn't always an
                ;; @item etc and so not always at the start of a line.
-               ("(automake)General Index" nil "`" "'")
+               ("(automake)General Index" nil "['`‘]" "['’]")
                ;; In automake 1.3 there was just a single "Index" node.
-               ("(automake)Index" nil "`" "'"))
+               ("(automake)Index" nil "['`‘]" "['’]"))
  :other-modes '(makefile-mode))
 
 (info-lookup-maybe-add-help
@@ -775,7 +803,7 @@ Return nil if there is nothing appropriate in the buffer near point."
 	      (lambda (item)
 		(if (string-match "^\\([a-zA-Z]+\\|[^a-zA-Z]\\)\\( .*\\)?$" item)
 		    (concat "@" (match-string 1 item))))
-	      "`" "[' ]")))
+	      "['`‘]" "['’ ]")))
 
 (info-lookup-maybe-add-help
  :mode 'm4-mode
@@ -821,7 +849,7 @@ Return nil if there is nothing appropriate in the buffer near point."
 	     ;; macros (eg. AC_PROG_CC).  Ensure this is after the autoconf
 	     ;; index, so as to prefer the autoconf docs.
 	     ("(automake)Macro and Variable Index" nil
-	      "^[ \t]*`" "'"))
+	      "^[ \t]*['`‘]" "['’]"))
  ;; Autoconf symbols are M4 macros.  Thus use M4's parser.
  :parse-rule 'ignore
  :other-modes '(m4-mode))
@@ -846,7 +874,7 @@ Return nil if there is nothing appropriate in the buffer near point."
 		   ;; Built-in functions (matches to many entries).
 		   ((string-match "^[a-z]+$" item)
 		    item))))
-	      "`" "\\([ \t]*([^)]*)\\)?'")))
+	      "['`‘]" "\\([ \t]*([^)]*)\\)?['’]")))
 
 (info-lookup-maybe-add-help
  :mode 'perl-mode
@@ -885,16 +913,19 @@ Return nil if there is nothing appropriate in the buffer near point."
 		   ;; From http://home.gna.org/latexrefman
 		   "(latex2e)Command Index"
 		 "(latex)Command Index")
-	      nil "`" "\\({[^}]*}\\)?'")))
+	      ;; \frac{NUM}{DEN} etc can have more than one {xx} argument.
+	      ;; \sqrt[ROOT]{num} and others can have square brackets.
+	      nil "[`'‘]" "\\({[^}]*}|\\[[^]]*\\]\\)*['’]")))
+
 
 (info-lookup-maybe-add-help
  :mode 'emacs-lisp-mode
- :regexp "[^][()`',\" \t\n]+"
+ :regexp "[^][()`'‘’,\" \t\n]+"
  :doc-spec '(;; Commands with key sequences appear in nodes as `foo' and
              ;; those without as `M-x foo'.
-             ("(emacs)Command Index"  nil "`\\(M-x[ \t\n]+\\)?" "'")
+             ("(emacs)Command Index"  nil "['`‘]\\(M-x[ \t\n]+\\)?" "['’]")
              ;; Variables normally appear in nodes as just `foo'.
-             ("(emacs)Variable Index" nil "`" "'")
+             ("(emacs)Variable Index" nil "['`‘]" "['’]")
              ;; Almost all functions, variables, etc appear in nodes as
              ;; " -- Function: foo" etc.  A small number of aliases and
              ;; symbols appear only as `foo', and will miss out on exact
@@ -902,31 +933,33 @@ Return nil if there is nothing appropriate in the buffer near point."
              ;; for things that should go to Function: etc, and those latter
              ;; are much more important.  Perhaps this could change if some
              ;; sort of fallback match scheme existed.
-             ("(elisp)Index"          nil "^ -+ .*: " "\\( \\|$\\)")))
+             ("(elisp)Index"          nil "^ -+ .*: " "\\( \\|$\\)")
+             ("(cl)Function Index"    nil "^ -+ .*: " "\\( \\|$\\)")
+             ("(cl)Variable Index"    nil "^ -+ .*: " "\\( \\|$\\)")))
 
 ;; docstrings talk about elisp, so have apropos-mode follow emacs-lisp-mode
 (info-lookup-maybe-add-help
  :mode 'apropos-mode
- :regexp "[^][()`',\" \t\n]+" ;; same as emacs-lisp-mode above
+ :regexp "[^][()`'‘’,\" \t\n]+" ;; same as emacs-lisp-mode above
  :other-modes '(emacs-lisp-mode))
 
 (info-lookup-maybe-add-help
  :mode 'lisp-interaction-mode
- :regexp "[^][()`',\" \t\n]+"
+ :regexp "[^][()`'‘’,\" \t\n]+"
  :parse-rule 'ignore
  :other-modes '(emacs-lisp-mode))
 
 (info-lookup-maybe-add-help
  :mode 'lisp-mode
- :regexp "[^()`',\" \t\n]+"
+ :regexp "[^()`'‘’,\" \t\n]+"
  :parse-rule 'ignore
  :other-modes '(emacs-lisp-mode))
 
 (info-lookup-maybe-add-help
  :mode 'scheme-mode
- :regexp "[^()`',\" \t\n]+"
+ :regexp "[^()`'‘’,\" \t\n]+"
  :ignore-case t
- ;; Aubrey Jaffer's rendition from <URL:ftp://ftp-swiss.ai.mit.edu/pub/scm>
+ ;; Aubrey Jaffer's rendition from <https://people.csail.mit.edu/jaffer/SCM>
  :doc-spec '(("(r5rs)Index" nil
 	      "^[ \t]+-+ [^:]+:[ \t]*" "\\b")))
 
@@ -976,9 +1009,9 @@ Return nil if there is nothing appropriate in the buffer near point."
  ;; bash has "." and ":" in its index, but those chars will probably never
  ;; work in info, so don't bother matching them in the regexp.
  :regexp "\\([a-zA-Z0-9_-]+\\|[!{}@*#?$]\\|\\[\\[?\\|]]?\\)"
- :doc-spec '(("(bash)Builtin Index"       nil "^`" "[ .']")
-             ("(bash)Reserved Word Index" nil "^`" "[ .']")
-             ("(bash)Variable Index"      nil "^`" "[ .']")
+ :doc-spec '(("(bash)Builtin Index"       nil "^['`‘]" "[ .'’]")
+             ("(bash)Reserved Word Index" nil "^['`‘]" "[ .'’]")
+             ("(bash)Variable Index"      nil "^['`‘]" "[ .'’]")
 
              ;; coreutils (version 4.5.10) doesn't have a separate program
              ;; index, so exclude extraneous stuff (most of it) by demanding
@@ -1026,19 +1059,27 @@ Return nil if there is nothing appropriate in the buffer near point."
 		  item))
 	      ;; This gets functions in evaluated classes.  Other
 	      ;; possible patterns don't seem to work too well.
-	      "`" "(")))
+	      "['`‘]" "(")))
 
 (info-lookup-maybe-add-help
  :mode 'Custom-mode
  :ignore-case t
- :regexp "[^][()`',:\" \t\n]+"
+ :regexp "[^][()`'‘’,:\" \t\n]+"
  :parse-rule 'info-lookup-guess-custom-symbol
  :other-modes '(emacs-lisp-mode))
 
 (info-lookup-maybe-add-help
  :mode 'help-mode
- :regexp "[^][()`',:\" \t\n]+"
+ :regexp "[^][()`'‘’,:\" \t\n]+"
  :other-modes '(emacs-lisp-mode))
+
+(info-lookup-maybe-add-help
+ :mode 'gdb-script-mode
+ :ignore-case nil
+ :regexp "\\([-a-z]+\\(\\s-+[-a-z]+\\)*\\)"
+ :doc-spec '(("(gdb)Command and Variable Index" nil
+              nil nil))
+ :parse-rule 'info-lookup-guess-gdb-script-symbol)
 
 (provide 'info-look)
 

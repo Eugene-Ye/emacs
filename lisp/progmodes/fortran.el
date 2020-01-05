@@ -1,6 +1,6 @@
 ;;; fortran.el --- Fortran mode for GNU Emacs
 
-;; Copyright (C) 1986, 1993-1995, 1997-2014 Free Software Foundation,
+;; Copyright (C) 1986, 1993-1995, 1997-2020 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Michael D. Prange <prange@erl.mit.edu>
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -244,8 +244,8 @@ line in region."
 (defcustom fortran-column-ruler-fixed
   "0   4 6  10        20        30        40        5\
 0        60        70\n\
-\[   ]|{   |    |    |    |    |    |    |    |    \
-\|    |    |    |    |}\n"
+[   ]|{   |    |    |    |    |    |    |    |    \
+|    |    |    |    |}\n"
   "String displayed above current line by \\[fortran-column-ruler].
 This variable is used in fixed format mode.
 See the variable `fortran-column-ruler-tab' for TAB format mode."
@@ -257,8 +257,8 @@ See the variable `fortran-column-ruler-tab' for TAB format mode."
 (defcustom fortran-column-ruler-tab
   "0       810        20        30        40        5\
 0        60        70\n\
-\[   ]|  { |    |    |    |    |    |    |    |    \
-\|    |    |    |    |}\n"
+[   ]|  { |    |    |    |    |    |    |    |    \
+|    |    |    |    |}\n"
   "String displayed above current line by \\[fortran-column-ruler].
 This variable is used in TAB format mode.
 See the variable `fortran-column-ruler-fixed' for fixed format mode."
@@ -495,13 +495,13 @@ This is used to fontify fixed-format Fortran comments."
   ;; `byte-compile', but simple benchmarks indicate that it's probably not
   ;; worth the trouble (about 0.5% of slow down).
   (eval                         ;I hate `eval', but it's hard to avoid it here.
-   `(syntax-propertize-rules
-     ("^[cd\\*]" (0 "<"))
+   '(syntax-propertize-rules
+     ("^[CcDd\\*]" (0 "<"))
      ;; We mark all chars after line-length as "comment-start", rather than
      ;; just the first one.  This is so that a closing ' that's past the
      ;; line-length will indeed be ignored (and will result in a string that
      ;; leaks into subsequent lines).
-     ((format "^[^cd\\*\t\n].\\{%d\\}\\(.+\\)" (1- line-length))
+     ((format "^[^CcDd\\*\t\n].\\{%d\\}\\(.+\\)" (1- line-length))
       (1 "<")))))
 
 (defvar fortran-font-lock-keywords fortran-font-lock-keywords-1
@@ -817,15 +817,15 @@ Variables controlling indentation style and extra features:
   Amount of extra indentation for text in full-line comments (default 0).
 `fortran-comment-indent-style'
   How to indent the text in full-line comments. Allowed values are:
-  nil       don't change the indentation
-  fixed     indent to `fortran-comment-line-extra-indent' beyond the
+  nil         don't change the indentation
+  `fixed'     indent to `fortran-comment-line-extra-indent' beyond the
               value of either
                 `fortran-minimum-statement-indent-fixed' (fixed format) or
                 `fortran-minimum-statement-indent-tab' (TAB format),
               depending on the continuation format in use.
-  relative  indent to `fortran-comment-line-extra-indent' beyond the
+  `relative'  indent to `fortran-comment-line-extra-indent' beyond the
               indentation for a line of code.
-  (default 'fixed)
+  (default `fixed')
 `fortran-comment-indent-char'
   Single-character string to be inserted instead of space for
   full-line comment indentation (default \" \").
@@ -916,12 +916,12 @@ with no args, if that value is non-nil."
 
 (defun fortran-line-length (nchars &optional global)
   "Set the length of fixed-form Fortran lines to NCHARS.
-This normally only affects the current buffer, which must be in
-Fortran mode.  If the optional argument GLOBAL is non-nil, it
-affects all Fortran buffers, and also the default.
-If a numeric prefix argument is specified, it will be used as NCHARS,
-otherwise is a non-numeric prefix arg is specified, the length will be
-provided via the minibuffer, and otherwise the current column is used."
+By default this only affects the current buffer, which must be in
+Fortran mode.  If the optional argument GLOBAL is non-nil, it affects
+all Fortran buffers, and also the default.  The default value of NCHARS
+is the current column.  A numeric prefix argument specifies a value to
+use instead of the current column.  A non-numeric prefix argument prompts
+for the value to use."
   (interactive
    (list (cond
           ((numberp current-prefix-arg) current-prefix-arg)
@@ -1040,13 +1040,9 @@ With non-nil ARG, uncomments the region."
 Any other key combination is executed normally."
   (interactive "*")
   (insert last-command-event)
-  (let* ((event (if (fboundp 'next-command-event) ; XEmacs
-                    (next-command-event)
-                  (read-event)))
-         (char (if (fboundp 'event-to-character)
-                   (event-to-character event) event)))
+  (let ((event (read-event)))
     ;; Insert char if not equal to `?', or if abbrev-mode is off.
-    (if (and abbrev-mode (or (eq char ??) (eq char help-char)
+    (if (and abbrev-mode (or (eq event ??) (eq event help-char)
                              (memq event help-event-list)))
         (fortran-abbrev-help)
       (push event unread-command-events))))
@@ -1117,7 +1113,7 @@ See also `fortran-window-create'."
           (message "Type SPC to continue editing.")
           (let ((char (read-event)))
             (or (equal char ?\s)
-                (setq unread-command-events (list char))))))
+                (push char unread-command-events)))))
     (fortran-window-create)))
 
 (defun fortran-split-line ()
@@ -1258,7 +1254,7 @@ Auto-indent does not happen if a numeric ARG is used."
 
 (defun fortran-previous-statement ()
   "Move point to beginning of the previous Fortran statement.
-Returns 'first-statement if that statement is the first
+Returns `first-statement' if that statement is the first
 non-comment Fortran statement in the file, and nil otherwise.
 Directive lines are treated as comments."
   (interactive)
@@ -1279,7 +1275,8 @@ Directive lines are treated as comments."
                      (concat "[ \t]*"
                              (regexp-quote fortran-continuation-string)))
                     (looking-at "[ \t]*$\\| \\{5\\}[^ 0\n]\\|\t[1-9]")
-                    (looking-at (concat "[ \t]*" comment-start-skip)))))
+                    (looking-at (concat "[ \t]*\\(?:"
+                                        comment-start-skip "\\)")))))
     (cond ((and continue-test
                 (not not-first-statement))
            (message "Incomplete continuation statement."))
@@ -1290,7 +1287,7 @@ Directive lines are treated as comments."
 
 (defun fortran-next-statement ()
   "Move point to beginning of the next Fortran statement.
-Returns 'last-statement if that statement is the last
+Returns `last-statement' if that statement is the last
 non-comment Fortran statement in the file, and nil otherwise.
 Directive lines are treated as comments."
   (interactive)
@@ -1302,7 +1299,8 @@ Directive lines are treated as comments."
                 (or (looking-at fortran-comment-line-start-skip)
                     (looking-at fortran-directive-re)
                     (looking-at "[ \t]*$\\|     [^ 0\n]\\|\t[1-9]")
-                    (looking-at (concat "[ \t]*" comment-start-skip)))))
+                    (looking-at (concat "[ \t]*\\(?:"
+                                        comment-start-skip "\\)")))))
     (if (not not-last-statement)
         'last-statement)))
 
@@ -1799,7 +1797,7 @@ non-indentation text within the comment."
            (goto-char (match-end 0)))
           (t
            ;; Move past line number.
-           (skip-chars-forward "[ \t0-9]")))
+           (skip-chars-forward " \t0-9")))
     ;; Move past whitespace.
     (skip-chars-forward " \t")
     (current-column)))
@@ -1822,7 +1820,9 @@ notes: 1) A non-zero/non-blank character in column 5 indicates a continuation
                            fortran-comment-indent-char))
                    (chars (string ?\s ?\t char)))
               (goto-char (match-end 0))
+              ;; relint suppression: Duplicated character
               (skip-chars-backward chars)
+              ;; relint suppression: Duplicated character
               (delete-region (point) (progn (skip-chars-forward chars)
                                             (point)))
               (insert-char char (- col (current-column)))))
@@ -2056,7 +2056,7 @@ If ALL is nil, only match comments that start in column > 0."
                 (when (<= (point) bos)
                   (move-to-column (1+ fill-column))
                   ;; What is this doing???
-                  (or (re-search-forward "[\t\n,'+-/*)=]" eol t)
+                  (or (re-search-forward "[-\t\n,'+/*)=]" eol t)
                       (goto-char bol)))
                 (if (bolp)
                     (re-search-forward "[ \t]" opoint t))
@@ -2150,7 +2150,8 @@ Always returns non-nil (to prevent `fill-paragraph' being called)."
               (or (looking-at "[ \t]*$")
                   (looking-at fortran-comment-line-start-skip)
                   (and comment-start-skip
-                       (looking-at (concat "[ \t]*" comment-start-skip)))))
+                       (looking-at (concat "[ \t]*\\(?:"
+                                           comment-start-skip "\\)")))))
       (save-excursion
         ;; Find beginning of statement.
         (fortran-next-statement)
